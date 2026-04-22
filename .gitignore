@@ -1,0 +1,59 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend build outputs
+pixors-ui/dist/
+pixors-ui/.env
+pixors-ui/.env.local
+pixors-ui/.env.*.local
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+**/build/
+**/out/
+**/*.exe
+**/*.dll
+**/*.so
+**/*.dylib
+
+# Coverage
+coverage/
+*.gcda
+*.gcno
+
+# Environment variables
+.env
+.env.local
+
+# Vite cache
+pixors-ui/.vite/
+
+# Rust cache
+**/.rustc/
+**/.cargo/
