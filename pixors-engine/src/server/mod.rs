@@ -5,6 +5,7 @@
 
 mod protocol;
 mod router;
+mod service;
 mod state;
 mod ws;
 

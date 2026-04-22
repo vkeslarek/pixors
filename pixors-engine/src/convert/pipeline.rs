@@ -8,6 +8,7 @@ use crate::color::{ColorSpace, ColorConversion};
 use crate::image::{RawImage, TypedImage, SampleType, ChannelLayoutKind, SampleLayout, AlphaMode};
 use crate::pixel::Rgba;
 use half::f16;
+use rayon::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -77,6 +78,46 @@ pub fn convert_acescg_premul_to_srgb_u8(image: &TypedImage<Rgba<f16>>) -> Vec<u8
         out.push((a.clamp(0.0, 1.0) * 255.0).round() as u8);
     }
     out
+}
+
+pub fn convert_acescg_premul_region_to_srgb_u8(
+    image: &TypedImage<Rgba<f16>>,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    conv: &ColorConversion,
+) -> Vec<u8> {
+    let _sw = crate::debug_stopwatch!("convert_acescg_premul_region_to_srgb_u8");
+
+    let image_width = image.width;
+
+    (y..(y + height))
+        .into_par_iter()
+        .flat_map_iter(|ty| {
+            let mut row = Vec::with_capacity((width * 4) as usize);
+            for tx in x..(x + width) {
+                let idx = ty as usize * image_width as usize + tx as usize;
+                let px = &image.pixels[idx];
+                
+                let a = px.a.to_f32();
+                let (r, g, b) = if a > 0.0 {
+                    let inv = 1.0 / a;
+                    (px.r.to_f32() * inv, px.g.to_f32() * inv, px.b.to_f32() * inv)
+                } else {
+                    (0.0, 0.0, 0.0)
+                };
+
+                let linear = conv.matrix().mul_vec([r, g, b]);
+
+                row.push((conv.encode_fast(linear[0]) * 255.0).round() as u8);
+                row.push((conv.encode_fast(linear[1]) * 255.0).round() as u8);
+                row.push((conv.encode_fast(linear[2]) * 255.0).round() as u8);
+                row.push((a.clamp(0.0, 1.0) * 255.0).round() as u8);
+            }
+            row
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

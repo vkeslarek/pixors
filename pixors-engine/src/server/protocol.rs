@@ -36,6 +36,14 @@ pub enum ServerEvent {
     Error { message: String },
     /// Binary data follows (separate WebSocket message).
     BinaryData { size: usize },
+    /// Tile data follows (separate WebSocket message).
+    TileData {
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        size: usize,
+    },
 }
 
 /// Pixel format for binary transmission.

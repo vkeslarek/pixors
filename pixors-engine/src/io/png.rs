@@ -5,10 +5,14 @@ use crate::image::{RawImage, AlphaMode, SampleType, ChannelLayoutKind, SampleLay
 use crate::color::{ColorSpace, TransferFn, RgbPrimaries, WhitePoint};
 use std::fs::File;
 use std::io::BufReader;
+use std::path::Path;
 use png::{Decoder, Encoder, ColorType, BitDepth, Transformations};
 
 /// Loads a PNG image from a file path.
-pub fn load_png(path: &std::path::Path) -> Result<RawImage, Error> {
+pub fn load_png(path: &Path) -> Result<RawImage, Error> {
+    let _sw = crate::debug_stopwatch!("load_png");
+    tracing::info!("Reading PNG from {:?}", path);
+    
     let file = File::open(path).map_err(Error::Io)?;
     let reader = BufReader::new(file);
     

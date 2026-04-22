@@ -17,7 +17,7 @@ impl DebugStopwatch {
 
 impl Drop for DebugStopwatch {
     fn drop(&mut self) {
-        tracing::info!("{} took {:?}", self.name, self.start.elapsed());
+        tracing::debug!("{} took {:?}", self.name, self.start.elapsed());
     }
 }
 

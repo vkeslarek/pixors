@@ -3,9 +3,11 @@
 mod meta;
 mod raw;
 mod typed;
+mod tile;
 
 pub use meta::AlphaMode;
 pub use meta::{ChannelKind, ChannelLayoutKind};
 pub use meta::{SampleType, SampleLayout};
 pub use raw::RawImage;
 pub use typed::TypedImage;
+pub use tile::{Tile, TileGrid, retile};
