@@ -1,6 +1,6 @@
-use pixors::convert::convert_raw_to_typed;
-use pixors::io::png::load_png;
-use pixors::viewport::{ImageView, Viewport};
+use pixors_engine::convert::convert_raw_to_typed;
+use pixors_engine::io::png::load_png;
+use pixors_engine::viewport::{ImageView, Viewport};
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -210,8 +210,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Converts ACEScg premul f16 to sRGB u8 with proper color space conversion.
-fn convert_to_srgb_u8(image: &pixors::TypedImage<pixors::pixel::Rgba<half::f16>>) -> Vec<u8> {
-    use pixors::color::ColorSpace;
+fn convert_to_srgb_u8(image: &pixors_engine::TypedImage<pixors_engine::pixel::Rgba<half::f16>>) -> Vec<u8> {
+    use pixors_engine::color::ColorSpace;
     
     // Matrix from ACEScg (AP1, D60, linear) to linear sRGB (BT.709, D65, linear)
     let mat = ColorSpace::ACES_CG.matrix_to(ColorSpace::LINEAR_SRGB)

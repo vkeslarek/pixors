@@ -80,12 +80,14 @@ impl Viewport {
         let view_rect = &self.view_rect;
         let (buffer, _) = self.swapchain.acquire_next_image();
 
-        // For each pixel in the swapchain buffer
+        // We simulate a software Render Pass here. We iterate through each 
+        // pixel of the screen, mapping it back to the continuous image space
+        // by applying the view rectangle transformations (handling pan & zoom),
+        // and then we sample the image to acquire the final color.
         for y in 0..height {
             let row_start = y * width;
             for x in 0..width {
                 let (ix, iy) = view_rect.view_to_image(x as f64, y as f64);
-                // Nearest neighbor for now
                 let pixel = nearest_neighbor_sample(image, ix, iy);
                 buffer[row_start + x] = pixel;
             }

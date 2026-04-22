@@ -146,9 +146,3 @@ impl<P: Pixel> TypedImage<P> {
     }
 }
 
-impl<P: Pixel + Default> TypedImage<P> {
-    /// Creates a new image with all pixels set to default (zero).
-    pub fn zero(width: u32, height: u32, color_space: ColorSpace, alpha_mode: AlphaMode) -> Self {
-        Self::new_with_default(width, height, color_space, alpha_mode)
-    }
-}

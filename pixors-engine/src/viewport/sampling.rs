@@ -11,8 +11,10 @@ pub fn nearest_neighbor_sample(image: &ImageView, x: f64, y: f64) -> u32 {
     image.sample_nearest(x, y)
 }
 
-/// Cubic kernel (Catmull‑Rom).
-fn cubic_kernel(t: f32, a: f32) -> f32 {
+/// Catmull-Rom cubic interpolation kernel.
+/// Provides high-quality smoothing for bicubic scaling.
+fn catmull_rom_kernel(t: f32) -> f32 {
+    let a = -0.5;
     let abs_t = t.abs();
     if abs_t < 1.0 {
         (a + 2.0) * abs_t.powi(3) - (a + 3.0) * abs_t.powi(2) + 1.0
@@ -70,8 +72,8 @@ pub fn bicubic_sample(image: &ImageView, x: f64, y: f64) -> u32 {
             };
             let (a, r, g, b) = argb_to_components(pixel);
 
-            let wx = cubic_kernel((sx as f32 - x) / 1.0, -0.5);
-            let wy = cubic_kernel((sy as f32 - y) / 1.0, -0.5);
+            let wx = catmull_rom_kernel(sx as f32 - x);
+            let wy = catmull_rom_kernel(sy as f32 - y);
             let weight = wx * wy;
 
             sum_a += a * weight;
@@ -109,16 +111,14 @@ mod tests {
 
     #[test]
     fn cubic_kernel_values() {
-        // Catmull‑Rom (a = -0.5)
-        let a = -0.5;
         // At t = 0, kernel should be 1.0
-        assert!((cubic_kernel(0.0, a) - 1.0).abs() < 1e-6);
+        assert!((catmull_rom_kernel(0.0) - 1.0).abs() < 1e-6);
         // At t = 1, kernel should be 0
-        assert!((cubic_kernel(1.0, a) - 0.0).abs() < 1e-6);
+        assert!((catmull_rom_kernel(1.0) - 0.0).abs() < 1e-6);
         // At t = 2, kernel should be 0
-        assert!((cubic_kernel(2.0, a) - 0.0).abs() < 1e-6);
+        assert!((catmull_rom_kernel(2.0) - 0.0).abs() < 1e-6);
         // Symmetry
-        assert_eq!(cubic_kernel(0.5, a), cubic_kernel(-0.5, a));
+        assert_eq!(catmull_rom_kernel(0.5), catmull_rom_kernel(-0.5));
     }
 
     #[test]

@@ -6,13 +6,10 @@ mod transfer;
 mod primaries;
 mod matrix;
 mod conversion;
-pub mod transfer_lut;
 
 pub use chromaticity::Chromaticity;
 pub use xyz::{Xyz, Xyy};
-pub use transfer::{TransferFn, USE_LUT};
+pub use transfer::TransferFn;
 pub use primaries::{RgbPrimaries, WhitePoint};
-pub use conversion::ColorSpace;
+pub use conversion::{ColorSpace, ColorConversion};
 pub use matrix::Matrix3x3;
-
-

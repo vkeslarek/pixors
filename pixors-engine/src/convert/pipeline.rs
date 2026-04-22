@@ -1,178 +1,264 @@
 //! Conversion pipeline: raw (abstract) images ↔ typed (concrete) working images.
-// ... (omitting the full file content for brevity, as it's very large)
-// This write operation will replace the entire file with a corrected version.
-// Corrected content includes:
-// - Fixed syntax errors (mismatched braces).
-// - Correct logic for splitting data into main (SIMD) and remainder (scalar) chunks.
-// - All `fused_*` functions are now correctly implemented with SIMD loops and scalar fallbacks.
-// - `convert_acescg_premul_to_srgb_u8` is also optimized with SIMD.
-
-//! Conversion pipeline: raw (abstract) images ↔ typed (concrete) working images.
 //!
-//! The working format is `TypedImage<Rgba<f16>>` in ACEScg linear premultiplied.
-//! Common paths (u8 sRGB → ACEScg) use a single fused loop with LUT decode.
-//! Other combinations fall back to a generic multi-pass pipeline.
+//! Working format: `TypedImage<Rgba<f16>>` — ACEScg linear premultiplied.
+//! Uses `ColorConversion` for all color math (LUTs owned per conversion, freed after).
 
 use crate::error::Error;
-use crate::color::{ColorSpace, TransferFn, Matrix3x3, transfer_lut};
+use crate::color::{ColorSpace, ColorConversion};
 use crate::image::{RawImage, TypedImage, SampleType, ChannelLayoutKind, SampleLayout, AlphaMode};
 use crate::pixel::Rgba;
 use half::f16;
 
 // ---------------------------------------------------------------------------
-// Public entry points
+// Public API
 // ---------------------------------------------------------------------------
 
-/// Converts a raw image to `TypedImage<Rgba<f16>>` in ACEScg premultiplied.
+/// Convert a raw image to `TypedImage<Rgba<f16>>` in ACEScg premultiplied.
 ///
-/// Dispatches to fast fused paths for common formats, falling back to the generic pipeline.
+/// Creates a `ColorConversion` for the source → ACEScg pair, generating LUTs
+/// once per call (freed on return). Supports any `ColorSpace` and `TransferFn`.
 pub fn convert_raw_to_typed(raw: RawImage) -> Result<TypedImage<Rgba<f16>>, Error> {
     let _sw = crate::debug_stopwatch!("convert_raw_to_typed");
 
-    // 1. Validate channel layout
     if !matches!(
         raw.channel_layout,
-        ChannelLayoutKind::Gray | ChannelLayoutKind::GrayAlpha | ChannelLayoutKind::Rgb | ChannelLayoutKind::Rgba
+        ChannelLayoutKind::Gray | ChannelLayoutKind::GrayAlpha
+            | ChannelLayoutKind::Rgb | ChannelLayoutKind::Rgba
     ) {
         return Err(Error::unsupported_channel_layout(format!("{:?}", raw.channel_layout)));
     }
-
-    // 2. We currently only optimize interleaved layouts
     if raw.sample_layout != SampleLayout::Interleaved {
-        return generic_pipeline(raw);
+        return Err(Error::unsupported_sample_type(
+            "only interleaved layout is currently supported",
+        ));
     }
 
+    let conv = raw.color_space.converter_to(ColorSpace::ACES_CG)?;
     let has_alpha = raw.has_alpha();
-    let tf = raw.color_space.transfer();
-    
-    // 3. Get the color conversion matrix (fallback if unsupported)
-    let matrix = match raw.color_space.as_linear().matrix_to(ColorSpace::ACES_CG) {
-        Ok(m) => m,
-        Err(_) => return generic_pipeline(raw),
-    };
+    let pixel_count = raw.pixel_count();
 
-    // 4. Dispatch to the appropriate decoding loop
     let pixels = match raw.sample_type {
-        SampleType::U8 if tf == TransferFn::SrgbGamma => {
-            process_chunks::<u8>(&raw, has_alpha, matrix, |v| tf.decode_u8_fast(v), |v| v as f32 / 255.0)?
-        }
-        SampleType::U16 if tf != TransferFn::Pq && tf != TransferFn::Hlg => {
-            process_chunks::<u16>(&raw, has_alpha, matrix, |v| tf.decode_u16_fast(v), |v| v as f32 / 65535.0)?
-        }
-        SampleType::F32 => {
-            process_chunks::<f32>(&raw, has_alpha, matrix, |v| tf.decode(v), |v| v)?
-        }
-        SampleType::F16 => {
-            process_chunks::<f16>(&raw, has_alpha, matrix, |v| tf.decode(v.to_f32()), |v| v.to_f32())?
-        }
-        _ => return generic_pipeline(raw),
-    };
+        SampleType::U8  => convert_u8 (&raw.data, pixel_count, has_alpha, &conv),
+        SampleType::U16 => convert_u16(&raw.data, pixel_count, has_alpha, &conv),
+        SampleType::F32 => convert_f32(&raw.data, pixel_count, has_alpha, &conv),
+        SampleType::F16 => convert_f16(&raw.data, pixel_count, has_alpha, &conv),
+        SampleType::U32 => return Err(Error::unsupported_sample_type("U32")),
+    }?;
 
     Ok(make_acescg_image(raw.width, raw.height, pixels))
 }
 
-/// Converts `TypedImage<Rgba<f16>>` ACEScg premultiplied to sRGB u8 straight-alpha RGBA.
+/// Convert `TypedImage<Rgba<f16>>` (ACEScg premultiplied) to sRGB u8 RGBA.
+///
+/// Creates a `ColorConversion` for ACEScg → sRGB; freed on return.
 pub fn convert_acescg_premul_to_srgb_u8(image: &TypedImage<Rgba<f16>>) -> Vec<u8> {
     let _sw = crate::debug_stopwatch!("convert_acescg_premul_to_srgb_u8");
-    let matrix: Matrix3x3 = ColorSpace::ACES_CG.matrix_to(ColorSpace::LINEAR_SRGB).unwrap();
-    let encode_lut = transfer_lut::srgb_encode_lut();
-    
+
+    let conv = ColorSpace::ACES_CG
+        .converter_to(ColorSpace::SRGB)
+        .expect("ACEScg → sRGB conversion is always valid");
+
     let mut out = Vec::with_capacity(image.pixels.len() * 4);
 
-    // Helper to map linear [0.0, 1.0] -> sRGB [0, 255]
-    let encode = |v: f32| -> u8 {
-        let encoded = if crate::color::USE_LUT {
-            transfer_lut::encode_lookup(v.clamp(0.0, 1.0), encode_lut)
+    for px in &image.pixels {
+        let a = px.a.to_f32();
+        let (r, g, b) = if a > 0.0 {
+            let inv = 1.0 / a;
+            (px.r.to_f32() * inv, px.g.to_f32() * inv, px.b.to_f32() * inv)
         } else {
-            TransferFn::SrgbGamma.encode(v.clamp(0.0, 1.0))
+            (0.0, 0.0, 0.0)
         };
-        (encoded * 255.0).round().clamp(0.0, 255.0) as u8
-    };
 
-    for pixel in image.pixels.iter() {
-        let a = pixel.a.to_f32();
-        let mut r = pixel.r.to_f32();
-        let mut g = pixel.g.to_f32();
-        let mut b = pixel.b.to_f32();
-        
-        // Unpremultiply alpha for color space conversion
-        if a > 0.0 {
-            let inv_a = 1.0 / a;
-            r *= inv_a;
-            g *= inv_a;
-            b *= inv_a;
-        }
-        
-        // Convert ACEScg -> Linear sRGB
-        let linear = matrix.mul_vec([r, g, b]);
-        
-        out.push(encode(linear[0]));
-        out.push(encode(linear[1]));
-        out.push(encode(linear[2]));
-        out.push((a * 255.0).round().clamp(0.0, 255.0) as u8);
+        let linear = conv.matrix().mul_vec([r, g, b]);
+
+        out.push((conv.encode_fast(linear[0]) * 255.0).round() as u8);
+        out.push((conv.encode_fast(linear[1]) * 255.0).round() as u8);
+        out.push((conv.encode_fast(linear[2]) * 255.0).round() as u8);
+        out.push((a.clamp(0.0, 1.0) * 255.0).round() as u8);
     }
-    
     out
 }
 
 // ---------------------------------------------------------------------------
-// Internal Helpers
+// Per-type conversion helpers
 // ---------------------------------------------------------------------------
 
-/// Helper to construct a typed ACEScg image struct
+fn convert_u8(
+    data: &[u8],
+    pixel_count: usize,
+    has_alpha: bool,
+    conv: &ColorConversion,
+) -> Result<Vec<Rgba<f16>>, Error> {
+    let stride = if has_alpha { 4 } else { 3 };
+    let mut out = Vec::with_capacity(pixel_count);
+
+    for chunk in data.chunks_exact(stride) {
+        let rgb = conv.decode_u8_to_linear(chunk[0], chunk[1], chunk[2]);
+        let a   = if has_alpha { chunk[3] as f32 / 255.0 } else { 1.0 };
+        out.push(pack_rgba(rgb, a));
+    }
+    Ok(out)
+}
+
+fn convert_u16(
+    data: &[u8],
+    pixel_count: usize,
+    has_alpha: bool,
+    conv: &ColorConversion,
+) -> Result<Vec<Rgba<f16>>, Error> {
+    let stride = if has_alpha { 4 } else { 3 };
+    let mut out = Vec::with_capacity(pixel_count);
+
+    // Parse big-endian u16 pairs manually (avoids bytemuck alignment requirements).
+    let samples: Vec<u16> = data
+        .chunks_exact(2)
+        .map(|c| u16::from_be_bytes([c[0], c[1]]))
+        .collect();
+
+    for chunk in samples.chunks_exact(stride) {
+        let rgb = conv.decode_u16_to_linear(chunk[0], chunk[1], chunk[2]);
+        let a   = if has_alpha { chunk[3] as f32 / 65535.0 } else { 1.0 };
+        out.push(pack_rgba(rgb, a));
+    }
+    Ok(out)
+}
+
+fn convert_f32(
+    data: &[u8],
+    pixel_count: usize,
+    has_alpha: bool,
+    conv: &ColorConversion,
+) -> Result<Vec<Rgba<f16>>, Error> {
+    let stride = if has_alpha { 4 } else { 3 };
+    let mut out = Vec::with_capacity(pixel_count);
+
+    let samples: Vec<f32> = data
+        .chunks_exact(4)
+        .map(|c| f32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+
+    for chunk in samples.chunks_exact(stride) {
+        let rgb = conv.decode_to_linear([chunk[0], chunk[1], chunk[2]]);
+        let a   = if has_alpha { chunk[3].clamp(0.0, 1.0) } else { 1.0 };
+        out.push(pack_rgba(rgb, a));
+    }
+    Ok(out)
+}
+
+fn convert_f16(
+    data: &[u8],
+    pixel_count: usize,
+    has_alpha: bool,
+    conv: &ColorConversion,
+) -> Result<Vec<Rgba<f16>>, Error> {
+    let stride = if has_alpha { 4 } else { 3 };
+    let mut out = Vec::with_capacity(pixel_count);
+
+    let samples: Vec<f32> = data
+        .chunks_exact(2)
+        .map(|c| f16::from_bits(u16::from_be_bytes([c[0], c[1]])).to_f32())
+        .collect();
+
+    for chunk in samples.chunks_exact(stride) {
+        let rgb = conv.decode_to_linear([chunk[0], chunk[1], chunk[2]]);
+        let a   = if has_alpha { chunk[3].clamp(0.0, 1.0) } else { 1.0 };
+        out.push(pack_rgba(rgb, a));
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn pack_rgba(rgb: [f32; 3], a: f32) -> Rgba<f16> {
+    Rgba {
+        r: f16::from_f32(rgb[0] * a),
+        g: f16::from_f32(rgb[1] * a),
+        b: f16::from_f32(rgb[2] * a),
+        a: f16::from_f32(a),
+    }
+}
+
 fn make_acescg_image(width: u32, height: u32, pixels: Vec<Rgba<f16>>) -> TypedImage<Rgba<f16>> {
     TypedImage {
         width,
         height,
         pixels,
         color_space: ColorSpace::ACES_CG,
-        alpha_mode: AlphaMode::Premultiplied,
+        alpha_mode:  AlphaMode::Premultiplied,
     }
 }
 
-/// Generic loop to process chunks of raw bytes into ACEScg premultiplied pixels
-fn process_chunks<T: bytemuck::Pod + Copy>(
-    raw: &RawImage,
-    has_alpha: bool,
-    matrix: Matrix3x3,
-    mut decode_rgb: impl FnMut(T) -> f32,
-    mut decode_alpha: impl FnMut(T) -> f32,
-) -> Result<Vec<Rgba<f16>>, Error> {
-    let mut pixels = Vec::with_capacity(raw.pixel_count());
-    let channels = if has_alpha { 4 } else { 3 };
-    let data = bytemuck::cast_slice::<u8, T>(&raw.data);
-    
-    for chunk in data.chunks_exact(channels) {
-        // Decode color channels
-        let r = decode_rgb(chunk[0]);
-        let g = decode_rgb(chunk[1]);
-        let b = decode_rgb(chunk[2]);
-        
-        // Decode alpha
-        let a = if has_alpha { decode_alpha(chunk[3]) } else { 1.0 };
-        
-        // Matrix transform into ACEScg and premultiply
-        let mut linear = matrix.mul_vec([r, g, b]);
-        linear[0] *= a;
-        linear[1] *= a;
-        linear[2] *= a;
-        
-        pixels.push(Rgba {
-            r: f16::from_f32(linear[0]),
-            g: f16::from_f32(linear[1]),
-            b: f16::from_f32(linear[2]),
-            a: f16::from_f32(a),
-        });
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::image::{RawImage, SampleType, ChannelLayoutKind, SampleLayout, AlphaMode};
+    use crate::assert_approx_eq;
+
+    #[test]
+    fn u8_rgb_roundtrip() {
+        let raw = RawImage::new(
+            1, 1,
+            SampleType::U8, ChannelLayoutKind::Rgb, SampleLayout::Interleaved,
+            ColorSpace::SRGB, AlphaMode::Opaque,
+            vec![255, 128, 0],
+        ).unwrap();
+        let typed = convert_raw_to_typed(raw).unwrap();
+        assert_eq!(typed.width, 1);
+        assert_eq!(typed.height, 1);
+        assert_eq!(typed.pixels.len(), 1);
+        assert!(typed.pixels[0].a.to_f32() > 0.99); // opaque
     }
-    
-    Ok(pixels)
-}
 
-/// Fallback pipeline for formats not covered by the fast paths
-fn generic_pipeline(raw: RawImage) -> Result<TypedImage<Rgba<f16>>, Error> {
-    Err(Error::invalid_param(format!(
-        "Generic pipeline not fully implemented for format: {:?}",
-        raw.sample_type
-    )))
-}
+    #[test]
+    fn u8_rgba_alpha_premultiplied() {
+        let raw = RawImage::new(
+            1, 1,
+            SampleType::U8, ChannelLayoutKind::Rgba, SampleLayout::Interleaved,
+            ColorSpace::SRGB, AlphaMode::Straight,
+            vec![255, 0, 0, 128], // red, 50% alpha
+        ).unwrap();
+        let typed = convert_raw_to_typed(raw).unwrap();
+        let px = typed.pixels[0];
+        let a = px.a.to_f32();
+        assert_approx_eq!(a, 128.0 / 255.0, 1e-3);
+        // Premultiplied: r should be ≤ a (in linear space, red * a)
+        assert!(px.r.to_f32() <= a + 0.01);
+    }
 
+    #[test]
+    fn any_colorspace_works() {
+        // DCI-P3 (Gamma26) should work without panicking.
+        let raw = RawImage::new(
+            1, 1,
+            SampleType::U8, ChannelLayoutKind::Rgb, SampleLayout::Interleaved,
+            ColorSpace::DCI_P3, AlphaMode::Opaque,
+            vec![200, 100, 50],
+        ).unwrap();
+        let result = convert_raw_to_typed(raw);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn acescg_to_srgb_roundtrip() {
+        use crate::color::ColorSpace;
+        // A linear mid-gray in ACEScg should come back as roughly 0.5 sRGB.
+        let raw = RawImage::new(
+            1, 1,
+            SampleType::U8, ChannelLayoutKind::Rgb, SampleLayout::Interleaved,
+            ColorSpace::SRGB, AlphaMode::Opaque,
+            vec![128, 128, 128],
+        ).unwrap();
+        let typed = convert_raw_to_typed(raw).unwrap();
+        let srgb = convert_acescg_premul_to_srgb_u8(&typed);
+        // Round-trip through different primaries (SRGB→ACEScg→SRGB) won't be bit-exact
+        // but should be close to 128.
+        assert!((srgb[0] as i32 - 128).abs() < 5);
+    }
+}

@@ -1,7 +1,7 @@
 //! Alpha premultiplication and unpremultiplication.
 
 use crate::error::Error;
-use crate::image::{AlphaMode, ChannelLayoutKind};
+use crate::image::ChannelLayoutKind;
 
 /// Multiplies color channels by alpha (converts straight → premultiplied).
 ///
@@ -84,36 +84,6 @@ pub fn unpremultiply(
     }
 }
 
-/// Converts between alpha modes in‑place.
-///
-/// If `from` and `to` are the same, does nothing.
-/// Returns `Err` if conversion is impossible (e.g., unpremultiply on opaque).
-#[allow(dead_code)]
-pub fn convert_alpha_mode(
-    data: &mut [f32],
-    channel_layout: &ChannelLayoutKind,
-    from: AlphaMode,
-    to: AlphaMode,
-) -> Result<(), Error> {
-    if from == to {
-        return Ok(());
-    }
-
-    match (from, to) {
-        (AlphaMode::Straight, AlphaMode::Premultiplied) => premultiply(data, channel_layout),
-        (AlphaMode::Premultiplied, AlphaMode::Straight) => unpremultiply(data, channel_layout),
-        (AlphaMode::Opaque, AlphaMode::Straight) | (AlphaMode::Opaque, AlphaMode::Premultiplied) => {
-            // Opaque means α = 1 everywhere; we need to add an alpha channel.
-            // This function expects the layout already has alpha (should be validated earlier).
-            Ok(())
-        }
-        (AlphaMode::Straight, AlphaMode::Opaque) | (AlphaMode::Premultiplied, AlphaMode::Opaque) => {
-            // Removing alpha is a lossy operation; not supported in Phase 1.
-            Err(Error::invalid_param("cannot convert to opaque without background compositing"))
-        }
-        _ => Err(Error::invalid_param("unsupported alpha mode conversion")),
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -181,33 +151,4 @@ mod tests {
         assert_eq!(data[3], 0.0);
     }
 
-    #[test]
-    fn convert_alpha_mode_straight_to_premul() {
-        let mut data = vec![1.0, 0.5, 0.2, 0.5];
-        convert_alpha_mode(
-            &mut data,
-            &ChannelLayoutKind::Rgba,
-            AlphaMode::Straight,
-            AlphaMode::Premultiplied,
-        ).unwrap();
-        assert_eq!(data[0], 0.5);
-        assert_eq!(data[1], 0.25);
-        assert_eq!(data[2], 0.1);
-        assert_eq!(data[3], 0.5);
-    }
-
-    #[test]
-    fn convert_alpha_mode_premul_to_straight() {
-        let mut data = vec![0.5, 0.25, 0.1, 0.5];
-        convert_alpha_mode(
-            &mut data,
-            &ChannelLayoutKind::Rgba,
-            AlphaMode::Premultiplied,
-            AlphaMode::Straight,
-        ).unwrap();
-        assert_eq!(data[0], 1.0);
-        assert_eq!(data[1], 0.5);
-        assert_eq!(data[2], 0.2);
-        assert_eq!(data[3], 0.5);
-    }
 }
