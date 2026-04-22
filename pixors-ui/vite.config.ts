@@ -10,5 +10,8 @@ export default defineConfig({
         fs: {
             allow: ['..']
         }
+    },
+    build: {
+        target: 'es2022'
     }
 })

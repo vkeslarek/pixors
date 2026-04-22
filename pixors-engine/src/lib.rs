@@ -10,7 +10,7 @@ pub mod image;
 pub mod convert;
 pub mod io;
 pub mod utils;
-pub mod viewport;
+pub mod server;
 
 pub use color::ColorSpace;
 pub use image::{AlphaMode, RawImage, TypedImage};
