@@ -8,6 +8,8 @@
 //! - [`viewport`] — [`PixorsViewport`] wasm-bindgen struct and all public JS-facing methods
 
 mod camera;
+mod context;
+mod error;
 mod pipeline;
 mod viewport;
 

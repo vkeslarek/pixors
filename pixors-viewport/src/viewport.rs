@@ -10,6 +10,8 @@ use glam::Vec2;
 use bytemuck;
 
 use crate::camera::Camera;
+use crate::context;
+use crate::error::ViewportError;
 use crate::pipeline;
 
 // ── Struct ────────────────────────────────────────────────────────────────────
@@ -50,13 +52,13 @@ impl PixorsViewport {
     /// Async because wgpu adapter/device requests are async in the browser.
     /// Fails if WebGL is unavailable (disabled by the user or the browser).
     #[wasm_bindgen]
-    pub async fn create(canvas_id: &str) -> Result<PixorsViewport, JsValue> {
+    pub async fn create(canvas_id: &str) -> Result<PixorsViewport, ViewportError> {
         console_error_panic_hook::set_once();
 
-        let canvas = Self::get_canvas(canvas_id)?;
+        let canvas = context::get_canvas(canvas_id)?;
         let (cw, ch) = (canvas.width(), canvas.height());
 
-        let (surface, device, queue, config) = Self::init_gpu(canvas, cw, ch).await?;
+        let (surface, device, queue, config) = context::init_gpu(canvas, cw, ch).await?;
 
         let sampler = pipeline::create_sampler(&device);
         let bind_group_layout = pipeline::create_bind_group_layout(&device);
@@ -85,7 +87,7 @@ impl PixorsViewport {
     /// Must be called before the first `render`; otherwise the viewport shows
     /// only the background grey.
     #[wasm_bindgen]
-    pub fn update_texture(&mut self, width: u32, height: u32, data: &[u8]) -> Result<(), JsValue> {
+    pub fn update_texture(&mut self, width: u32, height: u32, data: &[u8]) -> Result<(), ViewportError> {
         let texture = self.upload_texture(width, height, data);
         self.set_texture(texture, width, height)?;
         Ok(())
@@ -94,7 +96,15 @@ impl PixorsViewport {
     /// Create an empty texture of the given dimensions (RGBA8 sRGB).
     /// The texture is initially zeroed (black transparent).
     #[wasm_bindgen]
-    pub fn create_empty_texture(&mut self, width: u32, height: u32) -> Result<(), JsValue> {
+    pub fn create_empty_texture(&mut self, width: u32, height: u32) -> Result<(), ViewportError> {
+        let max_dim = self.device.limits().max_texture_dimension_2d;
+        
+        if width > max_dim || height > max_dim {
+            return Err(ViewportError::TextureDimensionExceeded {
+                width, height, max_dim
+            });
+        }
+        
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("image_texture"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -106,24 +116,27 @@ impl PixorsViewport {
             view_formats: &[],
         });
         self.set_texture(texture, width, height)?;
+        web_sys::console::log_1(&"Texture created successfully".into());
         Ok(())
     }
 
     /// Write a tile (sub‑region) of RGBA8 pixel data into the current texture.
     /// The texture must already exist (call `create_empty_texture` or `update_texture` first).
+    /// `_mip_level` is accepted for API compatibility but ignored — all data is written
+    /// to GPU mip level 0 since the engine handles MIP computation server-side.
     #[wasm_bindgen]
-    pub fn write_tile(&mut self, x: u32, y: u32, width: u32, height: u32, data: &[u8]) -> Result<(), JsValue> {
+    pub fn write_tile(&mut self, x: u32, y: u32, width: u32, height: u32, _mip_level: u32, data: &[u8]) -> Result<(), ViewportError> {
         let Some(texture) = &self._texture else {
-            return Err(JsValue::from_str("No texture created yet"));
+            return Err(ViewportError::NoTextureCreated);
         };
         
         // Validate data size
         let expected_bytes = (width * height) as usize * 4;
         if data.len() != expected_bytes {
-            return Err(JsValue::from_str(&format!(
-                "Tile data size mismatch: expected {} bytes, got {}",
-                expected_bytes, data.len()
-            )));
+            return Err(ViewportError::TileDataSizeMismatch {
+                expected: expected_bytes,
+                got: data.len(),
+            });
         }
         
         self.queue.write_texture(
@@ -170,9 +183,9 @@ impl PixorsViewport {
 
     /// Draw one frame to the canvas.
     #[wasm_bindgen]
-    pub fn render(&mut self) -> Result<(), JsValue> {
+    pub fn render(&mut self) -> Result<(), ViewportError> {
         let output = self.surface.get_current_texture()
-            .map_err(|e| JsValue::from_str(&format!("surface texture: {e:?}")))?;
+            .map_err(|e| ViewportError::Internal(format!("surface texture: {e:?}")))?;
 
         let frame_view = output.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -201,78 +214,6 @@ impl PixorsViewport {
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 impl PixorsViewport {
-    /// Look up a `<canvas>` element in the DOM by ID.
-    fn get_canvas(canvas_id: &str) -> Result<HtmlCanvasElement, JsValue> {
-        web_sys::window()
-            .expect("no global window")
-            .document()
-            .expect("no document on window")
-            .get_element_by_id(canvas_id)
-            .ok_or_else(|| JsValue::from_str(&format!("canvas #{canvas_id} not found")))?
-            .dyn_into::<HtmlCanvasElement>()
-            .map_err(|_| JsValue::from_str(&format!("#{canvas_id} is not a <canvas>")))
-    }
-
-    /// Create wgpu surface, adapter, device, queue, and configure the surface.
-    async fn init_gpu(
-        canvas: HtmlCanvasElement,
-        width: u32,
-        height: u32,
-    ) -> Result<(wgpu::Surface<'static>, wgpu::Device, wgpu::Queue, wgpu::SurfaceConfiguration), JsValue> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL, // WebGL — widest browser support
-            ..Default::default()
-        });
-
-        let surface = instance
-            .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
-            .map_err(|e| JsValue::from_str(&format!("surface: {e:?}")))?;
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| JsValue::from_str(
-                "No WebGL adapter found. Enable hardware acceleration in your browser settings."
-            ))?;
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: adapter.limits(),
-                },
-                None,
-            )
-            .await
-            .map_err(|e| JsValue::from_str(&format!("device: {e:?}")))?;
-
-        let caps = surface.get_capabilities(&adapter);
-        let format = caps.formats.iter().copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
-
-        web_sys::console::log_1(&format!("Surface format: {:?} | sRGB: {}", format, format.is_srgb()).into());
-        web_sys::console::log_1(&format!("Alpha modes: {:?}", caps.alpha_modes).into());
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width,
-            height,
-            present_mode: caps.present_modes[0],
-            alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
-
-        Ok((surface, device, queue, config))
-    }
 
     /// Allocate the uniform buffer with the initial camera state.
     fn create_camera_buffer(device: &wgpu::Device, camera: &Camera) -> wgpu::Buffer {
@@ -303,7 +244,7 @@ impl PixorsViewport {
     }
 
     /// Set the current texture and update bind group & camera.
-    fn set_texture(&mut self, texture: wgpu::Texture, width: u32, height: u32) -> Result<(), JsValue> {
+    fn set_texture(&mut self, texture: wgpu::Texture, width: u32, height: u32) -> Result<(), ViewportError> {
         let view = texture.create_view(&Default::default());
 
         self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {

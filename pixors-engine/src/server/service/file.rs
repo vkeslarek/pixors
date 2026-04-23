@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::image::TypedImage;
 use crate::io::png::load_png;
 use crate::pixel::Rgba;
+use crate::storage::PngSource;
 use half::f16;
 use std::path::Path;
 
@@ -25,5 +26,10 @@ impl FileService {
         })
         .await
         .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+    }
+
+    /// Opens an image as a tile-level decoder (lazy loading).
+    pub async fn open_image_source(&self, path: impl AsRef<Path>) -> Result<PngSource, Error> {
+        PngSource::open(path).await
     }
 }

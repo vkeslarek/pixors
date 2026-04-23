@@ -2,6 +2,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
+const ENGINE_BASE = "http://127.0.0.1:8080";
+const ENGINE_WS_BASE = "ws://127.0.0.1:8080/ws";
 // Initialize the MCP Server
 const server = new Server({
     name: "pixors-mcp-bridge",
@@ -11,86 +13,126 @@ const server = new Server({
         tools: {},
     },
 });
-// State
-let ws = null;
-let connectionPromise = null;
-// Ensure WebSocket connection to engine
-async function ensureConnection() {
-    if (ws && ws.readyState === WebSocket.OPEN)
-        return;
-    if (connectionPromise)
-        return connectionPromise;
-    connectionPromise = new Promise((resolve, reject) => {
-        ws = new WebSocket("ws://127.0.0.1:8080/ws");
+let activeWsConnections = new Map();
+// Helper to ensure WS connection for a tab
+function getOrCreateWs(tabId) {
+    if (activeWsConnections.has(tabId)) {
+        const ws = activeWsConnections.get(tabId);
+        if (ws.readyState === WebSocket.OPEN)
+            return Promise.resolve(ws);
+    }
+    return new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${ENGINE_WS_BASE}?tab_id=${tabId}`);
         ws.on("open", () => {
-            resolve();
+            activeWsConnections.set(tabId, ws);
+            resolve(ws);
         });
         ws.on("error", (err) => {
-            // Don't log to stdout as it breaks MCP Stdio protocol
             reject(err);
         });
         ws.on("close", () => {
-            ws = null;
-            connectionPromise = null;
+            activeWsConnections.delete(tabId);
         });
     });
-    return connectionPromise;
 }
-// Request helpers
-async function sendCommandAndWait(command) {
-    await ensureConnection();
-    return new Promise((resolve, reject) => {
-        if (!ws)
-            return reject(new Error("No connection"));
-        const handler = (data) => {
-            try {
-                const msg = JSON.parse(data.toString());
-                if (msg.type === "error") {
-                    ws?.removeListener("message", handler);
-                    reject(new Error(msg.message));
-                }
-                else if (msg.type === "image_loaded" || msg.type === "image_info") {
-                    ws?.removeListener("message", handler);
-                    resolve(msg);
-                }
-            }
-            catch (e) {
-                // Ignore binary
-            }
-        };
-        ws.on("message", handler);
-        ws.send(JSON.stringify(command));
-        // Timeout
-        setTimeout(() => {
-            ws?.removeListener("message", handler);
-            reject(new Error("Request timed out"));
-        }, 5000);
+// REST helpers
+async function createTab() {
+    const res = await fetch(`${ENGINE_BASE}/api/tabs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
     });
+    if (!res.ok)
+        throw new Error(await res.text());
+    return await res.json();
+}
+async function closeTab(tabId) {
+    const res = await fetch(`${ENGINE_BASE}/api/tabs/${tabId}`, {
+        method: "DELETE"
+    });
+    if (!res.ok)
+        throw new Error(await res.text());
+    const ws = activeWsConnections.get(tabId);
+    if (ws) {
+        ws.close();
+        activeWsConnections.delete(tabId);
+    }
+    return { success: true };
+}
+async function openImage(tabId, path) {
+    const res = await fetch(`${ENGINE_BASE}/api/tabs/${tabId}/open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path })
+    });
+    if (!res.ok)
+        throw new Error(await res.text());
+    return await res.json();
+}
+async function getState() {
+    const res = await fetch(`${ENGINE_BASE}/api/state`);
+    if (!res.ok)
+        throw new Error(await res.text());
+    return await res.json();
 }
 // List Tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
         tools: [
             {
-                name: "pixors_load_image",
-                description: "Load an image file into the Pixors Engine",
+                name: "pixors_create_tab",
+                description: "Create a new editing tab",
+                inputSchema: { type: "object", properties: {} },
+            },
+            {
+                name: "pixors_close_tab",
+                description: "Close an existing tab and free its resources",
                 inputSchema: {
                     type: "object",
                     properties: {
-                        path: {
-                            type: "string",
-                            description: "Absolute path to the image",
-                        },
+                        tab_id: { type: "string" },
                     },
-                    required: ["path"],
+                    required: ["tab_id"],
                 },
             },
             {
-                name: "pixors_get_info",
-                description: "Get information about the currently loaded image",
+                name: "pixors_open_image",
+                description: "Load an image file into a specific tab",
                 inputSchema: {
                     type: "object",
-                    properties: {},
+                    properties: {
+                        tab_id: { type: "string" },
+                        path: { type: "string", description: "Absolute path to the image" },
+                    },
+                    required: ["tab_id", "path"],
+                },
+            },
+            {
+                name: "pixors_get_state",
+                description: "Get full application state snapshot",
+                inputSchema: { type: "object", properties: {} },
+            },
+            {
+                name: "pixors_activate_tab",
+                description: "Switch active tab in the UI",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        tab_id: { type: "string" },
+                    },
+                    required: ["tab_id"],
+                },
+            },
+            {
+                name: "pixors_select_tool",
+                description: "Change active editing tool",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        tab_id: { type: "string" },
+                        tool: { type: "string" },
+                    },
+                    required: ["tab_id", "tool"],
                 },
             },
         ],
@@ -100,23 +142,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     try {
-        if (name === "pixors_load_image") {
-            const path = args.path;
-            const result = await sendCommandAndWait({
-                type: "load_image",
-                path,
-            });
-            return {
-                content: [{ type: "text", text: `Success: ${JSON.stringify(result)}` }],
-            };
+        if (name === "pixors_create_tab") {
+            const result = await createTab();
+            return { content: [{ type: "text", text: `Success: ${JSON.stringify(result)}` }] };
         }
-        if (name === "pixors_get_info") {
-            const result = await sendCommandAndWait({
-                type: "get_image_info",
-            });
-            return {
-                content: [{ type: "text", text: `Info: ${JSON.stringify(result)}` }],
-            };
+        if (name === "pixors_close_tab") {
+            const result = await closeTab(args.tab_id);
+            return { content: [{ type: "text", text: `Success: ${JSON.stringify(result)}` }] };
+        }
+        if (name === "pixors_open_image") {
+            const result = await openImage(args.tab_id, args.path);
+            return { content: [{ type: "text", text: `Success: ${JSON.stringify(result)}` }] };
+        }
+        if (name === "pixors_get_state") {
+            const result = await getState();
+            return { content: [{ type: "text", text: `State: ${JSON.stringify(result)}` }] };
+        }
+        if (name === "pixors_activate_tab") {
+            const tabId = args.tab_id;
+            const ws = await getOrCreateWs(tabId);
+            ws.send(JSON.stringify({ type: "ActivateTab", tab_id: tabId }));
+            return { content: [{ type: "text", text: `Success: Tab activated` }] };
+        }
+        if (name === "pixors_select_tool") {
+            const tabId = args.tab_id;
+            const ws = await getOrCreateWs(tabId);
+            ws.send(JSON.stringify({ type: "SelectTool", tool: args.tool }));
+            return { content: [{ type: "text", text: `Success: Tool selected` }] };
         }
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -133,7 +185,6 @@ async function run() {
     await server.connect(transport);
 }
 run().catch((e) => {
-    // Silent error, stderror is okay but stdout must be clean for MCP
     process.stderr.write(`Error: ${e.message}\n`);
 });
 //# sourceMappingURL=index.js.map

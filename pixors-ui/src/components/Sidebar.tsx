@@ -50,7 +50,7 @@ function PropertiesPanel({ open, onToggle, activeLayer, onOpacityChange }: Prope
       {open && (
         <div className="panel-body" style={{padding:'6px 0'}}>
           <div className="prop-grid">
-            {[['W','900','px'],['H','600','px'],['X','0','px'],['Y','0','px']].map(([l,v,u])=>(
+             {[['W','900','px'],['H','600','px'],['X','0','px'],['Y','0','px']].map(([l,v,_u])=>(
               <div key={l} className="prop-field">
                 <span className="prop-field-label">{l}</span>
                 <input className="prop-input" defaultValue={v} />
@@ -106,7 +106,6 @@ interface AdjustmentsPanelProps {
 import { RotateCcw } from 'lucide-react'
 
 function AdjustmentsPanel({ open, onToggle, adjustments, onAdjChange, onReset }: AdjustmentsPanelProps) {
-  const pct = (adj: Adjustment) => ((adj.value - adj.min) / (adj.max - adj.min)) * 100
   return (
     <div className="panel expandable" style={{flex: open ? '1 1 0' : '0 0 auto'}}>
       <div className="panel-header" onClick={onToggle}>

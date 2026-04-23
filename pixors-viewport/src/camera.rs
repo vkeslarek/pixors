@@ -32,6 +32,10 @@ pub(crate) struct CameraUniform {
     pub uv_offset: [f32; 2],
     /// How much texture UV space the full screen covers.
     pub uv_scale: [f32; 2],
+    /// Image dimensions in pixels.
+    pub image_size: [f32; 2],
+    /// Padding for 16-byte alignment.
+    pub _pad: [f32; 2],
 }
 
 // ── Camera ────────────────────────────────────────────────────────────────────
@@ -94,6 +98,8 @@ impl Camera {
         CameraUniform {
             uv_offset: offset.to_array(),
             uv_scale: scale.to_array(),
+            image_size: self.image_size.to_array(),
+            _pad: [0.0; 2],
         }
     }
 

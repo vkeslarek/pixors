@@ -11,6 +11,7 @@ pub mod convert;
 pub mod io;
 pub mod utils;
 pub mod server;
+pub mod storage;
 
 pub use color::ColorSpace;
 pub use image::{AlphaMode, RawImage, TypedImage};

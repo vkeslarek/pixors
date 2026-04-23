@@ -87,6 +87,7 @@ impl ColorSpace {
 ///     let rgb = conv.decode_u8_to_linear(chunk[0], chunk[1], chunk[2]);
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ColorConversion {
     src:    ColorSpace,
     dst:    ColorSpace,

@@ -554,6 +554,110 @@ MCP to "see" the viewport. Test with stdio pipe against running engine.
 
 ---
 
+## 9.1 Execution Status (2026-04-23)
+
+Use this section as a handoff checklist for another model/agent.
+
+### Already implemented
+
+- [x] **Step 1 – Event Bus (engine):** `EngineEvent`/`EngineCommand` created, WS reader/writer tasks wired.
+- [x] **Step 2 – API Routes (engine):** `/api/tabs`, `/api/tabs/:id/open`, `/api/state` implemented.
+- [x] **Step 3 – Storage Module (engine):** `ImageSource`, `PngSource`, `TileStore`, `TileCache` exist.
+- [x] **Step 4 – Tab refactor (engine):** `TabState` owns source/store/grid and cleanup on drop.
+- [~] **Step 5 – SIMD color conversion (engine):** SIMD x4 matrix path integrated in conversion hot path (`wide::f32x4`), but AVX2/f16c x8 path + benchmark target still pending.
+- [~] **Step 6 – MIP Pyramid (engine):** metadata structures added (`MipPyramid`, `MipLevel`, `mip_level_for_zoom`) and attached to tab state; lazy tile-store-backed mip generation is still pending.
+- [~] **Step 7 – Viewport tile streaming (engine):** `viewport_update` streams visible tiles, `sent_tiles` dedupe added, WS tile transfer switched to JSON metadata + binary payload. `tiles_dirty` invalidation flow still incomplete.
+- [ ] **Step 8 – MCP Update (`pixors-mcp`):** not implemented yet.
+- [x] **Step 9 – Frontend event-driven tabs (`pixors-ui`):** central event hook + command/event round-trip for tab lifecycle and open file.
+- [x] **Step 10 – Viewport navigation (`pixors-ui`):** pan/zoom + fit/100% shortcuts implemented.
+- [ ] **Step 11 – Pixel grid (`pixors-viewport`):** not implemented yet.
+
+---
+
+## 9.2 Detailed Handoff – Step 6 (MIP Pyramid)
+
+> **User priority note:** The “integrate mip level selection in runtime viewport path” subtask was explicitly deprioritized in this handoff. Focus on lazy generation and MCP work first.
+
+### What is already done
+
+- `pixors-engine/src/image/mip.rs` exists with:
+  - `MipPyramid` metadata builder,
+  - `MipLevel` structure,
+  - `mip_level_for_zoom(zoom)` helper,
+  - placeholder `generate_mip_level_simd(src_width, src_height)` dimension reducer.
+- `pixors-engine/src/image/mod.rs` exports the mip module.
+- `pixors-engine/src/server/service/tab.rs` stores `mip_pyramid: Option<MipPyramid>` and initializes it on image open.
+
+### What still needs to be implemented (for another model)
+
+- [ ] **Implement real lazy mip generation backed by tile stores** (not only metadata):
+  - create one `TileStore` per mip level,
+  - generate level `N+1` only when first needed,
+  - persist generated level tiles to disk tier, cache in RAM via `TileCache`.
+- [ ] **Implement tile-level 2×2 box filtering from source tiles**:
+  - correct border handling for odd dimensions,
+  - deterministic and testable output.
+- [ ] **Replace placeholder generator**:
+  - current `generate_mip_level_simd` only computes output dimensions;
+  - should produce actual tile pixel content.
+- [ ] **Add tests for mip generation correctness**:
+  - dimensions for each level,
+  - pixel parity against scalar reference on small fixtures,
+  - lazy behavior: verify levels are generated on demand only.
+- [ ] **Optional performance enhancement**:
+  - AVX2/SIMD path for 2×2 box filter (keep scalar fallback).
+
+### Suggested files to modify for Step 6 completion
+
+- `pixors-engine/src/image/mip.rs`
+- `pixors-engine/src/server/service/tab.rs`
+- `pixors-engine/src/storage/tile_store.rs`
+- `pixors-engine/src/storage/tile_cache.rs`
+- (if needed) new module under `pixors-engine/src/image/` for mip generation kernels.
+
+---
+
+## 9.3 Detailed Handoff – Step 8 (MCP Bridge Update)
+
+### Current status
+
+- [ ] `pixors-mcp` is **not yet migrated** to the tab/event-bus protocol.
+- [ ] No end-to-end stdio test for tab lifecycle + screenshot exists yet.
+
+### Required work (for another model)
+
+- [ ] **Migrate MCP tools to tab-based REST/WS contracts**:
+  - `pixors_create_tab` → `POST /api/tabs`
+  - `pixors_open_image` → `POST /api/tabs/:id/open`
+  - `pixors_close_tab` → `DELETE /api/tabs/:id`
+  - `pixors_activate_tab` → WS `ActivateTab`
+  - `pixors_select_tool` → WS `SelectTool`
+  - `pixors_get_state` → `GET /api/state`
+  - `pixors_screenshot` → WS `Screenshot` (or temporary REST endpoint if needed)
+- [ ] **Implement MCP-side event listener** for engine events:
+  - keep local MCP state synchronized from events only,
+  - do not mutate local state on command send.
+- [ ] **Define screenshot transport contract**:
+  - expected payload: base64 PNG + metadata (tab_id, width, height),
+  - handle large payload safely over stdio.
+- [ ] **Add robust connection management**:
+  - reconnect WS,
+  - backoff + clear errors,
+  - no duplicate subscriptions after reconnect.
+- [ ] **Add integration tests (stdio + running engine)**:
+  - create → open image → get state → screenshot → close,
+  - assert events observed in order,
+  - assert MCP and UI stay in sync when MCP triggers commands.
+
+### Suggested files/modules to touch in `pixors-mcp`
+
+- MCP transport/client layer (HTTP + WS wiring)
+- Tool handlers for tab lifecycle and screenshot
+- MCP event dispatcher/state sync module
+- Integration test harness (stdio scenario runner)
+
+---
+
 ## 10. Dependencies
 
 ```toml
@@ -566,13 +670,12 @@ tempfile = "3"
 
 ## 11. Success Criteria
 
-- [ ] Opening a 50 MP PNG loads only visible tiles to RAM
-- [ ] Closing a tab frees ALL resources (RAM, temp files, WS)
-- [ ] Pan/zoom smooth at 60 fps
+- [~] Opening a 50 MP PNG loads only visible tiles to RAM
+- [~] Closing a tab frees ALL resources (RAM, temp files, WS)
+- [~] Pan/zoom smooth at 60 fps
 - [ ] Pixel grid appears at high zoom
 - [ ] MCP can create tabs, open images, switch tools, take screenshots
 - [ ] MCP actions reflected in UI in real-time (event-driven)
-- [ ] UI actions round-trip through engine (no direct state mutation)
-- [ ] SIMD tile extraction ≥3× faster than scalar
-- [ ] `cargo test` passes, `cargo check` clean
-
+- [x] UI actions round-trip through engine (no direct state mutation)
+- [~] SIMD tile extraction ≥3× faster than scalar
+- [~] `cargo test` passes, `cargo check` clean

@@ -1,6 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { FolderOpen, Download, Plus, X } from 'lucide-react'
-import type { Tab } from '../types'
+import type { UITab as Tab } from '../engine/types'
 
 const MENU_ITEMS = [
   { label: 'File', items: ['New', 'Open...', 'Save', 'Save As...', 'Export...', 'Close'] },
@@ -32,7 +32,16 @@ export function MenuBar({ activeTabName, onOpenFile, onExport }: MenuBarProps) {
           <DropdownMenu.Portal>
             <DropdownMenu.Content className="dropdown-content" sideOffset={4}>
               {menu.items.map(item => (
-                <DropdownMenu.Item key={item} className="dropdown-item">{item}</DropdownMenu.Item>
+                <DropdownMenu.Item
+                  key={item}
+                  className="dropdown-item"
+                  onSelect={() => {
+                    if (menu.label === 'File' && item === 'Open...') onOpenFile()
+                    if (menu.label === 'File' && item === 'Export...') onExport()
+                  }}
+                >
+                  {item}
+                </DropdownMenu.Item>
               ))}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -50,7 +59,7 @@ export function MenuBar({ activeTabName, onOpenFile, onExport }: MenuBarProps) {
 // ── TabBar — lives inside the canvas column, not full-width ──────────────────
 interface TabBarProps {
   tabs: Tab[]
-  activeTabId: string
+  activeTabId: string | null
   onTabClick: (id: string) => void
   onTabClose: (id: string) => void
   onTabAdd: () => void

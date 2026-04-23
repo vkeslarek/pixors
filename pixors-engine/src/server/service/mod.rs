@@ -1,3 +1,3 @@
 pub mod file;
-pub mod session;
+pub mod tab;
 pub mod viewport;

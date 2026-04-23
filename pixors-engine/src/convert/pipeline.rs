@@ -8,7 +8,7 @@ use crate::color::{ColorSpace, ColorConversion};
 use crate::image::{RawImage, TypedImage, SampleType, ChannelLayoutKind, SampleLayout, AlphaMode};
 use crate::pixel::Rgba;
 use half::f16;
-use rayon::prelude::*;
+use wide::f32x4;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -59,25 +59,7 @@ pub fn convert_acescg_premul_to_srgb_u8(image: &TypedImage<Rgba<f16>>) -> Vec<u8
         .converter_to(ColorSpace::SRGB)
         .expect("ACEScg → sRGB conversion is always valid");
 
-    let mut out = Vec::with_capacity(image.pixels.len() * 4);
-
-    for px in &image.pixels {
-        let a = px.a.to_f32();
-        let (r, g, b) = if a > 0.0 {
-            let inv = 1.0 / a;
-            (px.r.to_f32() * inv, px.g.to_f32() * inv, px.b.to_f32() * inv)
-        } else {
-            (0.0, 0.0, 0.0)
-        };
-
-        let linear = conv.matrix().mul_vec([r, g, b]);
-
-        out.push((conv.encode_fast(linear[0]) * 255.0).round() as u8);
-        out.push((conv.encode_fast(linear[1]) * 255.0).round() as u8);
-        out.push((conv.encode_fast(linear[2]) * 255.0).round() as u8);
-        out.push((a.clamp(0.0, 1.0) * 255.0).round() as u8);
-    }
-    out
+    convert_acescg_premul_pixels_to_srgb_u8(&image.pixels, &conv)
 }
 
 pub fn convert_acescg_premul_region_to_srgb_u8(
@@ -90,34 +72,86 @@ pub fn convert_acescg_premul_region_to_srgb_u8(
 ) -> Vec<u8> {
     let _sw = crate::debug_stopwatch!("convert_acescg_premul_region_to_srgb_u8");
 
-    let image_width = image.width;
+    let image_width = image.width as usize;
+    let x = x as usize;
+    let y = y as usize;
+    let width = width as usize;
+    let height = height as usize;
 
-    (y..(y + height))
-        .into_par_iter()
-        .flat_map_iter(|ty| {
-            let mut row = Vec::with_capacity((width * 4) as usize);
-            for tx in x..(x + width) {
-                let idx = ty as usize * image_width as usize + tx as usize;
-                let px = &image.pixels[idx];
-                
-                let a = px.a.to_f32();
-                let (r, g, b) = if a > 0.0 {
-                    let inv = 1.0 / a;
-                    (px.r.to_f32() * inv, px.g.to_f32() * inv, px.b.to_f32() * inv)
-                } else {
-                    (0.0, 0.0, 0.0)
-                };
+    let mut out = Vec::with_capacity(width * height * 4);
+    for ty in 0..height {
+        let row_start = (y + ty) * image_width + x;
+        let row_end = row_start + width;
+        out.extend(convert_acescg_premul_pixels_to_srgb_u8(
+            &image.pixels[row_start..row_end],
+            conv,
+        ));
+    }
 
-                let linear = conv.matrix().mul_vec([r, g, b]);
+    out
+}
 
-                row.push((conv.encode_fast(linear[0]) * 255.0).round() as u8);
-                row.push((conv.encode_fast(linear[1]) * 255.0).round() as u8);
-                row.push((conv.encode_fast(linear[2]) * 255.0).round() as u8);
-                row.push((a.clamp(0.0, 1.0) * 255.0).round() as u8);
+/// Convert ACEScg premultiplied pixels to sRGB u8 RGBA.
+/// Uses SIMD x4 matrix multiplication via `wide` and scalar fallback per lane.
+pub fn convert_acescg_premul_pixels_to_srgb_u8(
+    pixels: &[Rgba<f16>],
+    conv: &ColorConversion,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pixels.len() * 4);
+
+    let chunks = pixels.chunks_exact(4);
+    let rem = chunks.remainder();
+
+    for chunk in chunks {
+        let mut r = [0.0_f32; 4];
+        let mut g = [0.0_f32; 4];
+        let mut b = [0.0_f32; 4];
+        let mut a = [0.0_f32; 4];
+
+        for (i, px) in chunk.iter().enumerate() {
+            let alpha = px.a.to_f32();
+            a[i] = alpha;
+            if alpha > 0.0 {
+                let inv = 1.0 / alpha;
+                r[i] = px.r.to_f32() * inv;
+                g[i] = px.g.to_f32() * inv;
+                b[i] = px.b.to_f32() * inv;
             }
-            row
-        })
-        .collect()
+        }
+
+        let (lr, lg, lb) = conv
+            .matrix()
+            .mul_vec_simd_x4(f32x4::from(r), f32x4::from(g), f32x4::from(b));
+
+        let lr: [f32; 4] = lr.into();
+        let lg: [f32; 4] = lg.into();
+        let lb: [f32; 4] = lb.into();
+
+        for i in 0..4 {
+            out.push((conv.encode_fast(lr[i]) * 255.0).round() as u8);
+            out.push((conv.encode_fast(lg[i]) * 255.0).round() as u8);
+            out.push((conv.encode_fast(lb[i]) * 255.0).round() as u8);
+            out.push((a[i].clamp(0.0, 1.0) * 255.0).round() as u8);
+        }
+    }
+
+    for px in rem {
+        let a = px.a.to_f32();
+        let (r, g, b) = if a > 0.0 {
+            let inv = 1.0 / a;
+            (px.r.to_f32() * inv, px.g.to_f32() * inv, px.b.to_f32() * inv)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+
+        let linear = conv.matrix().mul_vec([r, g, b]);
+        out.push((conv.encode_fast(linear[0]) * 255.0).round() as u8);
+        out.push((conv.encode_fast(linear[1]) * 255.0).round() as u8);
+        out.push((conv.encode_fast(linear[2]) * 255.0).round() as u8);
+        out.push((a.clamp(0.0, 1.0) * 255.0).round() as u8);
+    }
+
+    out
 }
 
 // ---------------------------------------------------------------------------

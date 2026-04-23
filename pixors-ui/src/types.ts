@@ -24,6 +24,8 @@ export interface Tab {
   name: string
   color: string
   modified: boolean
+  tabId?: string
+  path?: string
 }
 
 export interface MousePos {

@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::server::event_bus::EngineEvent;
 use crate::server::state::AppState;
 use crate::server::ws::handle_connection;
 use axum::{
@@ -13,23 +14,22 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use uuid::Uuid;
 
-/// Request body for creating a session.
+/// Request body for creating a tab.
 #[derive(Debug, Deserialize)]
-struct CreateSessionRequest {
+struct CreateTabRequest {
     /// Optional tile size (default: 256).
     tile_size: Option<u32>,
 }
 
-/// Response for creating a session.
+/// Response for creating a tab.
 #[derive(Debug, Serialize)]
-struct CreateSessionResponse {
-    session_id: Uuid,
+struct CreateTabResponse {
+    tab_id: Uuid,
 }
 
-/// Request body for opening a file.
+/// Request body for opening a file in a tab.
 #[derive(Debug, Deserialize)]
 struct OpenFileRequest {
-    session_id: Uuid,
     path: String,
 }
 
@@ -38,12 +38,22 @@ struct OpenFileRequest {
 struct OpenFileResponse {
     width: u32,
     height: u32,
+    tile_count: usize,
+}
+
+/// Response for tab info.
+#[derive(Debug, Serialize)]
+struct TabInfoResponse {
+    tab_id: Uuid,
+    has_image: bool,
+    width: Option<u32>,
+    height: Option<u32>,
 }
 
 /// Query parameters for WebSocket connection.
 #[derive(Debug, Deserialize)]
 struct WebSocketQuery {
-    session_id: Option<Uuid>,
+    tab_id: Option<Uuid>,
 }
 
 /// Start the WebSocket server on the given address.
@@ -56,11 +66,12 @@ pub async fn start_server(addr: &str) -> Result<(), Error> {
         .allow_headers(Any);
 
     let app = Router::new()
-        // REST API
-        .route("/api/session", post(create_session_handler))
-        .route("/api/session/:session_id", get(get_session_handler).delete(delete_session_handler))
-        .route("/api/file/open", post(open_file_handler))
-        // WebSocket
+        // REST API for tabs
+        .route("/api/tabs", post(create_tab_handler).get(list_tabs_handler))
+        .route("/api/tabs/:tab_id", get(get_tab_handler).delete(delete_tab_handler))
+        .route("/api/tabs/:tab_id/open", post(open_file_handler))
+        .route("/api/state", get(get_state_handler))
+        // WebSocket (per-tab connection)
         .route("/ws", get(websocket_handler))
         .layer(cors)
         .with_state(state);
@@ -81,63 +92,96 @@ pub async fn start_server(addr: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// Handler for creating a new session.
-async fn create_session_handler(
+/// Handler for creating a new tab.
+async fn create_tab_handler(
     State(state): State<Arc<AppState>>,
-    Json(_request): Json<CreateSessionRequest>,
+    Json(_request): Json<CreateTabRequest>,
 ) -> impl IntoResponse {
-    let session_id = state.create_session().await;
-    
-    (StatusCode::CREATED, Json(CreateSessionResponse { session_id }))
+    let tab_id = state.create_tab().await;
+
+    // Broadcast tab creation event
+    tracing::info!("Broadcasting TabCreated for tab {}", tab_id);
+    state.event_bus().broadcast(EngineEvent::TabCreated {
+        tab_id,
+        name: "New Tab".to_string(),
+    }).await;
+
+    (StatusCode::CREATED, Json(CreateTabResponse { tab_id }))
 }
 
-/// Handler for getting session info.
-async fn get_session_handler(
+/// Handler for listing all tabs.
+async fn list_tabs_handler(
     State(state): State<Arc<AppState>>,
-    Path(session_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match state.image_info(&session_id).await {
+    let tabs = state.list_tabs().await;
+    
+    (StatusCode::OK, Json(tabs))
+}
+
+/// Handler for getting tab info.
+async fn get_tab_handler(
+    State(state): State<Arc<AppState>>,
+    Path(tab_id): Path<Uuid>,
+) -> impl IntoResponse {
+    match state.image_info(&tab_id).await {
         Some((width, height)) => (
             StatusCode::OK,
-            Json(serde_json::json!({
-                "session_id": session_id,
-                "has_image": true,
-                "width": width,
-                "height": height
-            })),
+            Json(TabInfoResponse {
+                tab_id,
+                has_image: true,
+                width: Some(width),
+                height: Some(height),
+            }),
         ),
         None => (
             StatusCode::OK,
-            Json(serde_json::json!({
-                "session_id": session_id,
-                "has_image": false
-            })),
+            Json(TabInfoResponse {
+                tab_id,
+                has_image: false,
+                width: None,
+                height: None,
+            }),
         ),
     }
 }
 
-/// Handler for deleting a session.
-async fn delete_session_handler(
+/// Handler for deleting a tab.
+async fn delete_tab_handler(
     State(state): State<Arc<AppState>>,
-    Path(session_id): Path<Uuid>,
+    Path(tab_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    if state.delete_session(&session_id).await {
+    if state.delete_tab(&tab_id).await {
+        // Broadcast tab closed event
+        state.event_bus().broadcast(EngineEvent::TabClosed { tab_id }).await;
         (StatusCode::NO_CONTENT, ())
     } else {
         (StatusCode::NOT_FOUND, ())
     }
 }
 
-/// Handler for opening a file in a session.
+/// Handler for opening a file in a tab.
 async fn open_file_handler(
     State(state): State<Arc<AppState>>,
+    Path(tab_id): Path<Uuid>,
     Json(request): Json<OpenFileRequest>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    match state.load_image(&request.session_id, &request.path).await {
-        Ok((width, height)) => Ok((
-            StatusCode::OK,
-            Json(OpenFileResponse { width, height }),
-        )),
+    match state.open_image(&tab_id, &request.path).await {
+        Ok(()) => {
+            // Get tile count from tile grid
+            let tile_grid = state.tile_grid(&tab_id).await;
+            let tile_count = tile_grid.map(|g| g.tile_count()).unwrap_or(0);
+            
+            let (width, height) = state.image_info(&tab_id).await.unwrap_or((0, 0));
+            
+            Ok((
+                StatusCode::OK,
+                Json(OpenFileResponse {
+                    width,
+                    height,
+                    tile_count,
+                }),
+            ))
+        }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -147,11 +191,42 @@ async fn open_file_handler(
     }
 }
 
-/// WebSocket connection handler with session support.
+/// Handler for getting full application state (for MCP).
+async fn get_state_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let tabs = state.list_tabs().await;
+    let tab_infos = futures::future::join_all(tabs.iter().map(|tab_id| {
+        let state = state.clone();
+        async move {
+            let info = state.image_info(tab_id).await;
+            (tab_id, info)
+        }
+    })).await;
+    
+    let result: Vec<_> = tab_infos.into_iter().map(|(tab_id, info)| {
+        match info {
+            Some((width, height)) => serde_json::json!({
+                "tab_id": tab_id,
+                "has_image": true,
+                "width": width,
+                "height": height
+            }),
+            None => serde_json::json!({
+                "tab_id": tab_id,
+                "has_image": false
+            }),
+        }
+    }).collect();
+    
+    (StatusCode::OK, Json(result))
+}
+
+/// WebSocket connection handler with tab support.
 async fn websocket_handler(
     ws: WebSocketUpgrade,
     Query(query): Query<WebSocketQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_connection(socket, state, query.session_id))
+    ws.on_upgrade(move |socket| handle_connection(socket, state, query.tab_id))
 }

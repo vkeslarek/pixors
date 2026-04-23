@@ -53,19 +53,25 @@ impl Tile {
 /// A grid of tiles covering an entire image.
 #[derive(Clone)]
 pub struct TileGrid {
-    /// The working typed image (ACEScg premul f16) (shared reference).
-    typed_image: Arc<TypedImage<Rgba<f16>>>,
+    /// Image width (pixels).
+    width: u32,
+    /// Image height (pixels).
+    height: u32,
     /// List of tiles covering the image.
     tiles: Vec<Tile>,
     /// Tile size used for retiling (width = height = tile_size).
     tile_size: u32,
     /// Cached color conversion for extremely fast sRGB tile extraction.
-    to_srgb: Arc<ColorConversion>,
+    to_srgb: ColorConversion,
+    /// Optional reference to the underlying typed image (for backward compatibility).
+    typed_image: Option<Arc<TypedImage<Rgba<f16>>>>,
 }
 
 impl std::fmt::Debug for TileGrid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TileGrid")
+            .field("width", &self.width)
+            .field("height", &self.height)
             .field("tiles_count", &self.tiles.len())
             .field("tile_size", &self.tile_size)
             .finish()
@@ -73,14 +79,10 @@ impl std::fmt::Debug for TileGrid {
 }
 
 impl TileGrid {
-    /// Creates a tile grid from a typed image using the specified tile size.
-    /// This is a zero-copy operation: tiles are just metadata referencing the image.
-    pub fn new(typed_image: Arc<TypedImage<Rgba<f16>>>, tile_size: u32) -> Self {
+    /// Creates a tile grid from image dimensions using the specified tile size.
+    pub fn new(width: u32, height: u32, tile_size: u32) -> Self {
         let _sw = crate::debug_stopwatch!("tile_grid_new");
         assert!(tile_size > 0, "Tile size must be positive");
-        
-        let width = typed_image.width;
-        let height = typed_image.height;
         
         // Calculate number of tiles in each dimension
         let tiles_x = (width + tile_size - 1) / tile_size;
@@ -104,11 +106,31 @@ impl TileGrid {
             .expect("ACEScg → sRGB conversion is always valid");
         
         Self {
-            typed_image,
+            width,
+            height,
             tiles,
             tile_size,
-            to_srgb: Arc::new(to_srgb),
+            to_srgb,
+            typed_image: None,
         }
+    }
+
+    /// Creates a tile grid from a typed image (legacy compatibility).
+    /// This is a zero-copy operation: tiles are just metadata referencing the image.
+    pub fn from_typed_image(typed_image: Arc<TypedImage<Rgba<f16>>>, tile_size: u32) -> Self {
+        let mut grid = Self::new(typed_image.width, typed_image.height, tile_size);
+        grid.typed_image = Some(typed_image);
+        grid
+    }
+
+    /// Returns the image width.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the image height.
+    pub fn height(&self) -> u32 {
+        self.height
     }
 
     /// Returns the tile size used for this grid.
@@ -131,26 +153,57 @@ impl TileGrid {
         self.tiles.get(index)
     }
 
-    /// Returns the typed image this grid references.
-    pub fn typed_image(&self) -> &Arc<TypedImage<Rgba<f16>>> {
-        &self.typed_image
-    }
-
-    /// Extracts RGBA8 pixel data for a specific tile.
-    pub fn extract_tile_rgba8(&self, tile: &Tile) -> Result<Vec<u8>, Error> {
-        let _sw = crate::debug_stopwatch!("extract_tile_rgba8");
+    /// Converts tile pixel data from ACEScg premul f16 to sRGB u8.
+    /// The `data` slice must contain exactly `tile.width * tile.height` pixels.
+    pub fn tile_data_to_rgba8(&self, tile: &Tile, data: &[Rgba<f16>]) -> Result<Vec<u8>, Error> {
+        let _sw = crate::debug_stopwatch!("tile_data_to_rgba8");
         // Validate tile bounds
-        if tile.x + tile.width > self.typed_image.width || tile.y + tile.height > self.typed_image.height {
+        if tile.x + tile.width > self.width || tile.y + tile.height > self.height {
             return Err(Error::invalid_param(format!(
                 "Tile bounds ({}, {}, {}, {}) exceed image dimensions ({}x{})",
                 tile.x, tile.y, tile.width, tile.height,
-                self.typed_image.width, self.typed_image.height
+                self.width, self.height
+            )));
+        }
+        // Validate data length
+        let expected_len = (tile.width * tile.height) as usize;
+        if data.len() != expected_len {
+            return Err(Error::invalid_param(format!(
+                "Tile data length {} does not match tile area {}",
+                data.len(), expected_len
+            )));
+        }
+
+        Ok(crate::convert::convert_acescg_premul_pixels_to_srgb_u8(
+            data,
+            &self.to_srgb,
+        ))
+    }
+
+    /// Returns a reference to the underlying typed image, if any.
+    pub fn typed_image(&self) -> Option<&Arc<TypedImage<Rgba<f16>>>> {
+        self.typed_image.as_ref()
+    }
+
+    /// Extracts RGBA8 pixel data for a specific tile (legacy method).
+    /// Requires that the TileGrid was created with a typed image.
+    pub fn extract_tile_rgba8(&self, tile: &Tile) -> Result<Vec<u8>, Error> {
+        let _sw = crate::debug_stopwatch!("extract_tile_rgba8");
+        let Some(typed_image) = &self.typed_image else {
+            return Err(Error::invalid_param("TileGrid has no underlying typed image"));
+        };
+        // Validate tile bounds
+        if tile.x + tile.width > typed_image.width || tile.y + tile.height > typed_image.height {
+            return Err(Error::invalid_param(format!(
+                "Tile bounds ({}, {}, {}, {}) exceed image dimensions ({}x{})",
+                tile.x, tile.y, tile.width, tile.height,
+                typed_image.width, typed_image.height
             )));
         }
 
         // Extract tile region using optimized region conversion
         Ok(crate::convert::convert_acescg_premul_region_to_srgb_u8(
-            &self.typed_image,
+            typed_image,
             tile.x,
             tile.y,
             tile.width,
@@ -183,14 +236,14 @@ impl TileGrid {
 
 /// Retiles a typed image into a grid of tiles (zero-copy).
 pub fn retile(typed_image: Arc<TypedImage<Rgba<f16>>>, tile_size: u32) -> TileGrid {
-    TileGrid::new(typed_image, tile_size)
+    TileGrid::from_typed_image(typed_image, tile_size)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::color::{ColorSpace, RgbPrimaries, TransferFn, WhitePoint};
-    use crate::image::{AlphaMode, ChannelLayoutKind, SampleLayout, SampleType};
+    use crate::image::{AlphaMode, ChannelLayoutKind, RawImage, SampleLayout, SampleType};
     
     fn create_test_raw_image(width: u32, height: u32) -> RawImage {
         let pixel_count = (width * height) as usize;
@@ -233,8 +286,7 @@ mod tests {
     
     #[test]
     fn test_tile_grid_creation() {
-        let raw_image = create_test_raw_image(1000, 800);
-        let grid = TileGrid::new(Arc::new(raw_image), 256);
+        let grid = TileGrid::new(1000, 800, 256);
         
         assert_eq!(grid.tile_size(), 256);
         assert_eq!(grid.tile_count(), 4 * 4); // ceil(1000/256) * ceil(800/256) = 4 * 4 = 16
@@ -256,8 +308,7 @@ mod tests {
     
     #[test]
     fn test_tiles_in_viewport() {
-        let raw_image = create_test_raw_image(1000, 800);
-        let grid = TileGrid::new(Arc::new(raw_image), 256);
+        let grid = TileGrid::new(1000, 800, 256);
         
         // Viewport covering top-left corner
         let tiles = grid.tiles_in_viewport(0.0, 0.0, 300.0, 300.0);
