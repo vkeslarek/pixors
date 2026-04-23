@@ -103,15 +103,18 @@ impl Camera {
     ///
     /// At `zoom = 1` the image is letterboxed / pillarboxed so it fits exactly
     /// inside the viewport without distortion.
+    ///
+    /// The scale must be ≥ 1 on the non-constraining axis so the shader sees
+    /// UV values outside [0,1] for the padding regions → renders background color.
     fn uv_scale(&self) -> Vec2 {
         let img_ar = self.image_size.x / self.image_size.y;
-        let vp_ar = self.viewport_size.x / self.viewport_size.y;
+        let vp_ar  = self.viewport_size.x / self.viewport_size.y;
 
-        // Fit along the constraining axis; the other axis gets padding.
+        // The constraining axis gets scale = 1.0; the other axis > 1.0 (padding).
         let (bw, bh) = if img_ar >= vp_ar {
-            (1.0f32, vp_ar / img_ar) // image wider → fit width, pad height
+            (1.0f32, img_ar / vp_ar) // image wider  → fit width,  pad height (letterbox)
         } else {
-            (img_ar / vp_ar, 1.0f32) // image taller → fit height, pad width
+            (vp_ar / img_ar, 1.0f32) // image taller → fit height, pad width  (pillarbox)
         };
 
         Vec2::new(bw / self.zoom, bh / self.zoom)

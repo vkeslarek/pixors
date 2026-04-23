@@ -45,6 +45,11 @@ impl AppState {
         self.session_service.tile_grid(session_id).await
     }
 
+    /// Returns true if a session with the given ID exists (even if no image is loaded).
+    pub async fn session_exists(&self, session_id: &Uuid) -> bool {
+        self.session_service.get_session(session_id).await.is_some()
+    }
+
     /// Deletes a session.
     pub async fn delete_session(&self, session_id: &Uuid) -> bool {
         self.session_service.delete_session(session_id).await

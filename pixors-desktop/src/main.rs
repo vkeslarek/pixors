@@ -16,11 +16,30 @@ struct State {
 impl ApplicationHandler for State {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let mut attributes = Window::default_attributes();
-        attributes.inner_size = Some(LogicalSize::new(800, 800).into());
+        attributes.inner_size = Some(LogicalSize::new(1440, 900).into());
+        attributes.min_inner_size = Some(LogicalSize::new(1280, 800).into());
+        attributes.title = "Pixors".to_string();
+        attributes.resizable = true;
+        // TODO: Set window icon when we have PNG/ICO files
         let window = event_loop.create_window(attributes).unwrap();
 
         let webview = WebViewBuilder::new()
             .with_url("http://localhost:5173/")
+            .with_devtools(false)
+            .with_autoplay(true)
+            .with_initialization_script(
+                r#"
+                // Disable text selection
+                document.addEventListener('DOMContentLoaded', () => {
+                    document.body.style.userSelect = 'none';
+                    document.body.style.webkitUserSelect = 'none';
+                    // Prevent drag-and-drop of images
+                    document.addEventListener('dragstart', (e) => e.preventDefault());
+                    // Prevent right-click context menu
+                    document.addEventListener('contextmenu', (e) => e.preventDefault());
+                });
+                "#,
+            )
             .build_as_child(&window)
             .unwrap();
 

@@ -9,16 +9,18 @@ use uuid::Uuid;
 pub async fn handle_connection(mut socket: WebSocket, state: Arc<AppState>, session_id: Option<Uuid>) {
     tracing::info!("New WebSocket connection, session_id: {:?}", session_id);
 
-    // Validate session if provided
+    // Validate session if provided — check existence, not image presence
     if let Some(sid) = &session_id {
-        if state.image_info(sid).await.is_none() {
+        if state.session_exists(sid).await {
+            // If the session already has an image, stream tiles immediately
+            if state.image_info(sid).await.is_some() {
+                if let Err(e) = stream_tiles(&mut socket, &state, sid).await {
+                    tracing::warn!("Failed to stream initial tiles: {}", e);
+                }
+            }
+        } else {
             send_error(&mut socket, "Invalid or expired session").await;
             return;
-        } else {
-            // Stream initial tiles immediately upon connection
-            if let Err(e) = stream_tiles(&mut socket, &state, sid).await {
-                tracing::warn!("Failed to stream initial tiles: {}", e);
-            }
         }
     }
 

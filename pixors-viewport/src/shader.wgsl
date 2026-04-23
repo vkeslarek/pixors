@@ -28,7 +28,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = camera.uv_offset + in.uv * camera.uv_scale;
     // Clip outside image bounds — no color bleed from clamp-to-edge
     if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
-        return vec4<f32>(0.18, 0.18, 0.18, 1.0);
+        // Background color: #111113 in linear shader space
+        return vec4<f32>(0.0067, 0.0067, 0.0071, 1.0);
     }
     return textureSample(t_image, s_image, uv);
 }

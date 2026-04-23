@@ -1,0 +1,117 @@
+@import url('./fonts.css');
+
+/* ── Josh W. Comeau's Custom CSS Reset ──────────────────────────────────────
+   https://www.joshwcomeau.com/css/custom-css-reset/                         */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+* {
+  margin: 0;
+}
+body {
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+img, picture, video, canvas, svg {
+  display: block;
+  max-width: 100%;
+}
+input, button, textarea, select {
+  font: inherit;
+}
+p, h1, h2, h3, h4, h5, h6 {
+  overflow-wrap: break-word;
+}
+#root {
+  isolation: isolate;
+}
+
+/* ── Design Tokens ──────────────────────────────────────────────────────── */
+
+
+:root {
+  /* Color palette — Dark Mode Professional */
+  --bg-base: #161618;
+  --bg-surface: #1e1e21;
+  --bg-elevated: #26262b;
+  --bg-hover: #2e2e34;
+  --bg-active: #34343b;
+
+  --border: #2f2f36;
+  --border-subtle: #252529;
+
+  --text-primary: #e8e8ec;
+  --text-secondary: #8b8b98;
+  --text-muted: #55555f;
+
+  --accent: oklch(0.62 0.18 240);
+  --accent-dim: oklch(0.62 0.18 240 / 0.15);
+  --accent-glow: oklch(0.62 0.18 240 / 0.35);
+  --accent-2: oklch(0.62 0.18 280);
+
+  --danger: oklch(0.65 0.18 20);
+  --warn: oklch(0.72 0.15 80);
+
+  /* Typography */
+  --font-ui: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+
+  /* Layout dimensions */
+  --activity-bar-w: 48px;
+  --toolbar-w: 48px;
+  --sidebar-w: 260px;
+  --menubar-h: 32px;
+  --statusbar-h: 24px;
+  --panel-header: 34px;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Transitions */
+  --transition-fast: 0.1s;
+  --transition-normal: 0.12s;
+  --transition-slow: 0.18s;
+}
+
+/* ── Base application styles ──────────────────────────────────────────────── */
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-base);
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  /* Disable browser-level text selection for app-like feel */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Allow text selection in inputs */
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}

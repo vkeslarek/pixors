@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixors — Professional Photo Editor</title>
+<template id="__bundler_thumbnail" data-bg-color="#161618">
+  <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+    <rect width="120" height="80" fill="#161618"/>
+    <rect x="0" y="0" width="120" height="8" fill="#1e1e21"/>
+    <rect x="0" y="8" width="10" height="72" fill="#1e1e21"/>
+    <rect x="90" y="8" width="30" height="72" fill="#1e1e21"/>
+    <rect x="10" y="8" width="80" height="72" fill="#111113"/>
+    <rect x="22" y="20" width="56" height="40" rx="1" fill="#2a3a4a" opacity="0.8"/>
+    <rect x="22" y="20" width="56" height="40" rx="1" fill="url(#pg)"/>
+    <text x="5" y="5.5" font-family="monospace" font-size="4" fill="#3d8ef0" font-weight="bold">PX</text>
+    <defs>
+      <radialGradient id="pg" cx="40%" cy="38%">
+        <stop offset="0%" stop-color="#d4a8c7"/>
+        <stop offset="60%" stop-color="#6b8fa8"/>
+        <stop offset="100%" stop-color="#2a3a4a"/>
+      </radialGradient>
+    </defs>
+    <rect x="12" y="10" width="6" height="6" rx="1" fill="#3d8ef0" opacity="0.3"/>
+    <rect x="12" y="18" width="6" height="6" rx="1" fill="#3d8ef0" opacity="0.15"/>
+    <rect x="12" y="26" width="6" height="6" rx="1" fill="#3d8ef0" opacity="0.15"/>
+  </svg>
+</template>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-base: #161618;
+    --bg-surface: #1e1e21;
+    --bg-elevated: #26262b;
+    --bg-hover: #2e2e34;
+    --bg-active: #34343b;
+    --border: #2f2f36;
+    --border-subtle: #252529;
+    --text-primary: #e8e8ec;
+    --text-secondary: #8b8b98;
+    --text-muted: #55555f;
+    --accent: oklch(0.62 0.18 240);
+    --accent-dim: oklch(0.62 0.18 240 / 0.15);
+    --accent-glow: oklch(0.62 0.18 240 / 0.35);
+    --accent-2: oklch(0.62 0.18 280);
+    --danger: oklch(0.65 0.18 20);
+    --warn: oklch(0.72 0.15 80);
+    --font-ui: 'Space Grotesk', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+    --toolbar-w: 48px;
+    --sidebar-w: 260px;
+    --menubar-h: 32px;
+    --statusbar-h: 24px;
+    --panel-header: 34px;
+  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-base); font-family: var(--font-ui); color: var(--text-primary); }
+  #root { width: 100%; height: 100%; display: flex; flex-direction: column; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* Menu bar */
+  .menubar {
+    height: var(--menubar-h);
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 2px;
+    flex-shrink: 0;
+    z-index: 100;
+    user-select: none;
+  }
+  .menubar-logo {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    margin-right: 16px;
+    font-family: var(--font-mono);
+  }
+  .menu-item {
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.12s;
+    letter-spacing: 0.01em;
+  }
+  .menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .menu-item.active { background: var(--bg-active); color: var(--text-primary); }
+  .menubar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-small {
+    padding: 4px 12px;
+    font-size: 11px;
+    font-family: var(--font-ui);
+    font-weight: 500;
+    border-radius: 5px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.12s;
+    letter-spacing: 0.02em;
+  }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+  .btn-outline:hover { border-color: var(--text-muted); color: var(--text-primary); }
+  .btn-accent { background: var(--accent); color: #000; font-weight: 600; }
+  .btn-accent:hover { filter: brightness(1.1); }
+
+  /* Tab bar */
+  .tabbar {
+    height: 30px;
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: flex-end;
+    padding: 0 8px;
+    gap: 2px;
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    user-select: none;
+  }
+  .tabbar::-webkit-scrollbar { height: 0; }
+  .doc-tab {
+    height: 26px;
+    padding: 0 12px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 5px 5px 0 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-bottom: none;
+    transition: all 0.12s;
+    white-space: nowrap;
+    flex-shrink: 0;
+    position: relative;
+    top: 1px;
+  }
+  .doc-tab:hover { color: var(--text-secondary); background: var(--bg-elevated); }
+  .doc-tab.active {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border-color: var(--border);
+    border-bottom-color: var(--bg-surface);
+    z-index: 1;
+  }
+  .doc-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 0;
+  }
+  .doc-tab-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .doc-tab-close {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    margin-left: 2px;
+    transition: all 0.1s;
+    flex-shrink: 0;
+  }
+  .doc-tab-close:hover { background: var(--bg-active); color: var(--text-primary); }
+  .doc-tab-close svg { width: 8px; height: 8px; }
+  .tab-add-btn {
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.1s;
+    margin-bottom: 2px;
+    flex-shrink: 0;
+  }
+  .tab-add-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .tab-add-btn svg { width: 10px; height: 10px; }
+
+  /* Main workspace */
+  .workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: var(--toolbar-w) 1fr var(--sidebar-w);
+    overflow: hidden;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+    gap: 2px;
+    overflow-y: auto;
+    user-select: none;
+  }
+  .tool-sep {
+    width: 28px;
+    height: 1px;
+    background: var(--border-subtle);
+    margin: 4px 0;
+  }
+  .tool-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.12s;
+    position: relative;
+    color: var(--text-muted);
+  }
+  .tool-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .tool-btn.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-glow) inset;
+  }
+  .tool-btn svg { width: 16px; height: 16px; }
+  .tool-tooltip {
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 999;
+    font-family: var(--font-ui);
+    letter-spacing: 0.02em;
+  }
+  .tool-btn:hover .tool-tooltip { opacity: 1; }
+  .color-wells {
+    margin-top: auto;
+    margin-bottom: 4px;
+    position: relative;
+    width: 36px;
+    height: 36px;
+  }
+  .color-bg-swatch {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    border: 2px solid var(--bg-base);
+    background: white;
+    cursor: pointer;
+  }
+  .color-fg-swatch {
+    position: absolute;
+    top: 0; left: 0;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    border: 2px solid var(--bg-base);
+    background: #1a1a1f;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  /* Canvas area */
+  .canvas-area {
+    background: #111113;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: crosshair;
+  }
+  .canvas-area.tool-move { cursor: move; }
+  .canvas-area.tool-zoom { cursor: zoom-in; }
+  .canvas-area.tool-hand { cursor: grab; }
+  .canvas-area.tool-crop { cursor: crosshair; }
+  .canvas-area.tool-text { cursor: text; }
+
+  .checker-canvas {
+    position: relative;
+    box-shadow: 0 20px 80px rgba(0,0,0,0.7);
+  }
+  .checker-canvas canvas {
+    display: block;
+  }
+  .canvas-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  /* Selection marquee */
+  .marquee-selection {
+    position: absolute;
+    border: 1.5px dashed var(--accent);
+    animation: marchingAnts 0.6s linear infinite;
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  @keyframes marchingAnts {
+    0% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 20; }
+  }
+  /* Crop overlay */
+  .crop-overlay {
+    position: absolute;
+    border: 2px solid white;
+    pointer-events: none;
+  }
+  .crop-overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 33.3%, rgba(255,255,255,0.15) 33.3%, rgba(255,255,255,0.15) 33.6%
+    ), repeating-linear-gradient(
+      90deg, transparent, transparent 33.3%, rgba(255,255,255,0.15) 33.3%, rgba(255,255,255,0.15) 33.6%
+    );
+  }
+  .canvas-rulers {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .ruler-h {
+    position: absolute;
+    top: 0; left: 20px; right: 0;
+    height: 20px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    overflow: hidden;
+  }
+  .ruler-v {
+    position: absolute;
+    top: 20px; left: 0; bottom: 0;
+    width: 20px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
+    overflow: hidden;
+  }
+  .ruler-corner {
+    position: absolute;
+    top: 0; left: 0;
+    width: 20px; height: 20px;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .zoom-indicator {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    pointer-events: none;
+    letter-spacing: 0.04em;
+  }
+
+  /* Brush cursor preview */
+  .brush-cursor {
+    position: absolute;
+    border: 1.5px solid rgba(255,255,255,0.7);
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    mix-blend-mode: difference;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--bg-surface);
+    border-left: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Panel */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+  .panel.expandable { flex-shrink: 1; min-height: 0; overflow: hidden; }
+  .panel-header {
+    height: var(--panel-header);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    cursor: pointer;
+    user-select: none;
+    gap: 6px;
+    flex-shrink: 0;
+    transition: background 0.1s;
+  }
+  .panel-header:hover { background: var(--bg-hover); }
+  .panel-title {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    flex: 1;
+  }
+  .panel-chevron {
+    color: var(--text-muted);
+    transition: transform 0.18s;
+    flex-shrink: 0;
+  }
+  .panel-chevron.open { transform: rotate(90deg); }
+  .panel-body {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Properties panel */
+  .prop-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .prop-label {
+    color: var(--text-muted);
+    width: 52px;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+  .prop-input {
+    flex: 1;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    padding: 4px 7px;
+    outline: none;
+    text-align: right;
+    transition: border-color 0.12s;
+    min-width: 0;
+  }
+  .prop-input:focus { border-color: var(--accent); }
+  .prop-unit { color: var(--text-muted); font-size: 10px; width: 16px; }
+  .prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px 12px; }
+  .prop-field { display: flex; flex-direction: column; gap: 2px; }
+  .prop-field-label { font-size: 10px; color: var(--text-muted); letter-spacing: 0.04em; }
+
+  /* Sliders (adjustments) */
+  .adj-row {
+    padding: 5px 12px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .adj-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .adj-name {
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+  }
+  .adj-value {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    min-width: 32px;
+    text-align: right;
+  }
+  .adj-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    background: var(--bg-active);
+  }
+  .adj-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .adj-slider:hover::-webkit-slider-thumb { transform: scale(1.2); }
+  .adj-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    padding: 8px 12px 4px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .adj-section-title:first-child { border-top: none; }
+
+  /* Blend mode selector */
+  .blend-select {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: var(--font-ui);
+    padding: 4px 6px;
+    outline: none;
+    cursor: pointer;
+    flex: 1;
+  }
+  .blend-select:focus { border-color: var(--accent); }
+
+  /* Layers panel */
+  .layers-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+  .layers-toolbar .blend-select { font-size: 10.5px; }
+  .opacity-input {
+    width: 44px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    padding: 4px 4px;
+    outline: none;
+    text-align: center;
+  }
+  .opacity-input:focus { border-color: var(--accent); }
+  .pct { font-size: 10px; color: var(--text-muted); margin-left: -4px; }
+
+  .layer-item {
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    gap: 7px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid var(--border-subtle);
+    user-select: none;
+  }
+  .layer-item:hover { background: var(--bg-hover); }
+  .layer-item.active { background: var(--accent-dim); }
+  .layer-item.active .layer-name { color: var(--text-primary); }
+  .layer-thumb {
+    width: 30px; height: 30px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    background: var(--bg-active);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .layer-thumb-checker {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(45deg, #555 25%, transparent 25%),
+      linear-gradient(-45deg, #555 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #555 75%),
+      linear-gradient(-45deg, transparent 75%, #555 75%);
+    background-size: 6px 6px;
+    background-position: 0 0, 0 3px, 3px -3px, -3px 0px;
+    opacity: 0.4;
+  }
+  .layer-info { flex: 1; min-width: 0; }
+  .layer-name {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 400;
+  }
+  .layer-type {
+    font-size: 9.5px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    margin-top: 1px;
+  }
+  .layer-actions {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .layer-item:hover .layer-actions { opacity: 1; }
+  .layer-item.active .layer-actions { opacity: 1; }
+  .icon-btn {
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.1s;
+    color: var(--text-muted);
+    border: none;
+    background: transparent;
+  }
+  .icon-btn:hover { background: var(--bg-active); color: var(--text-secondary); }
+  .icon-btn svg { width: 12px; height: 12px; }
+
+  .layers-bottom {
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    gap: 3px;
+    border-top: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+  .layers-bottom .icon-btn { width: 26px; height: 26px; color: var(--text-secondary); }
+  .layers-bottom .icon-btn svg { width: 14px; height: 14px; }
+  .layers-bottom .icon-btn:hover { color: var(--accent); background: var(--accent-dim); }
+
+  /* Statusbar */
+  .statusbar {
+    height: var(--statusbar-h);
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 16px;
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    user-select: none;
+  }
+  .statusbar-item { display: flex; align-items: center; gap: 5px; }
+  .statusbar-sep { width: 1px; height: 12px; background: var(--border-subtle); }
+  .statusbar-accent { color: var(--accent); }
+
+  /* Tweaks panel */
+  .tweaks-panel {
+    position: fixed;
+    bottom: 40px;
+    right: 270px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    width: 200px;
+    z-index: 999;
+    font-size: 11.5px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    display: none;
+  }
+  .tweaks-panel.visible { display: block; }
+  .tweaks-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 10px; }
+  .tweak-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .tweak-label { font-size: 10px; color: var(--text-muted); letter-spacing: 0.04em; }
+  .tweak-options { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tweak-opt {
+    padding: 3px 8px;
+    font-size: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    transition: all 0.1s;
+    font-family: var(--font-ui);
+  }
+  .tweak-opt:hover { border-color: var(--text-muted); }
+  .tweak-opt.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  /* Histogram */
+  .histogram-canvas { width: 100%; height: 60px; display: block; border-radius: 4px; overflow: hidden; }
+  .histogram-wrap { padding: 6px 12px 8px; }
+
+  /* Notification toast */
+  .toast {
+    position: fixed;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--text-primary);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.25s;
+    z-index: 9999;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Icons ──────────────────────────────────────────────────────────
+const Icon = {
+  Move: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1v14M1 8h14M8 1L5 4M8 1l3 3M8 15l-3-3M8 15l3-3M1 8l3-3M1 8l3 3M15 8l-3-3M15 8l-3 3"/></svg>,
+  Marquee: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeDasharray="2 1.5"><rect x="2" y="3" width="12" height="10" rx="1"/></svg>,
+  Lasso: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M4 12c-1.5-1 -2-4 0-6s6-2 6 0-2 4-4 4-2 3 2 3 5-2 5-4"/></svg>,
+  Wand: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><line x1="2" y1="14" x2="9" y2="7"/><path d="M9 7l1-3 1 3 3 1-3 1-1 3-1-3-3-1z" strokeLinejoin="round"/></svg>,
+  Crop: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 1v9h9V4M3 13h10M13 3v10"/><circle cx="3" cy="13" r="1" fill="currentColor"/><circle cx="13" cy="3" r="1" fill="currentColor"/></svg>,
+  Eyedrop: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M11 2l3 3-7 7-1 2-2 1-1-1 1-2z" strokeLinejoin="round"/><circle cx="4.5" cy="11.5" r="1.5"/></svg>,
+  Brush: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 14c2 0 3-1 3-3 0-.8-.5-1.5-1-2L10 3l3 3-6 5.5c-.5.5-1.5 1-2.5 1H2z" strokeLinejoin="round"/><line x1="10" y1="3" x2="13" y2="6"/></svg>,
+  Eraser: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 13l8-8 3 3-5 5H3z" strokeLinejoin="round"/><line x1="3" y1="13" x2="13" y2="13"/></svg>,
+  Heal: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="5"/><path d="M8 5v6M5 8h6"/></svg>,
+  Gradient: () => <svg viewBox="0 0 16 16" fill="none"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="currentColor" stopOpacity="0.1"/><stop offset="100%" stopColor="currentColor" stopOpacity="0.9"/></linearGradient></defs><rect x="2" y="4" width="12" height="8" rx="1" fill="url(#g1)" stroke="currentColor" strokeWidth="1.2" strokeOpacity="0.5"/></svg>,
+  Text: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 3h10v3M8 3v10M6 13h4"/></svg>,
+  Shape: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><circle cx="11" cy="11" r="3"/></svg>,
+  Hand: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M6 8V3a1 1 0 112 0v5M8 5a1 1 0 112 0v3M10 6a1 1 0 112 0v4c0 2-1.5 4-4 4H6C3.5 14 2 12 2 10V8a1 1 0 012 0" strokeLinejoin="round"/></svg>,
+  Zoom: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="6.5" cy="6.5" r="4"/><line x1="9.5" y1="9.5" x2="13.5" y2="13.5"/><line x1="4.5" y1="6.5" x2="8.5" y2="6.5"/><line x1="6.5" y1="4.5" x2="6.5" y2="8.5"/></svg>,
+  Eye: ({ off }) => off
+    ? <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><line x1="2" y1="2" x2="14" y2="14" strokeOpacity="0.5"/><path d="M4.5 4.5C5.5 3.8 6.7 3.5 8 3.5c3 0 5.5 2.5 5.5 4.5-.3.8-.9 1.6-1.7 2.2" strokeLinecap="round"/><path d="M11 11.3c-.8.6-1.9 1.2-3 1.2-3 0-5.5-2.5-5.5-4.5.2-.7.7-1.5 1.4-2.1" strokeLinecap="round"/></svg>
+    : <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>,
+  Lock: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="4" y="7" width="8" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>,
+  Trash: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><polyline points="3,4 13,4"/><path d="M5 4V2h6v2"/><path d="M5 4l.5 9h5L11 4"/></svg>,
+  Plus: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>,
+  Duplicate: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11V3h8"/></svg>,
+  Fx: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 3l3 5-3 5M9 8h5"/></svg>,
+  Mask: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="5"/><path d="M8 3v10M3 8h10" strokeOpacity="0.4"/></svg>,
+  Adj: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><line x1="4" y1="4" x2="4" y2="12"/><line x1="8" y1="4" x2="8" y2="12"/><line x1="12" y1="4" x2="12" y2="12"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="8" cy="10" r="1.5" fill="currentColor"/><circle cx="12" cy="7" r="1.5" fill="currentColor"/></svg>,
+  Chevron: () => <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="4,2 8,6 4,10"/></svg>,
+  Reset: () => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 8A5 5 0 1 1 5.4 12.6"/><polyline points="1,6 3,8 5,6"/></svg>,
+};
+
+// ── Tools config ───────────────────────────────────────────────────
+const TOOLS = [
+  { id: 'move', icon: 'Move', label: 'Move (V)' },
+  { id: 'marquee', icon: 'Marquee', label: 'Marquee Select (M)' },
+  { id: 'lasso', icon: 'Lasso', label: 'Lasso Select (L)' },
+  { id: 'wand', icon: 'Wand', label: 'Magic Wand (W)' },
+  null,
+  { id: 'crop', icon: 'Crop', label: 'Crop (C)' },
+  { id: 'eyedrop', icon: 'Eyedrop', label: 'Eyedropper (I)' },
+  null,
+  { id: 'brush', icon: 'Brush', label: 'Brush (B)' },
+  { id: 'eraser', icon: 'Eraser', label: 'Eraser (E)' },
+  { id: 'heal', icon: 'Heal', label: 'Healing (J)' },
+  { id: 'gradient', icon: 'Gradient', label: 'Gradient (G)' },
+  null,
+  { id: 'text', icon: 'Text', label: 'Text (T)' },
+  { id: 'shape', icon: 'Shape', label: 'Shape (U)' },
+  null,
+  { id: 'hand', icon: 'Hand', label: 'Hand (H)' },
+  { id: 'zoom', icon: 'Zoom', label: 'Zoom (Z)' },
+];
+
+// ── Adjustments config ─────────────────────────────────────────────
+const ADJ_SECTIONS = [
+  { title: 'Light', items: [
+    { id: 'exposure', label: 'Exposure', min: -5, max: 5, step: 0.01, default: 0 },
+    { id: 'contrast', label: 'Contrast', min: -100, max: 100, default: 0 },
+    { id: 'highlights', label: 'Highlights', min: -100, max: 100, default: 0 },
+    { id: 'shadows', label: 'Shadows', min: -100, max: 100, default: 0 },
+    { id: 'whites', label: 'Whites', min: -100, max: 100, default: 0 },
+    { id: 'blacks', label: 'Blacks', min: -100, max: 100, default: 0 },
+  ]},
+  { title: 'Color', items: [
+    { id: 'temp', label: 'Temperature', min: -100, max: 100, default: 0 },
+    { id: 'tint', label: 'Tint', min: -100, max: 100, default: 0 },
+    { id: 'vibrance', label: 'Vibrance', min: -100, max: 100, default: 0 },
+    { id: 'saturation', label: 'Saturation', min: -100, max: 100, default: 0 },
+  ]},
+  { title: 'Detail', items: [
+    { id: 'clarity', label: 'Clarity', min: -100, max: 100, default: 0 },
+    { id: 'sharpening', label: 'Sharpening', min: 0, max: 150, default: 40 },
+    { id: 'noise', label: 'Noise Reduction', min: 0, max: 100, default: 0 },
+  ]},
+];
+
+const defaultAdj = {};
+ADJ_SECTIONS.forEach(s => s.items.forEach(i => { defaultAdj[i.id] = i.default; }));
+
+// ── Layer data ─────────────────────────────────────────────────────
+const makeLayer = (name, type, color) => ({
+  id: Math.random().toString(36).slice(2),
+  name, type, color,
+  visible: true,
+  locked: false,
+  opacity: 100,
+  blend: 'Normal',
+});
+
+const initLayers = [
+  { ...makeLayer('Curves 1', 'Adjustment', '#6cf'), id: 'l1' },
+  { ...makeLayer('Color Overlay', 'Adjustment', '#c6f'), id: 'l2' },
+  { ...makeLayer('Texture', 'Image', '#fc6'), id: 'l3' },
+  { ...makeLayer('Portrait', 'Image', '#6fc'), id: 'l4', opacity: 100 },
+  { ...makeLayer('Background', 'Image', '#888'), id: 'l5' },
+];
+
+// ── Ruler component ────────────────────────────────────────────────
+function RulerH({ zoom, offset = 0 }) {
+  const ref = useRef();
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1e1e21';
+    ctx.fillRect(0, 0, W, H);
+    const step = zoom > 150 ? 10 : zoom > 60 ? 50 : 100;
+    const px = step * zoom / 100;
+    ctx.strokeStyle = '#3a3a42';
+    ctx.fillStyle = '#55555f';
+    ctx.font = `9px 'Space Mono', monospace`;
+    ctx.textBaseline = 'top';
+    for (let i = 0; i * px < W + px; i++) {
+      const x = (i * px) % W;
+      const val = Math.round(i * step + offset);
+      const isMajor = val % (step * 5) === 0;
+      ctx.beginPath();
+      ctx.moveTo(x, H);
+      ctx.lineTo(x, isMajor ? H * 0.35 : H * 0.65);
+      ctx.strokeStyle = isMajor ? '#4a4a54' : '#2e2e36';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (isMajor) {
+        ctx.fillStyle = '#55555f';
+        ctx.fillText(val, x + 2, 2);
+      }
+    }
+  }, [zoom, offset]);
+  return <canvas ref={ref} style={{width:'100%', height:'20px', display:'block'}} />;
+}
+
+function RulerV({ zoom, offset = 0 }) {
+  const ref = useRef();
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1e1e21';
+    ctx.fillRect(0, 0, W, H);
+    const step = zoom > 150 ? 10 : zoom > 60 ? 50 : 100;
+    const px = step * zoom / 100;
+    for (let i = 0; i * px < H + px; i++) {
+      const y = (i * px) % H;
+      const val = Math.round(i * step + offset);
+      const isMajor = val % (step * 5) === 0;
+      ctx.beginPath();
+      ctx.moveTo(W, y);
+      ctx.lineTo(isMajor ? W * 0.35 : W * 0.65, y);
+      ctx.strokeStyle = isMajor ? '#4a4a54' : '#2e2e36';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (isMajor) {
+        ctx.save();
+        ctx.translate(2, y - 1);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillStyle = '#55555f';
+        ctx.font = `9px 'Space Mono', monospace`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(val, 0, 0);
+        ctx.restore();
+      }
+    }
+  }, [zoom, offset]);
+  return <canvas ref={ref} style={{width:'20px', height:'100%', display:'block'}} />;
+}
+
+// ── Histogram component ────────────────────────────────────────────
+function Histogram() {
+  const ref = useRef();
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = canvas.offsetWidth * devicePixelRatio;
+    const H = canvas.height = canvas.offsetHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, W, H);
+    // Generate fake histogram data
+    const pts = 64;
+    const channels = [
+      { color: 'rgba(255,80,80,0.6)', data: Array.from({length: pts}, (_, i) => Math.max(0, Math.exp(-((i-20)**2)/80) * 0.7 + Math.random()*0.1)) },
+      { color: 'rgba(80,220,80,0.6)', data: Array.from({length: pts}, (_, i) => Math.max(0, Math.exp(-((i-32)**2)/120) * 0.9 + Math.random()*0.08)) },
+      { color: 'rgba(80,160,255,0.6)', data: Array.from({length: pts}, (_, i) => Math.max(0, Math.exp(-((i-45)**2)/100) * 0.6 + Math.random()*0.12)) },
+    ];
+    ctx.globalCompositeOperation = 'screen';
+    channels.forEach(ch => {
+      const max = Math.max(...ch.data);
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      ch.data.forEach((v, i) => {
+        const x = (i / (pts - 1)) * W;
+        const y = H - (v / max) * H * 0.9;
+        if (i === 0) ctx.lineTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      ctx.fillStyle = ch.color;
+      ctx.fill();
+    });
+  }, []);
+  return <canvas ref={ref} className="histogram-canvas" style={{width:'100%', height:'60px'}} />;
+}
+
+// ── Main App ───────────────────────────────────────────────────────
+function App() {
+  const [tabs, setTabs] = useState([
+    { id: 't1', name: 'portrait-edit.psd', color: '#6b8fa8', modified: true },
+    { id: 't2', name: 'landscape.psd', color: '#8ba86b', modified: false },
+    { id: 't3', name: 'product-shot.psd', color: '#a86b8b', modified: false },
+  ]);
+  const [activeTab, setActiveTab] = useState('t1');
+  const [activeTool, setActiveTool] = useState('brush');
+  const [layers, setLayers] = useState(initLayers);
+  const [activeLayer, setActiveLayer] = useState('l4');
+  const [adjustments, setAdjustments] = useState(defaultAdj);
+  const [zoom, setZoom] = useState(67);
+  const [panelsOpen, setPanelsOpen] = useState({ hist: true, props: true, adj: true, layers: true });
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [brushPos, setBrushPos] = useState(null);
+  const [tweaksVisible, setTweaksVisible] = useState(false);
+  const [accentTheme, setAccentTheme] = useState('blue');
+  const [uiDensity, setUiDensity] = useState('normal');
+  const [showRulers, setShowRulers] = useState(true);
+  const [toast, setToast] = useState({ msg: '', show: false });
+  const [selection, setSelection] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(null);
+  const canvasRef = useRef();
+  const canvasAreaRef = useRef();
+
+  const showToast = (msg) => {
+    setToast({ msg, show: true });
+    setTimeout(() => setToast(t => ({ ...t, show: false })), 2000);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const map = { v:'move', m:'marquee', l:'lasso', w:'wand', c:'crop', i:'eyedrop', b:'brush', e:'eraser', j:'heal', g:'gradient', t:'text', u:'shape', h:'hand', z:'zoom' };
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      const tool = map[e.key.toLowerCase()];
+      if (tool) setActiveTool(tool);
+      if (e.key === '+' || e.key === '=') setZoom(z => Math.min(z + 10, 400));
+      if (e.key === '-') setZoom(z => Math.max(z - 10, 10));
+      if (e.key === '0') setZoom(100);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Accent themes
+  useEffect(() => {
+    const themes = {
+      blue:   'oklch(0.62 0.18 240)',
+      purple: 'oklch(0.62 0.18 280)',
+      amber:  'oklch(0.72 0.15 80)',
+      rose:   'oklch(0.65 0.18 20)',
+    };
+    document.documentElement.style.setProperty('--accent', themes[accentTheme]);
+    document.documentElement.style.setProperty('--accent-dim', themes[accentTheme].replace(')', ' / 0.15)'));
+    document.documentElement.style.setProperty('--accent-glow', themes[accentTheme].replace(')', ' / 0.35)'));
+  }, [accentTheme]);
+
+  // Density
+  useEffect(() => {
+    document.documentElement.style.setProperty('--panel-header', uiDensity === 'compact' ? '28px' : '34px');
+    document.documentElement.style.setProperty('--toolbar-w', uiDensity === 'compact' ? '42px' : '48px');
+  }, [uiDensity]);
+
+  // Tweaks toggle
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksVisible(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksVisible(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  // Draw canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    // Checker background
+    const sq = 14;
+    for (let y = 0; y < H; y += sq) {
+      for (let x = 0; x < W; x += sq) {
+        ctx.fillStyle = ((x / sq + y / sq) % 2 === 0) ? '#2a2a2f' : '#222226';
+        ctx.fillRect(x, y, sq, sq);
+      }
+    }
+    // Gradient image placeholder
+    const grad = ctx.createRadialGradient(W*0.4, H*0.38, 20, W*0.5, H*0.5, W*0.65);
+    grad.addColorStop(0, '#d4a8c7');
+    grad.addColorStop(0.3, '#8bbcd4');
+    grad.addColorStop(0.6, '#6b8fa8');
+    grad.addColorStop(1, '#2a3a4a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    // Vignette
+    const vig = ctx.createRadialGradient(W/2, H/2, H*0.2, W/2, H/2, H*0.8);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+    // Adjustment effects
+    const exp = adjustments.exposure || 0;
+    const sat = adjustments.saturation || 0;
+    if (Math.abs(exp) > 0.1 || Math.abs(sat) > 5) {
+      ctx.globalCompositeOperation = exp > 0 ? 'screen' : 'multiply';
+      ctx.globalAlpha = Math.abs(exp) * 0.08;
+      ctx.fillStyle = exp > 0 ? '#fff' : '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    }
+  }, [adjustments]);
+
+  const canvasCursor = {
+    move: 'tool-move', zoom: 'tool-zoom', hand: 'tool-hand',
+    crop: 'tool-crop', text: 'tool-text',
+  }[activeTool] || '';
+
+  const handleCanvasMouseMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(e.clientX - rect.left);
+    const y = Math.round(e.clientY - rect.top);
+    setMousePos({ x, y });
+    if (activeTool === 'brush' || activeTool === 'eraser') {
+      setBrushPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    } else {
+      setBrushPos(null);
+    }
+    if (isDragging && dragStart && (activeTool === 'marquee' || activeTool === 'crop')) {
+      setSelection({
+        x: Math.min(dragStart.x, x), y: Math.min(dragStart.y, y),
+        w: Math.abs(x - dragStart.x), h: Math.abs(y - dragStart.y),
+      });
+    }
+  };
+
+  const handleCanvasMouseDown = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(e.clientX - rect.left);
+    const y = Math.round(e.clientY - rect.top);
+    setIsDragging(true);
+    setDragStart({ x, y });
+    if (activeTool !== 'marquee' && activeTool !== 'crop') setSelection(null);
+    if (activeTool === 'zoom') setZoom(z => Math.min(z + 25, 400));
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDragging(false);
+    if (activeTool === 'marquee' && selection) showToast('Selection created');
+    if (activeTool === 'crop' && selection) showToast('Press Enter to apply crop');
+  };
+
+  const toggleLayer = (id, field) => {
+    setLayers(ls => ls.map(l => l.id === id ? { ...l, [field]: !l[field] } : l));
+  };
+
+  const addLayer = () => {
+    const newL = makeLayer(`Layer ${layers.length + 1}`, 'Image', '#aaa');
+    setLayers(ls => [newL, ...ls]);
+    setActiveLayer(newL.id);
+    showToast('New layer added');
+  };
+
+  const deleteLayer = (id) => {
+    setLayers(ls => ls.filter(l => l.id !== id));
+    showToast('Layer deleted');
+  };
+
+  const togglePanel = (key) => setPanelsOpen(p => ({ ...p, [key]: !p[key] }));
+
+  const resetAdj = () => { setAdjustments(defaultAdj); showToast('Adjustments reset'); };
+
+  const activeLayerData = layers.find(l => l.id === activeLayer);
+
+  const BLEND_MODES = ['Normal','Dissolve','Multiply','Screen','Overlay','Soft Light','Hard Light','Color Dodge','Color Burn','Darken','Lighten','Difference','Exclusion','Hue','Saturation','Color','Luminosity'];
+
+  const adjSlideBg = (val, min, max) => {
+    const pct = ((val - min) / (max - min)) * 100;
+    return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--bg-active) ${pct}%, var(--bg-active) 100%)`;
+  };
+
+  return (
+    <>
+      {/* Menu Bar */}
+      <div className="menubar">
+
+        <span className="menubar-logo">PIXORS</span>
+        {['File','Edit','Image','Layer','Select','Filter','View','Window','Help'].map(m => (
+          <span key={m} className="menu-item">{m}</span>
+        ))}
+        <div className="menubar-right">
+          <span style={{fontSize:11, color:'var(--text-muted)', fontFamily:'var(--font-mono)'}}>Untitled-1.psd</span>
+          <button className="btn-small btn-outline" onClick={() => showToast('Opening file...')}>Open</button>
+          <button className="btn-small btn-accent" onClick={() => showToast('File saved!')}>Export</button>
+        </div>
+      </div>
+
+      {/* Tab Bar */}
+      <div className="tabbar">
+        {tabs.map(tab => (
+          <div
+            key={tab.id}
+            className={`doc-tab${activeTab === tab.id ? ' active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            <div className="doc-tab-dot" style={{background: tab.color}} />
+            <span>{tab.modified && activeTab === tab.id ? '● ' : ''}{tab.name}</span>
+            <div className="doc-tab-close" onClick={(e) => {
+              e.stopPropagation();
+              const remaining = tabs.filter(t => t.id !== tab.id);
+              setTabs(remaining);
+              if (activeTab === tab.id && remaining.length) setActiveTab(remaining[0].id);
+              showToast(`Closed ${tab.name}`);
+            }}>
+              <svg viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <line x1="1" y1="1" x2="7" y2="7"/><line x1="7" y1="1" x2="1" y2="7"/>
+              </svg>
+            </div>
+          </div>
+        ))}
+        <div className="tab-add-btn" onClick={() => {
+          const id = 't' + Date.now();
+          const names = ['untitled.psd','new-document.psd','composição.psd'];
+          const colors = ['#6b8fa8','#a8906b','#8b6ba8'];
+          const n = tabs.length % 3;
+          setTabs(ts => [...ts, { id, name: names[n], color: colors[n], modified: false }]);
+          setActiveTab(id);
+          showToast('New document created');
+        }}>
+          <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Workspace */}
+      <div className="workspace">
+        {/* Toolbar */}
+        <div className="toolbar">
+          {TOOLS.map((tool, i) =>
+            tool === null
+              ? <div key={i} className="tool-sep" />
+              : (
+                <div
+                  key={tool.id}
+                  className={`tool-btn${activeTool === tool.id ? ' active' : ''}`}
+                  onClick={() => setActiveTool(tool.id)}
+                  title={tool.label}
+                >
+                  {React.createElement(Icon[tool.icon])}
+                  <span className="tool-tooltip">{tool.label}</span>
+                </div>
+              )
+          )}
+          <div style={{flex:1}} />
+          <div className="color-wells">
+            <div className="color-bg-swatch" style={{background:'#e8e8ec'}} />
+            <div className="color-fg-swatch" style={{background:'#1a1a1f'}} />
+          </div>
+        </div>
+
+        {/* Canvas Area */}
+        <div
+          className={`canvas-area ${canvasCursor}`}
+          ref={canvasAreaRef}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={() => setBrushPos(null)}
+          onWheel={(e) => setZoom(z => Math.max(10, Math.min(400, z - e.deltaY * 0.1)))}
+        >
+          {/* Rulers */}
+          {showRulers && (
+            <div className="canvas-rulers">
+              <div className="ruler-corner" />
+              <div className="ruler-h"><RulerH zoom={zoom} /></div>
+              <div className="ruler-v"><RulerV zoom={zoom} /></div>
+            </div>
+          )}
+
+          {/* Canvas */}
+          <div className="checker-canvas" style={{transform: `scale(${zoom/100})`, transformOrigin:'center center', transition: isDragging ? 'none' : 'transform 0.1s'}}>
+            <canvas ref={canvasRef} width={900} height={600} style={{display:'block'}} />
+            {/* Selection overlay */}
+            {selection && activeTool === 'marquee' && (
+              <div className="marquee-selection" style={{
+                left: selection.x, top: selection.y,
+                width: selection.w, height: selection.h,
+                position:'absolute'
+              }} />
+            )}
+            {selection && activeTool === 'crop' && (
+              <div className="crop-overlay" style={{
+                left: selection.x, top: selection.y,
+                width: selection.w, height: selection.h,
+                position:'absolute'
+              }} />
+            )}
+          </div>
+
+          {/* Brush cursor */}
+          {brushPos && (
+            <div className="brush-cursor" style={{
+              left: brushPos.x, top: brushPos.y,
+              width: 24, height: 24,
+            }} />
+          )}
+
+
+        </div>
+
+        {/* Sidebar */}
+        <div className="sidebar">
+          {/* Histogram */}
+          <div className="panel">
+            <div className="panel-header" onClick={() => togglePanel('hist')}>
+              <span className="panel-title">Histogram</span>
+              <span className={`panel-chevron${panelsOpen.hist ? ' open' : ''}`}><Icon.Chevron /></span>
+            </div>
+            {panelsOpen.hist && (
+              <div className="histogram-wrap">
+                <Histogram />
+                <div style={{display:'flex', justifyContent:'space-between', marginTop:4}}>
+                  {['R','G','B','All'].map(c => (
+                    <span key={c} style={{fontSize:9.5, color:'var(--text-muted)', fontFamily:'var(--font-mono)', letterSpacing:'0.05em'}}>{c}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Properties */}
+          <div className="panel">
+            <div className="panel-header" onClick={() => togglePanel('props')}>
+              <span className="panel-title">Properties</span>
+              <span className={`panel-chevron${panelsOpen.props ? ' open' : ''}`}><Icon.Chevron /></span>
+            </div>
+            {panelsOpen.props && (
+              <div className="panel-body" style={{padding: '6px 0'}}>
+                <div className="prop-grid">
+                  {[['W','900','px'],['H','600','px'],['X','0','px'],['Y','0','px']].map(([l, v, u]) => (
+                    <div key={l} className="prop-field">
+                      <span className="prop-field-label">{l}</span>
+                      <input className="prop-input" defaultValue={v} style={{textAlign:'left'}} />
+                    </div>
+                  ))}
+                </div>
+                <div className="prop-row">
+                  <span className="prop-label">Rotate</span>
+                  <input className="prop-input" defaultValue="0" />
+                  <span className="prop-unit">°</span>
+                </div>
+                <div className="prop-row">
+                  <span className="prop-label">Opacity</span>
+                  <input className="prop-input" value={activeLayerData?.opacity ?? 100}
+                    onChange={(e) => setLayers(ls => ls.map(l => l.id === activeLayer ? {...l, opacity: +e.target.value} : l))} />
+                  <span className="prop-unit">%</span>
+                </div>
+                <div className="prop-row">
+                  <span className="prop-label">Mode</span>
+                  <select className="blend-select" value={activeLayerData?.blend ?? 'Normal'}
+                    onChange={(e) => setLayers(ls => ls.map(l => l.id === activeLayer ? {...l, blend: e.target.value} : l))}>
+                    {BLEND_MODES.map(m => <option key={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Adjustments */}
+          <div className="panel expandable" style={{flex: panelsOpen.adj ? '1 1 0' : '0 0 auto'}}>
+            <div className="panel-header" onClick={() => togglePanel('adj')}>
+              <span className="panel-title">Adjustments</span>
+              <button className="icon-btn" onClick={(e)=>{e.stopPropagation(); resetAdj();}} title="Reset all">
+                <Icon.Reset />
+              </button>
+              <span className={`panel-chevron${panelsOpen.adj ? ' open' : ''}`}><Icon.Chevron /></span>
+            </div>
+            {panelsOpen.adj && (
+              <div className="panel-body">
+                {ADJ_SECTIONS.map(sec => (
+                  <React.Fragment key={sec.title}>
+                    <div className="adj-section-title">{sec.title}</div>
+                    {sec.items.map(item => {
+                      const val = adjustments[item.id] ?? item.default;
+                      const fmt = item.step < 1 ? val.toFixed(2) : Math.round(val);
+                      return (
+                        <div key={item.id} className="adj-row">
+                          <div className="adj-header">
+                            <span className="adj-name">{item.label}</span>
+                            <span className="adj-value">{fmt > 0 ? '+' : ''}{fmt}</span>
+                          </div>
+                          <input
+                            type="range" className="adj-slider"
+                            min={item.min} max={item.max} step={item.step || 1}
+                            value={val}
+                            style={{background: adjSlideBg(val, item.min, item.max)}}
+                            onChange={(e) => setAdjustments(a => ({...a, [item.id]: +e.target.value}))}
+                          />
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Layers */}
+          <div className="panel expandable" style={{flex: panelsOpen.layers ? '2 1 0' : '0 0 auto', minHeight: panelsOpen.layers ? 120 : 0}}>
+            <div className="panel-header" onClick={() => togglePanel('layers')}>
+              <span className="panel-title">Layers</span>
+              <span style={{fontSize:10, color:'var(--text-muted)', fontFamily:'var(--font-mono)'}}>{layers.length}</span>
+              <span className={`panel-chevron${panelsOpen.layers ? ' open' : ''}`}><Icon.Chevron /></span>
+            </div>
+            {panelsOpen.layers && (
+              <>
+                <div className="layers-toolbar">
+                  <select className="blend-select" value={activeLayerData?.blend ?? 'Normal'}
+                    onChange={(e) => setLayers(ls => ls.map(l => l.id === activeLayer ? {...l, blend: e.target.value} : l))}>
+                    {BLEND_MODES.map(m => <option key={m}>{m}</option>)}
+                  </select>
+                  <input
+                    className="opacity-input"
+                    value={activeLayerData?.opacity ?? 100}
+                    onChange={(e) => setLayers(ls => ls.map(l => l.id === activeLayer ? {...l, opacity: +e.target.value} : l))}
+                  />
+                  <span className="pct">%</span>
+                </div>
+                <div className="panel-body" style={{flex:1}}>
+                  {layers.map(layer => (
+                    <div
+                      key={layer.id}
+                      className={`layer-item${layer.id === activeLayer ? ' active' : ''}`}
+                      onClick={() => setActiveLayer(layer.id)}
+                      style={{opacity: layer.visible ? 1 : 0.4}}
+                    >
+                      <div className="layer-thumb">
+                        <div className="layer-thumb-checker" />
+                        <div style={{
+                          position:'absolute', inset:0,
+                          background: layer.color,
+                          opacity: layer.opacity / 100 * 0.7,
+                          borderRadius:2
+                        }}/>
+                      </div>
+                      <div className="layer-info">
+                        <div className="layer-name">{layer.name}</div>
+                        <div className="layer-type">{layer.type} · {layer.blend}</div>
+                      </div>
+                      <div className="layer-actions">
+                        <button className="icon-btn" onClick={(e)=>{e.stopPropagation(); toggleLayer(layer.id,'visible')}} title="Toggle visibility">
+                          <Icon.Eye off={!layer.visible} />
+                        </button>
+                        <button className="icon-btn" onClick={(e)=>{e.stopPropagation(); toggleLayer(layer.id,'locked')}} title="Lock layer" style={{color: layer.locked ? 'var(--accent)' : undefined}}>
+                          <Icon.Lock />
+                        </button>
+                        <button className="icon-btn" onClick={(e)=>{e.stopPropagation(); deleteLayer(layer.id)}} title="Delete layer">
+                          <Icon.Trash />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="layers-bottom">
+                  <button className="icon-btn" title="Add layer" onClick={addLayer}><Icon.Plus /></button>
+                  <button className="icon-btn" title="Duplicate layer" onClick={() => { const l = layers.find(x => x.id === activeLayer); if (l) { const n = {...l, id: Math.random().toString(36).slice(2), name: l.name+' copy'}; setLayers(ls => [n, ...ls]); setActiveLayer(n.id); showToast('Layer duplicated'); }}}><Icon.Duplicate /></button>
+                  <button className="icon-btn" title="Add mask"><Icon.Mask /></button>
+                  <button className="icon-btn" title="Layer effects"><Icon.Fx /></button>
+                  <button className="icon-btn" title="Adjustments"><Icon.Adj /></button>
+                  <div style={{flex:1}}/>
+                  <button className="icon-btn" title="Delete layer" style={{color:'var(--danger)'}} onClick={() => deleteLayer(activeLayer)}><Icon.Trash /></button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Status bar */}
+      <div className="statusbar">
+        <span className="statusbar-item">
+          <span>Tool:</span>
+          <span className="statusbar-accent" style={{textTransform:'capitalize'}}>{activeTool}</span>
+        </span>
+        <div className="statusbar-sep"/>
+        <span className="statusbar-item">
+          <span>Canvas: 900×600px</span>
+        </span>
+        <div className="statusbar-sep"/>
+        <span className="statusbar-item">
+          X: <span className="statusbar-accent">{mousePos.x}</span>&nbsp;
+          Y: <span className="statusbar-accent">{mousePos.y}</span>
+        </span>
+        <div className="statusbar-sep"/>
+        <span className="statusbar-item">
+          Zoom: <span className="statusbar-accent">{zoom}%</span>
+        </span>
+        <div className="statusbar-sep"/>
+        <span className="statusbar-item">
+          Layers: <span className="statusbar-accent">{layers.length}</span>
+        </span>
+        <div style={{flex:1}}/>
+        <span className="statusbar-item" style={{color:'var(--text-muted)'}}>
+          <span>RGB/8</span>
+        </span>
+        <div className="statusbar-sep"/>
+        <span className="statusbar-item" style={{color:'var(--text-muted)'}}>
+          <span>sRGB</span>
+        </span>
+      </div>
+
+      {/* Tweaks Panel */}
+      <div className={`tweaks-panel${tweaksVisible ? ' visible' : ''}`}>
+        <div className="tweaks-title">Tweaks</div>
+        <div className="tweak-row">
+          <div className="tweak-label">ACCENT COLOR</div>
+          <div className="tweak-options">
+            {[['blue','Blue'],['purple','Purple'],['amber','Amber'],['rose','Rose']].map(([k,l]) => (
+              <span key={k} className={`tweak-opt${accentTheme===k?' active':''}`} onClick={()=>setAccentTheme(k)}>{l}</span>
+            ))}
+          </div>
+        </div>
+        <div className="tweak-row">
+          <div className="tweak-label">UI DENSITY</div>
+          <div className="tweak-options">
+            {[['normal','Normal'],['compact','Compact']].map(([k,l]) => (
+              <span key={k} className={`tweak-opt${uiDensity===k?' active':''}`} onClick={()=>setUiDensity(k)}>{l}</span>
+            ))}
+          </div>
+        </div>
+        <div className="tweak-row">
+          <div className="tweak-label">RULERS</div>
+          <div className="tweak-options">
+            <span className={`tweak-opt${showRulers?' active':''}`} onClick={()=>setShowRulers(r=>!r)}>Show</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Toast */}
+      <div className={`toast${toast.show ? ' show' : ''}`}>{toast.msg}</div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

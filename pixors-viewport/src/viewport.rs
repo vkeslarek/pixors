@@ -87,22 +87,60 @@ impl PixorsViewport {
     #[wasm_bindgen]
     pub fn update_texture(&mut self, width: u32, height: u32, data: &[u8]) -> Result<(), JsValue> {
         let texture = self.upload_texture(width, height, data);
-        let view = texture.create_view(&Default::default());
+        self.set_texture(texture, width, height)?;
+        Ok(())
+    }
 
-        self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pixors_bind_group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.camera_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-            ],
-        }));
-        self._texture = Some(texture);
+    /// Create an empty texture of the given dimensions (RGBA8 sRGB).
+    /// The texture is initially zeroed (black transparent).
+    #[wasm_bindgen]
+    pub fn create_empty_texture(&mut self, width: u32, height: u32) -> Result<(), JsValue> {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("image_texture"),
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.set_texture(texture, width, height)?;
+        Ok(())
+    }
 
-        self.camera.image_size = Vec2::new(width as f32, height as f32);
-        self.camera.fit();
-        self.flush_camera();
+    /// Write a tile (sub‑region) of RGBA8 pixel data into the current texture.
+    /// The texture must already exist (call `create_empty_texture` or `update_texture` first).
+    #[wasm_bindgen]
+    pub fn write_tile(&mut self, x: u32, y: u32, width: u32, height: u32, data: &[u8]) -> Result<(), JsValue> {
+        let Some(texture) = &self._texture else {
+            return Err(JsValue::from_str("No texture created yet"));
+        };
+        
+        // Validate data size
+        let expected_bytes = (width * height) as usize * 4;
+        if data.len() != expected_bytes {
+            return Err(JsValue::from_str(&format!(
+                "Tile data size mismatch: expected {} bytes, got {}",
+                expected_bytes, data.len()
+            )));
+        }
+        
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
         Ok(())
     }
 
@@ -218,6 +256,9 @@ impl PixorsViewport {
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
 
+        web_sys::console::log_1(&format!("Surface format: {:?} | sRGB: {}", format, format.is_srgb()).into());
+        web_sys::console::log_1(&format!("Alpha modes: {:?}", caps.alpha_modes).into());
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -261,6 +302,27 @@ impl PixorsViewport {
         )
     }
 
+    /// Set the current texture and update bind group & camera.
+    fn set_texture(&mut self, texture: wgpu::Texture, width: u32, height: u32) -> Result<(), JsValue> {
+        let view = texture.create_view(&Default::default());
+
+        self.bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pixors_bind_group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.camera_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+            ],
+        }));
+        self._texture = Some(texture);
+
+        self.camera.image_size = Vec2::new(width as f32, height as f32);
+        self.camera.fit();
+        self.flush_camera();
+        Ok(())
+    }
+
     /// Record a single fullscreen render pass into `encoder`.
     fn draw_frame(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -269,8 +331,7 @@ impl PixorsViewport {
                 view: target,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    // Background grey shown for areas outside the image.
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.18, g: 0.18, b: 0.18, a: 1.0 }),
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
                     store: wgpu::StoreOp::Store,
                 },
             })],
