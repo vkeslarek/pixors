@@ -8,6 +8,7 @@ mod component;
 pub use component::Component;
 
 use bytemuck::{Pod, Zeroable};
+use serde::{Deserialize, Serialize};
 
 // --- Concrete Pixel Types ---
 
@@ -26,6 +27,12 @@ impl<T: Component> Rgba<T> {
     pub const fn new(r: T, g: T, b: T, a: T) -> Self {
         Self { r, g, b, a }
     }
+
+    /// All-zero RGBA pixel (0, 0, 0, 0).
+    pub const ZERO: Self = Self { r: T::ZERO, g: T::ZERO, b: T::ZERO, a: T::ZERO };
+
+    /// All-one RGBA pixel (1, 1, 1, 1).
+    pub const ONE: Self = Self { r: T::ONE, g: T::ONE, b: T::ONE, a: T::ONE };
 
     /// Creates an opaque black pixel (0, 0, 0, 1).
     pub fn black() -> Self {
@@ -279,6 +286,26 @@ impl<T: Component> Pixel for GrayAlpha<T> {
     const CHANNELS: u8 = 2;
     const HAS_ALPHA: bool = true;
     const LAYOUT: PixelLayout = PixelLayout::GrayAlpha;
+}
+
+/// Pixel format for binary transmission.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PixelFormat {
+    /// RGBA8, 4 bytes per pixel.
+    Rgba8,
+    /// ARGB32, 4 bytes per pixel (u32).
+    Argb32,
+}
+
+impl PixelFormat {
+    /// Returns bytes per pixel.
+    pub fn bytes_per_pixel(self) -> usize {
+        match self {
+            PixelFormat::Rgba8 => 4,
+            PixelFormat::Argb32 => 4,
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------

@@ -1,11 +1,10 @@
 //! MIP pyramid with lazy tile-store-backed generation.
 
 use crate::error::Error;
-use crate::image::{Tile, TileGrid};
+use crate::image::{TileCoord, TileGrid};
 use crate::pixel::Rgba;
-use crate::storage::{TileStore, TileCache, ImageSource};
+use crate::storage::TileStore;
 use half::f16;
-use std::sync::Arc;
 use uuid::Uuid;
 
 /// One level in a MIP pyramid with its own tile storage.
@@ -42,6 +41,9 @@ impl MipLevel {
         let tile_store = TileStore::new_with_subdir(
             tab_id,
             &format!("mip_{}", index),
+            tile_size,
+            width,
+            height,
         )?;
         
         Ok(Self {
@@ -55,13 +57,13 @@ impl MipLevel {
         })
     }
     
-    /// Returns tile at given coordinates (in level-relative pixels).
-    pub fn tile_at(&self, x: u32, y: u32) -> Option<&Tile> {
-        self.tile_grid.tiles().find(|t| t.x == x && t.y == y)
+    /// Returns tile at given tile coordinates (tx, ty).
+    pub fn tile_at(&self, tx: u32, ty: u32) -> Option<&TileCoord> {
+        self.tile_grid.tile_at(tx, ty)
     }
-    
+
     /// Returns all tiles in this level.
-    pub fn tiles(&self) -> impl Iterator<Item = &Tile> {
+    pub fn tiles(&self) -> impl Iterator<Item = &TileCoord> {
         self.tile_grid.tiles()
     }
 }
@@ -74,6 +76,7 @@ pub struct MipPyramid {
     /// Stored levels start at 1 (half resolution).
     levels: Vec<MipLevel>,
     /// Tile size used for all levels.
+    #[allow(dead_code)]
     tile_size: u32,
     /// Tab ID for tile store paths.
     tab_id: Uuid,
@@ -132,146 +135,27 @@ impl MipPyramid {
         &self.levels
     }
     
-    /// Generates a MIP level from its parent level using 2×2 box filtering.
-    /// If the parent level hasn't been generated, recursively generates it.
-    /// `parent_tile_store` is the tile store for level 0 (full resolution).
-    pub async fn generate_level(
-        &mut self,
-        target_level_index: usize,
-        tile_cache: &TileCache,
-        parent_tile_store: &TileStore,
-        parent_tile_grid: &TileGrid,
-        source: &dyn ImageSource,
-    ) -> Result<(), Error> {
-        if target_level_index == 0 {
-            return Ok(()); // Level 0 is the source, not generated
-        }
-        
-        let target_level_index = target_level_index.min(self.levels.len());
-        
-        // Iteratively generate levels up to the target
-        for curr_idx in 1..=target_level_index {
-            if self.level(curr_idx).map(|l| l.generated).unwrap_or(true) {
-                continue;
-            }
-            
-            tracing::debug!("Generating MIP level {}", curr_idx);
-            
-            // Clone the tiles we need to generate so we don't hold a borrow on `self`
-            let level = self.level(curr_idx).unwrap();
-            let tiles: Vec<Tile> = level.tiles().copied().collect();
-            let tile_size = self.tile_size;
-            
-            for tile in tiles {
-                let parent_coords = [
-                    (tile.x * 2, tile.y * 2),
-                    (tile.x * 2 + tile_size, tile.y * 2),
-                    (tile.x * 2, tile.y * 2 + tile_size),
-                    (tile.x * 2 + tile_size, tile.y * 2 + tile_size),
-                ];
-                
-                // Fetch the 4 parent tiles
-                let mut p_data: [Option<(Arc<Vec<Rgba<f16>>>, u32, u32)>; 4] = [None, None, None, None];
-                
-                for (i, &(px, py)) in parent_coords.iter().enumerate() {
-                    let fetched = if curr_idx == 1 {
-                        if let Some(t) = parent_tile_grid.tiles().find(|t| t.x == px && t.y == py) {
-                            Some((
-                                tile_cache.get_or_load(self.tab_id, t, parent_tile_store, source).await?,
-                                t.width,
-                                t.height
-                            ))
-                        } else {
-                            None
-                        }
-                    } else {
-                        let p_level = self.level(curr_idx - 1).unwrap();
-                        if let Some(t) = p_level.tile_at(px, py) {
-                            if let Some(d) = p_level.tile_store.get(t).await? {
-                                Some((Arc::new(d), t.width, t.height))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    };
-                    p_data[i] = fetched;
-                }
-                
-                // 2x2 Box Filter
-                let mut new_data = Vec::with_capacity((tile.width * tile.height) as usize);
-                for y in 0..tile.height {
-                    for x in 0..tile.width {
-                        let mut r = 0.0;
-                        let mut g = 0.0;
-                        let mut b = 0.0;
-                        let mut a = 0.0;
-                        let mut count = 0;
-
-                        for dy in 0..2 {
-                            for dx in 0..2 {
-                                let abs_px = x * 2 + dx;
-                                let abs_py = y * 2 + dy;
-                                
-                                let q_x = if abs_px >= tile_size { 1 } else { 0 };
-                                let q_y = if abs_py >= tile_size { 1 } else { 0 };
-                                let q_idx = q_y * 2 + q_x;
-                                
-                                if let Some((p_pixels, pw, ph)) = &p_data[q_idx as usize] {
-                                    let local_px = abs_px % tile_size;
-                                    let local_py = abs_py % tile_size;
-                                    
-                                    if local_px < *pw && local_py < *ph {
-                                        let idx = (local_py * *pw + local_px) as usize;
-                                        let pixel = p_pixels[idx];
-                                        r += pixel.r.to_f32();
-                                        g += pixel.g.to_f32();
-                                        b += pixel.b.to_f32();
-                                        a += pixel.a.to_f32();
-                                        count += 1;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        let inv_count = if count > 0 { 1.0 / count as f32 } else { 0.0 };
-                        new_data.push(Rgba::new(
-                            f16::from_f32(r * inv_count),
-                            f16::from_f32(g * inv_count),
-                            f16::from_f32(b * inv_count),
-                            f16::from_f32(a * inv_count),
-                        ));
-                    }
-                }
-                
-                // Store generated tile
-                self.level_mut(curr_idx).unwrap().tile_store.put(&tile, &new_data).await?;
-            }
-            
-            self.level_mut(curr_idx).unwrap().generated = true;
-            tracing::debug!("MIP level {} generated successfully", curr_idx);
-        }
-        
-        Ok(())
-    }
-    
     /// Ensures the appropriate MIP level for the given zoom is generated.
+    /// Uses `generate_from_mip0` which runs box-filter downsampling via rayon.
     pub async fn ensure_level_for_zoom(
         &mut self,
         zoom: f32,
-        tile_cache: &TileCache,
-        parent_tile_store: &TileStore,
-        parent_tile_grid: &TileGrid,
-        source: &dyn ImageSource,
-    ) -> Result<Option<&MipLevel>, Error> {
+        mip0: &TileStore,
+    ) -> Result<(), Error> {
         let level_index = mip_level_for_zoom(zoom);
         if level_index == 0 {
-            return Ok(None); // Use base level
+            return Ok(()); // Use base level
         }
         
-        self.generate_level(level_index, tile_cache, parent_tile_store, parent_tile_grid, source).await?;
-        Ok(self.level(level_index))
+        // Regenerate from MIP 0 using parallel downsampling
+        // Only if the requested level doesn't exist yet
+        if self.level(level_index).map(|l| l.generated).unwrap_or(false) {
+            return Ok(());
+        }
+        
+        let regenerated = generate_from_mip0(mip0, &self.tab_id)?;
+        self.levels = regenerated.levels;
+        Ok(())
     }
 }
 
@@ -282,6 +166,115 @@ pub fn mip_level_for_zoom(zoom: f32) -> usize {
         return 0;
     }
     (-(zoom.max(1e-6).log2())).floor() as usize
+}
+
+// ---------------------------------------------------------------------------
+// Parallel MIP generation (rayon)
+// ---------------------------------------------------------------------------
+
+use rayon::prelude::*;
+
+/// Generate all MIP levels from MIP 0 tile store.
+/// Runs box-filter downsampling in parallel via rayon.
+pub fn generate_from_mip0(
+    mip0: &TileStore,
+    tab_id: &Uuid,
+) -> Result<MipPyramid, Error> {
+    let tile_size = mip0.tile_size();
+    let mut width = mip0.image_width();
+    let mut height = mip0.image_height();
+
+    let mut levels: Vec<MipLevel> = Vec::new();
+    let mut level_idx = 1u32;
+
+    loop {
+        width = (width + 1).max(1) / 2;
+        height = (height + 1).max(1) / 2;
+
+        if (width <= tile_size || height <= tile_size) && level_idx > 1 {
+            break;
+        }
+
+        let store = TileStore::new_with_subdir(
+            tab_id,
+            &format!("mip_{}", level_idx),
+            tile_size,
+            width,
+            height,
+        )?;
+
+        downsample_level_rayon(&levels.last().map(|l: &MipLevel| &l.tile_store).unwrap_or(mip0), &store, level_idx)?;
+
+        let scale = 0.5_f32.powi(level_idx as i32);
+        let tile_grid = TileGrid::new(width, height, tile_size);
+        levels.push(MipLevel {
+            index: level_idx as usize,
+            width,
+            height,
+            scale,
+            tile_grid,
+            tile_store: store,
+            generated: true,
+        });
+
+        level_idx += 1;
+    }
+
+    Ok(MipPyramid {
+        levels,
+        tile_size,
+        tab_id: *tab_id,
+    })
+}
+
+/// Downsample one level: 2×2 box filter, parallel over destination tiles.
+fn downsample_level_rayon(
+    src: &TileStore,
+    dst: &TileStore,
+    dst_mip: u32,
+) -> Result<(), Error> {
+    let tiles_x = (dst.image_width() + dst.tile_size() - 1) / dst.tile_size();
+    let tiles_y = (dst.image_height() + dst.tile_size() - 1) / dst.tile_size();
+    let tile_size = dst.tile_size();
+    let src_w = src.image_width();
+    let src_h = src.image_height();
+
+    (0..tiles_y).into_par_iter().try_for_each(|ty| {
+        (0..tiles_x).try_for_each(|tx| {
+            let coord = TileCoord::new(
+                dst_mip, tx, ty,
+                tile_size, dst.image_width(), dst.image_height(),
+            );
+            let mut data = Vec::with_capacity(coord.pixel_count());
+
+            for dy in 0..coord.height {
+                for dx in 0..coord.width {
+                    let sx = coord.px + dx;
+                    let sy = coord.py + dy;
+                    // 2×2 box filter: clamp to source bounds (edge tiles)
+                    let x0 = (sx * 2).min(src_w.saturating_sub(1));
+                    let x1 = (sx * 2 + 1).min(src_w.saturating_sub(1));
+                    let y0 = (sy * 2).min(src_h.saturating_sub(1));
+                    let y1 = (sy * 2 + 1).min(src_h.saturating_sub(1));
+                    let p00 = src.sample(x0, y0)?;
+                    let p10 = src.sample(x1, y0)?;
+                    let p01 = src.sample(x0, y1)?;
+                    let p11 = src.sample(x1, y1)?;
+                    data.push(avg4(p00, p10, p01, p11));
+                }
+            }
+
+            dst.write_tile_blocking(&crate::image::Tile::new(coord, data))
+        })
+    })
+}
+
+#[inline]
+fn avg4(a: Rgba<f16>, b: Rgba<f16>, c: Rgba<f16>, d: Rgba<f16>) -> Rgba<f16> {
+    macro_rules! avg { ($ch:ident) => {
+        f16::from_f32((a.$ch.to_f32() + b.$ch.to_f32() + c.$ch.to_f32() + d.$ch.to_f32()) * 0.25)
+    }}
+    Rgba { r: avg!(r), g: avg!(g), b: avg!(b), a: avg!(a) }
 }
 
 #[cfg(test)]
@@ -301,6 +294,53 @@ mod tests {
         assert_eq!(mip_level_for_zoom(1.0), 0);
         assert_eq!(mip_level_for_zoom(0.5), 0);
         assert_eq!(mip_level_for_zoom(0.25), 2);
+    }
+
+    #[test]
+    fn generate_from_mip0_test() {
+        use crate::image::Tile;
+        use crate::storage::TileStore;
+
+        let tab_id = uuid::Uuid::new_v4();
+        let tile_size = 16;
+
+        // Create MIP 0: 32×32, grey ramp, 4 tiles of 16×16
+        let mip0 = TileStore::new(&tab_id, tile_size, 32, 32).unwrap();
+        for ty in 0..2 {
+            for tx in 0..2 {
+                let coord = TileCoord::new(0, tx, ty, tile_size, 32, 32);
+                let mut data = Vec::with_capacity(coord.pixel_count());
+                for y in 0..coord.height {
+                    for x in 0..coord.width {
+                        let v = f16::from_f32(((coord.py + y) * 32 + (coord.px + x)) as f32 / (32.0 * 32.0));
+                        data.push(Rgba::new(v, v, v, f16::ONE));
+                    }
+                }
+                mip0.write_tile_blocking(&Tile::new(coord, data)).unwrap();
+            }
+        }
+
+        // Generate MIP levels
+        let pyramid = generate_from_mip0(&mip0, &tab_id).unwrap();
+        assert!(!pyramid.levels.is_empty(), "should have at least one MIP level");
+
+        // Level 1: 16×16, 1 tile
+        let l1 = &pyramid.levels[0];
+        assert_eq!(l1.width, 16, "level 1 width");
+        assert_eq!(l1.height, 16, "level 1 height");
+        assert!(l1.generated);
+
+        // Read first pixel of MIP 1 → should be average of 4 MIP 0 pixels at (0,0), (1,0), (0,1), (1,1)
+        let l1_coord = TileCoord::new(1, 0, 0, tile_size, 16, 16);
+        let l1_tile = l1.tile_store.read_tile(l1_coord).unwrap().unwrap();
+        let p00 = mip0.sample(0, 0).unwrap();
+        let p10 = mip0.sample(1, 0).unwrap();
+        let p01 = mip0.sample(0, 1).unwrap();
+        let p11 = mip0.sample(1, 1).unwrap();
+        let expected = avg4(p00, p10, p01, p11);
+        let actual = l1_tile.data[0];
+        let diff = (actual.r.to_f32() - expected.r.to_f32()).abs();
+        assert!(diff < 0.001, "MIP 1 first pixel should equal avg of 4 MIP 0 pixels: diff={diff}");
     }
 }
 

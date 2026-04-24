@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { MenuBar, TabBar } from './components/MenuBar'
 import { ActivityBar, type Workspace } from './components/ActivityBar'
@@ -6,7 +6,8 @@ import { Toolbar } from './components/Toolbar'
 import { Viewport } from './components/Viewport'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
-import { useEngineEvents } from './engine/useEngineEvents'
+import { useEngine } from './engine/useEngine'
+import { useWasmViewport } from './components/viewport/useWasmViewport'
 import type { Layer, Adjustment, MousePos } from './types'
 import './App.css'
 
@@ -33,6 +34,8 @@ const INIT_ADJ: Adjustment[] = [
 
 // ── App ───────────────────────────────────────────────────────────────────
 export default function App() {
+  const { canvasRef, viewportRef, gpuError, fit, pan, zoom, isReady } = useWasmViewport('main-viewport');
+
   // Engine connection and state
   const {
     state: engineState,
@@ -44,7 +47,9 @@ export default function App() {
     activateTab,
     openFile,
     selectTool,
-  } = useEngineEvents();
+    sendCommand,
+    requestTiles,
+  } = useEngine(viewportRef);
 
   // UI-specific state (mock, will be replaced by engine in later phases)
   const [workspace, setWorkspace]       = useState<Workspace>('editor');
@@ -54,12 +59,13 @@ export default function App() {
   const [mousePos, setMousePos]         = useState<MousePos>({ x: 0, y: 0 });
   const [panelsOpen, setPanelsOpen]     = useState({ hist: true, props: true, adj: true, layers: true });
 
+  const initialLoadDone = useRef(false);
   useEffect(() => {
-    if (connected) {
+    if (connected && !initialLoadDone.current) {
+      initialLoadDone.current = true;
       createTabAndOpen('example1.png');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected])
+  }, [connected, createTabAndOpen])
   
   useEffect(() => {
     const toolMap: Record<string, string> = {
@@ -128,11 +134,13 @@ export default function App() {
     createTabAndOpen(path);
   }, [createTabAndOpen, engineState.activeTabId, openFile]);
 
+  const activeTabObj = engineState.tabs.find(t => t.id === engineState.activeTabId);
+
   return (
     <Tooltip.Provider>
       <div className="app-container">
         <MenuBar
-          activeTabName={engineState.tabs.find(t => t.id === engineState.activeTabId)?.name}
+          activeTabName={activeTabObj?.name}
           onOpenFile={handleOpenFile}
           onExport={() => console.log('export')}
         />
@@ -149,9 +157,20 @@ export default function App() {
             />
             <Viewport
               activeTool={engineState.activeTool}
-              zoom={engineState.zoom}
               onMouseMove={(x,y)=>setMousePos({x,y})}
+              sendCommand={sendCommand}
+              requestTiles={requestTiles}
+              canvasRef={canvasRef}
+              viewportRef={viewportRef}
+              gpuError={gpuError}
+              fit={fit}
+              pan={pan}
+              zoom={zoom}
+              isReady={isReady}
               tabId={engineState.activeTabId}
+              connected={connected}
+              imageWidth={activeTabObj?.width}
+              imageHeight={activeTabObj?.height}
             />
           </div>
           <Sidebar

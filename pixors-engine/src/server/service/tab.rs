@@ -1,14 +1,65 @@
 //! Tab management for isolated image editing contexts with lazy tile storage.
 
+use crate::color::{ColorConversion, ColorSpace};
 use crate::error::Error;
-use crate::storage::{ImageSource, PngSource, TileStore, TileCache};
-use crate::image::{MipPyramid, Tile, TileGrid};
-use crate::pixel::Rgba;
-use half::f16;
+use crate::image::{MipPyramid, TileCoord, TileGrid, TileRect};
+use crate::pixel::PixelFormat;
+use crate::storage::{ImageSource, PngSource, TileCache, TileStore};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Commands handled by the TabService.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TabCommand {
+    CreateTab,
+    CloseTab {
+        tab_id: Uuid,
+    },
+    ActivateTab {
+        tab_id: Uuid,
+    },
+    OpenFile {
+        tab_id: Uuid,
+        path: String,
+    },
+    MarkTilesDirty {
+        tab_id: Uuid,
+        regions: Vec<TileRect>,
+    },
+}
+
+/// Events emitted by the TabService.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TabEvent {
+    TabCreated {
+        tab_id: Uuid,
+        name: String,
+    },
+    TabClosed {
+        tab_id: Uuid,
+    },
+    TabActivated {
+        tab_id: Uuid,
+    },
+    ImageLoaded {
+        tab_id: Uuid,
+        width: u32,
+        height: u32,
+        format: PixelFormat,
+    },
+    ImageClosed {
+        tab_id: Uuid,
+    },
+    TilesDirty {
+        tab_id: Uuid,
+        regions: Vec<TileRect>,
+    },
+}
 
 /// State for a single image editing tab.
 pub struct TabState {
@@ -18,6 +69,8 @@ pub struct TabState {
     pub created_at: u64,
     /// Image source (decoder). None if no image loaded.
     pub source: Option<Box<dyn ImageSource>>,
+    /// Pre-computed color conversion ACEScg → sRGB for display.
+    pub color_conversion: Option<ColorConversion>,
     /// Disk-backed tile storage for this tab.
     pub tile_store: Option<TileStore>,
     /// Tile grid metadata (dimensions, tile layout).
@@ -57,6 +110,7 @@ impl TabState {
                 .unwrap_or_default()
                 .as_secs(),
             source: None,
+            color_conversion: None,
             tile_store: None,
             tile_grid: None,
             tile_size,
@@ -81,6 +135,7 @@ impl TabState {
         let tile_grid = TileGrid::new(width, height, self.tile_size);
         let mip_pyramid = MipPyramid::new(width, height, self.tile_size, &self.id)?;
         
+        self.color_conversion = Some(ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB)?);
         self.source = Some(Box::new(source));
         self.tile_store = Some(tile_store);
         self.tile_grid = Some(tile_grid);
@@ -93,9 +148,8 @@ impl TabState {
 
     /// Closes the currently loaded image, freeing all associated resources.
     pub async fn close_image(&mut self) {
-        // Drop source (closes file handle)
+        self.color_conversion = None;
         self.source = None;
-        // TileStore's Drop implementation will delete temp files
         self.tile_store = None;
         self.tile_grid = None;
         self.mip_pyramid = None;
@@ -117,36 +171,15 @@ impl TabState {
         self.tile_grid.as_ref()
     }
 
-    /// Returns immutable reference to MIP pyramid.
-    pub fn mip_pyramid(&self) -> Option<&MipPyramid> {
-        self.mip_pyramid.as_ref()
-    }
-
-    /// Returns mutable reference to MIP pyramid.
-    pub fn mip_pyramid_mut(&mut self) -> Option<&mut MipPyramid> {
-        self.mip_pyramid.as_mut()
-    }
-
-    /// Checks if the tab has an image loaded.
-    pub fn has_image(&self) -> bool {
-        self.source.is_some()
-    }
-
-    /// Retrieves tile pixel data (ACEScg premul f16) from cache or source.
-    pub async fn get_tile_data(
+    /// Converts tile pixel data to sRGB u8 via TileCache.
+    pub async fn get_tile_rgba8(
         &self,
         tile_cache: &TileCache,
-        tile: &Tile,
+        tile: TileCoord,
         mip_level: usize,
-    ) -> Result<Arc<Vec<Rgba<f16>>>, Error> {
-        if mip_level == 0 {
-            let Some(source) = &self.source else {
-                return Err(Error::invalid_param("No image loaded in tab"));
-            };
-            let Some(tile_store) = &self.tile_store else {
-                return Err(Error::invalid_param("Tile store not initialized"));
-            };
-            tile_cache.get_or_load(self.id, tile, tile_store, source.as_ref()).await
+    ) -> Result<Vec<u8>, Error> {
+        let store = if mip_level == 0 {
+            self.tile_store.as_ref().ok_or_else(|| Error::invalid_param("Tile store not initialized"))?
         } else {
             let Some(mip_pyramid) = &self.mip_pyramid else {
                 return Err(Error::invalid_param("MIP pyramid not initialized"));
@@ -154,41 +187,22 @@ impl TabState {
             let Some(level) = mip_pyramid.level(mip_level) else {
                 return Err(Error::invalid_param(format!("MIP level {} not found", mip_level)));
             };
-            if let Some(data) = level.tile_store.get(tile).await? {
-                Ok(Arc::new(data))
-            } else {
-                Err(Error::invalid_param(format!("MIP tile not generated yet: {:?}", tile)))
-            }
-        }
+            &level.tile_store
+        };
+        let conv = self.color_conversion.as_ref()
+            .ok_or_else(|| Error::invalid_param("Color conversion not initialized"))?;
+        tile_cache.get_display(self.id, tile, store, conv).await.map(|d| (*d).clone())
     }
 
-    /// Converts tile pixel data to sRGB u8.
-    pub async fn get_tile_rgba8(
-        &self,
-        tile_cache: &TileCache,
-        tile: &Tile,
-        mip_level: usize,
-    ) -> Result<Vec<u8>, Error> {
-        let tile_grid = if mip_level == 0 {
-            self.tile_grid.as_ref()
-                .ok_or_else(|| Error::invalid_param("No tile grid available"))?
-        } else {
-            self.mip_pyramid.as_ref()
-                .and_then(|p| p.level(mip_level))
-                .map(|l| &l.tile_grid)
-                .ok_or_else(|| Error::invalid_param("No MIP tile grid available"))?
+    /// Ensures the MIP level for the given zoom is generated (blocks CPU work).
+    pub async fn ensure_mip_level(&mut self, zoom: f32) -> Result<(), Error> {
+        let Some(mip_pyramid) = self.mip_pyramid.as_mut() else {
+            return Err(Error::invalid_param("MIP pyramid not initialized"));
         };
-        let data = self.get_tile_data(tile_cache, tile, mip_level).await?;
-        tile_grid.tile_data_to_rgba8(tile, &data)
-    }
-    /// Ensures the MIP level for a given zoom factor is generated and cached.
-    pub async fn ensure_mip_level(&mut self, zoom: f32, tile_cache: &TileCache) -> Result<(), Error> {
-        let source = self.source.as_ref().ok_or_else(|| Error::invalid_param("No source"))?;
-        let tile_store = self.tile_store.as_ref().ok_or_else(|| Error::invalid_param("No base store"))?;
-        let tile_grid = self.tile_grid.as_ref().ok_or_else(|| Error::invalid_param("No base grid"))?;
-        let mip_pyramid = self.mip_pyramid.as_mut().ok_or_else(|| Error::invalid_param("No MIP pyramid"))?;
-        
-        mip_pyramid.ensure_level_for_zoom(zoom, tile_cache, tile_store, tile_grid, source.as_ref()).await.map(|_| ())
+        let Some(tile_store) = self.tile_store.as_ref() else {
+            return Err(Error::invalid_param("Tile store not initialized"));
+        };
+        mip_pyramid.ensure_level_for_zoom(zoom, tile_store).await
     }
 }
 
@@ -205,6 +219,7 @@ pub struct TabService {
     pub(crate) tabs: RwLock<std::collections::HashMap<Uuid, TabState>>,
     tile_cache: Arc<TileCache>,
     default_tile_size: u32,
+    active_tab: RwLock<Option<Uuid>>,
 }
 
 impl TabService {
@@ -212,9 +227,20 @@ impl TabService {
     pub fn new(default_tile_size: u32) -> Self {
         Self {
             tabs: RwLock::new(std::collections::HashMap::new()),
-            tile_cache: Arc::new(TileCache::new(256)), // default cache capacity: 256 tiles
+            tile_cache: Arc::new(TileCache::new()),
             default_tile_size,
+            active_tab: RwLock::new(None),
         }
+    }
+
+    /// Returns the currently active tab ID, if any.
+    pub async fn active_tab(&self) -> Option<Uuid> {
+        *self.active_tab.read().await
+    }
+
+    /// Sets the active tab ID.
+    pub async fn set_active_tab(&self, tab_id: Option<Uuid>) {
+        *self.active_tab.write().await = tab_id;
     }
 
     /// Creates a new tab and returns its ID.
@@ -228,8 +254,6 @@ impl TabService {
         id
     }
 
-
-
     /// Opens an image in a tab.
     pub async fn open_image(&self, tab_id: &Uuid, path: impl AsRef<Path>) -> Result<(), Error> {
         let mut tabs = self.tabs.write().await;
@@ -238,6 +262,20 @@ impl TabService {
         } else {
             Err(Error::invalid_param(format!("Tab {} not found", tab_id)))
         }
+    }
+
+    /// Stream tiles from source into TileStore (call after open_image).
+    pub async fn stream_tiles_to_store(&self, tab_id: &Uuid) -> Result<(), Error> {
+        let tabs = self.tabs.read().await;
+        let tab = tabs.get(tab_id)
+            .ok_or_else(|| Error::invalid_param(format!("Tab {} not found", tab_id)))?;
+
+        let source = tab.source.as_ref()
+            .ok_or_else(|| Error::invalid_param("No image loaded in tab"))?;
+        let store = tab.tile_store.as_ref()
+            .ok_or_else(|| Error::invalid_param("Tile store not initialized"))?;
+
+        source.stream_to_store(self.default_tile_size, store, *tab_id).await
     }
 
     /// Gets image info for a tab.
@@ -256,7 +294,7 @@ impl TabService {
     pub async fn get_tile_rgba8(
         &self,
         tab_id: &Uuid,
-        tile: &Tile,
+        tile: TileCoord,
         mip_level: usize,
     ) -> Result<Vec<u8>, Error> {
         let tabs = self.tabs.read().await;
@@ -270,10 +308,18 @@ impl TabService {
         &self.tile_cache
     }
 
+    /// Ensures the MIP level for the given zoom is generated (blocks on CPU work via spawn_blocking).
+    pub async fn ensure_mip_level(&self, tab_id: &Uuid, zoom: f32) -> Result<(), Error> {
+        let mut tabs = self.tabs.write().await;
+        let tab = tabs.get_mut(tab_id)
+            .ok_or_else(|| Error::invalid_param(format!("Tab {} not found", tab_id)))?;
+        tab.ensure_mip_level(zoom).await
+    }
+
     /// Deletes a tab, freeing all its resources.
     pub async fn delete_tab(&self, tab_id: &Uuid) -> bool {
         // Evict tab's tiles from cache before removing tab state
-        self.tile_cache.evict_tab(tab_id).await;
+        self.tile_cache.evict_tab(tab_id);
         let mut tabs = self.tabs.write().await;
         tabs.remove(tab_id).is_some()
     }
@@ -284,4 +330,111 @@ impl TabService {
         tabs.keys().cloned().collect()
     }
 
+    /// Handles a `TabCommand`, broadcasting events and coordinating with other services via `state`.
+    pub async fn handle_command(
+        &self,
+        cmd: TabCommand,
+        state: &Arc<crate::server::app::AppState>,
+        ctx: &mut crate::server::ws::types::ConnectionContext,
+    ) {
+        use crate::pixel::PixelFormat;
+        use crate::server::event_bus::EngineEvent;
+        use crate::server::service::system::SystemEvent;
+
+        match cmd {
+            TabCommand::CreateTab => {
+                let tab_id = self.create_tab().await;
+                state.event_bus.broadcast(
+                    EngineEvent::Tab(TabEvent::TabCreated {
+                        tab_id,
+                        name: "New Tab".to_string(),
+                    }),
+                ).await;
+            }
+            TabCommand::CloseTab { tab_id } => {
+                if self.active_tab().await == Some(tab_id) {
+                    self.set_active_tab(None).await;
+                }
+                if self.delete_tab(&tab_id).await {
+                    state.event_bus.broadcast(
+                        EngineEvent::Tab(TabEvent::TabClosed { tab_id }),
+                    ).await;
+                }
+            }
+            TabCommand::ActivateTab { tab_id } => {
+                self.set_active_tab(Some(tab_id)).await;
+                state.event_bus.broadcast(
+                    EngineEvent::Tab(TabEvent::TabActivated { tab_id }),
+                ).await;
+
+                // Spawn tile streaming — reader stays responsive.
+                let frame_tx = ctx.frame_tx.clone();
+                let state = state.clone();
+                let vp_state = state.viewport_service.get_viewport(&tab_id).await;
+                tokio::spawn(async move {
+                    crate::server::service::viewport::stream_tiles_for_tab(
+                        tab_id, frame_tx, state, vp_state,
+                    )
+                    .await;
+                });
+            }
+            TabCommand::OpenFile { tab_id, path } => {
+                match self.open_image(&tab_id, &path).await {
+                    Ok(()) => {
+                        // Stream tiles into store (populate all tiles at once)
+                        if let Err(e) = self.stream_tiles_to_store(&tab_id).await {
+                            tracing::error!("Failed to stream tiles: {}", e);
+                            state.event_bus.broadcast(
+                                EngineEvent::System(SystemEvent::Error {
+                                    message: format!("Failed to stream image tiles: {}", e),
+                                }),
+                            ).await;
+                            return;
+                        }
+
+                        if let Some((width, height)) = self.image_info(&tab_id).await {
+                            state.event_bus.broadcast(
+                                EngineEvent::Tab(TabEvent::ImageLoaded {
+                                    tab_id,
+                                    width,
+                                    height,
+                                    format: PixelFormat::Rgba8,
+                                }),
+                            ).await;
+                        }
+                    }
+                    Err(e) => {
+                        state.event_bus.broadcast(
+                            EngineEvent::System(SystemEvent::Error {
+                                message: format!("Failed to load image: {}", e),
+                            }),
+                        ).await;
+                    }
+                }
+            }
+            TabCommand::MarkTilesDirty { tab_id, regions } => {
+                // Invalidate display cache for affected tiles
+                let mut affected_coords = Vec::new();
+                for region in &regions {
+                    let tile_grid = state.tab_service.tile_grid(&tab_id).await;
+                    if let Some(grid) = tile_grid {
+                        let affected = grid.tiles_in_viewport(0, region.x as f32, region.y as f32, region.width as f32, region.height as f32);
+                        for coord in &affected {
+                            state.tab_service.tile_cache().invalidate_display(tab_id, *coord);
+                            affected_coords.push(*coord);
+                        }
+                    }
+                }
+                state.event_bus.broadcast(
+                    EngineEvent::Tab(TabEvent::TilesDirty { tab_id, regions: regions.clone() }),
+                ).await;
+                state.event_bus.broadcast(
+                    EngineEvent::Viewport(crate::server::service::viewport::ViewportEvent::TileInvalidated {
+                        tab_id,
+                        coords: affected_coords,
+                    }),
+                ).await;
+            }
+        }
+    }
 }

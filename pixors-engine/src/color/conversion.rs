@@ -117,6 +117,10 @@ impl ColorConversion {
     pub fn src(&self)    -> ColorSpace    { self.src }
     pub fn dst(&self)    -> ColorSpace    { self.dst }
     pub fn matrix(&self) -> &Matrix3x3   { &self.matrix }
+    /// The source-gamma→linear LUT for u8 (256 entries).
+    pub fn decode_u8_lut(&self) -> &[f32] { &self.decode_u8 }
+    /// The linear→destination-gamma LUT (4096 entries, used with lerp).
+    pub fn encode_lut(&self) -> &[f32] { &self.encode }
 
     // -----------------------------------------------------------------------
     // Single-pixel / single-value

@@ -2,65 +2,69 @@ use crate::server::event_bus::EngineEvent;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{stream::SplitSink, SinkExt};
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
-use super::types::WriterMessage;
+use super::types::{ClientFrame, MSG_EVENT};
 
 pub async fn run_writer_task(
     mut sender: SplitSink<WebSocket, Message>,
     mut event_rx: mpsc::UnboundedReceiver<EngineEvent>,
-    mut tile_rx: mpsc::UnboundedReceiver<WriterMessage>,
-    connection_tab_id: Option<Uuid>,
+    mut frame_rx: mpsc::UnboundedReceiver<ClientFrame>,
 ) {
-    tracing::debug!("Writer task started for tab {:?}", connection_tab_id);
+    tracing::debug!("Writer task started");
     loop {
         tokio::select! {
-            // Handle lightweight events from the global event bus
+            biased;
             Some(event) = event_rx.recv() => {
-                // Skip TileData events from the event bus — they shouldn't
-                // be there, but guard against it.
-                if matches!(&event, EngineEvent::TileData { .. }) {
-                    continue;
-                }
-
-                if let Ok(json) = serde_json::to_string(&event) {
-                    if sender.send(Message::Text(json)).await.is_err() {
+                if let Some(bytes) = encode_event(event) {
+                    if sender.send(Message::Binary(bytes)).await.is_err() {
                         tracing::warn!("Failed to send event to client");
                         break;
                     }
                 }
             }
-            // Handle direct tile data from the reader task
-            Some(msg) = tile_rx.recv() => {
-                match msg {
-                    WriterMessage::Event(event) => {
-                        if let Ok(json) = serde_json::to_string(&event) {
-                            if sender.send(Message::Text(json)).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    WriterMessage::TileData { json, data } => {
-                        if sender.send(Message::Text(json)).await.is_err() {
-                            tracing::warn!("Failed to send tile JSON to client");
-                            break;
-                        }
-                        if sender.send(Message::Binary(data.into())).await.is_err() {
-                            tracing::warn!("Failed to send tile binary to client");
-                            break;
-                        }
-                    }
-                    WriterMessage::TilesComplete => {
-                        let json = serde_json::to_string(&EngineEvent::TilesComplete)
-                            .unwrap_or_default();
-                        if sender.send(Message::Text(json)).await.is_err() {
-                            break;
-                        }
-                    }
+            Some(frame) = frame_rx.recv() => {
+                let bytes = build_tlv(frame);
+                if sender.send(Message::Binary(bytes)).await.is_err() {
+                    tracing::warn!("Failed to send frame to client");
+                    break;
                 }
+                drain_pending_events(&mut sender, &mut event_rx).await;
             }
             else => break,
         }
     }
-    tracing::debug!("Writer task ended for tab {:?}", connection_tab_id);
+    tracing::debug!("Writer task ended");
+}
+
+/// Encode an EngineEvent as a MSG_EVENT TLV frame.
+fn encode_event(event: EngineEvent) -> Option<Vec<u8>> {
+    let payload = rmp_serde::to_vec_named(&event).ok()?;
+    Some(build_tlv(ClientFrame::new(MSG_EVENT, payload)))
+}
+
+/// Wrap a ClientFrame in [type_tag][4B payload_len_LE][payload].
+fn build_tlv(frame: ClientFrame) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(5 + frame.payload.len());
+    buf.push(frame.type_tag);
+    buf.extend_from_slice(&(frame.payload.len() as u32).to_le_bytes());
+    buf.extend_from_slice(&frame.payload);
+    buf
+}
+
+async fn drain_pending_events(
+    sender: &mut SplitSink<WebSocket, Message>,
+    event_rx: &mut mpsc::UnboundedReceiver<EngineEvent>,
+) {
+    loop {
+        match event_rx.try_recv() {
+            Ok(event) => {
+                if let Some(bytes) = encode_event(event) {
+                    if sender.send(Message::Binary(bytes)).await.is_err() {
+                        return;
+                    }
+                }
+            }
+            Err(_) => return,
+        }
+    }
 }

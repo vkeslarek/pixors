@@ -19,7 +19,6 @@ export type EngineEvent =
   | { type: 'tab_activated'; tab_id: string }
   | { type: 'image_loaded'; tab_id: string; width: number; height: number; format: PixelFormat }
   | { type: 'image_closed'; tab_id: string }
-  | { type: 'tile_data'; tab_id: string; x: number; y: number; width: number; height: number; mip_level: number; size: number }
   | { type: 'tiles_complete' }
   | { type: 'tiles_dirty'; tab_id: string; regions: TileRect[] }
   | { type: 'tool_changed'; tool: string }
@@ -36,6 +35,7 @@ export type EngineCommand =
   | { type: 'activate_tab'; tab_id: string }
   | { type: 'open_file'; tab_id: string; path: string }
   | { type: 'viewport_update'; x: number; y: number; w: number; h: number; zoom: number }
+  | { type: 'request_tiles'; tab_id: string; x: number; y: number; w: number; h: number; zoom: number }
   | { type: 'select_tool'; tool: string }
   | { type: 'get_state' }
   | { type: 'screenshot' }

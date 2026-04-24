@@ -126,10 +126,8 @@ impl PixorsViewport {
     /// to GPU mip level 0 since the engine handles MIP computation server-side.
     #[wasm_bindgen]
     pub fn write_tile(&mut self, x: u32, y: u32, width: u32, height: u32, _mip_level: u32, data: &[u8]) -> Result<(), ViewportError> {
-        let Some(texture) = &self._texture else {
-            return Err(ViewportError::NoTextureCreated);
-        };
-        
+        let texture = self._texture.as_ref().ok_or(ViewportError::NoTextureCreated)?.clone();
+
         // Validate data size
         let expected_bytes = (width * height) as usize * 4;
         if data.len() != expected_bytes {
@@ -138,10 +136,10 @@ impl PixorsViewport {
                 got: data.len(),
             });
         }
-        
+
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
-                texture,
+                texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d { x, y, z: 0 },
                 aspect: wgpu::TextureAspect::All,

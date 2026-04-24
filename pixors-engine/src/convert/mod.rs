@@ -2,6 +2,7 @@
 
 mod premultiply;
 mod pipeline;
+pub mod simd;
 
 pub use premultiply::{premultiply, unpremultiply};
 pub use pipeline::convert_raw_to_typed;

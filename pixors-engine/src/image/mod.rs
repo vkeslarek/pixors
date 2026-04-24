@@ -5,11 +5,13 @@ mod raw;
 mod typed;
 mod tile;
 mod mip;
+pub mod buffer;
 
 pub use meta::AlphaMode;
 pub use meta::{ChannelKind, ChannelLayoutKind};
 pub use meta::{SampleType, SampleLayout};
 pub use raw::RawImage;
 pub use typed::TypedImage;
-pub use tile::{Tile, TileGrid, retile};
+pub use tile::{Tile, TileCoord, TileGrid, TileRect};
 pub use mip::{MipLevel, MipPyramid, mip_level_for_zoom};
+pub use buffer::{ComponentEncoding, PlaneDesc, BufferDesc, ImageBuffer, BandBuffer};

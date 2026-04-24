@@ -49,6 +49,16 @@ impl Matrix3x3 {
     pub fn col(&self, i: usize) -> [f32; 3] { self.0[i] }
     pub fn row(&self, i: usize) -> [f32; 3] { [self.0[0][i], self.0[1][i], self.0[2][i]] }
 
+    /// Returns the matrix as a row-major 3x3 array.
+    /// Useful for passing to SIMD code that expects row-major layout.
+    pub fn as_3x3_array(&self) -> [[f32; 3]; 3] {
+        [
+            [self.0[0][0], self.0[1][0], self.0[2][0]],
+            [self.0[0][1], self.0[1][1], self.0[2][1]],
+            [self.0[0][2], self.0[1][2], self.0[2][2]],
+        ]
+    }
+
     pub fn mul(&self, rhs: &Self) -> Self {
         let mut result = [[0.0; 3]; 3];
         for c in 0..3 {

@@ -1,98 +1,247 @@
-//! Disk-backed tile storage.
+//! Disk-backed tile storage with hot LRU cache.
 
 use crate::error::Error;
-use crate::image::Tile;
+use crate::image::{Tile, TileCoord};
 use crate::pixel::Rgba;
 use half::f16;
-use std::fs;
+use lru::LruCache;
+use parking_lot::RwLock;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-/// Persists decoded tiles as raw f16 blobs in a temp directory.
-/// Each tile is a file: `{tab_tmp}/{tile_x}_{tile_y}.raw`
+/// Persists tiles as explicit LE f16 blobs in a temp directory.
+/// Each tile file: `{base_dir}/tile_{mip}_{tx}_{ty}.raw`
+/// Internal hot cache keeps recently accessed tiles in RAM.
 #[derive(Debug)]
 pub struct TileStore {
-    base_dir: PathBuf,           // e.g. /tmp/pixors-{tab_id}/
+    base_dir: PathBuf,
+    tile_size: u32,
+    image_width: u32,
+    image_height: u32,
+    mip_level: u32,
+    hot_cache: RwLock<LruCache<TileCoord, Arc<Vec<Rgba<f16>>>>>,
 }
 
 impl TileStore {
     /// Creates a new tile store for a given tab.
-    /// The temporary directory is created immediately.
-    pub fn new(tab_id: &uuid::Uuid, _tile_size: u32, _image_width: u32, _image_height: u32) -> Result<Self, Error> {
+    pub fn new(tab_id: &uuid::Uuid, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
         let base_dir = std::env::temp_dir()
             .join("pixors")
             .join(tab_id.to_string());
-        fs::create_dir_all(&base_dir)?;
-        Ok(Self { base_dir })
+        std::fs::create_dir_all(&base_dir)?;
+        Ok(Self {
+            base_dir,
+            tile_size,
+            image_width,
+            image_height,
+            mip_level: 0,
+            hot_cache: RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+        })
     }
 
     /// Creates a tile store in a subdirectory under the tab's temp directory.
-    /// Used for MIP levels to avoid file collisions with the base level.
-    pub fn new_with_subdir(tab_id: &uuid::Uuid, subdir: &str) -> Result<Self, Error> {
+    /// Used for MIP levels to avoid file collisions.
+    pub fn new_with_subdir(tab_id: &uuid::Uuid, subdir: &str, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
         let base_dir = std::env::temp_dir()
             .join("pixors")
             .join(tab_id.to_string())
             .join(subdir);
-        fs::create_dir_all(&base_dir)?;
-        Ok(Self { base_dir })
+        std::fs::create_dir_all(&base_dir)?;
+
+        // Extract mip level from subdir name if present
+        let mip_level = if let Some(rest) = subdir.strip_prefix("mip_") {
+            rest.parse::<u32>().unwrap_or(0)
+        } else {
+            0
+        };
+
+        Ok(Self {
+            base_dir,
+            tile_size,
+            image_width,
+            image_height,
+            mip_level,
+            hot_cache: RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+        })
     }
 
-    /// Returns the file path for a given tile.
-    fn tile_path(&self, tile: &Tile) -> PathBuf {
-        self.base_dir.join(format!("{}_{}.raw", tile.x, tile.y))
+    pub fn base_dir(&self) -> PathBuf {
+        self.base_dir.clone()
     }
 
-    /// Writes a decoded tile to disk. Called lazily on first access.
-    pub async fn put(&self, tile: &Tile, data: &[Rgba<f16>]) -> Result<(), Error> {
-        let path = self.tile_path(tile);
-        let data_bytes = bytemuck::cast_slice(data).to_vec();
-        tokio::task::spawn_blocking(move || fs::write(path, data_bytes))
-            .await
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
-            .map_err(Error::Io)
+    pub fn tile_size(&self) -> u32 { self.tile_size }
+    pub fn image_width(&self) -> u32 { self.image_width }
+    pub fn image_height(&self) -> u32 { self.image_height }
+    pub fn mip_level(&self) -> u32 { self.mip_level }
+
+    fn tile_path(&self, tile: &TileCoord) -> PathBuf {
+        self.base_dir.join(format!("tile_{}_{}_{}.raw", tile.mip_level, tile.tx, tile.ty))
     }
 
-    /// Reads a tile from disk. Returns None if not yet decoded.
-    pub async fn get(&self, tile: &Tile) -> Result<Option<Vec<Rgba<f16>>>, Error> {
-        let path = self.tile_path(tile);
+    // ------------------------------------------------------------------
+    // Internal LE f16 serialization
+    // ------------------------------------------------------------------
+    fn serialize_le(data: &[Rgba<f16>]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(data.len() * 8);
+        for px in data {
+            out.extend_from_slice(&px.r.to_le_bytes());
+            out.extend_from_slice(&px.g.to_le_bytes());
+            out.extend_from_slice(&px.b.to_le_bytes());
+            out.extend_from_slice(&px.a.to_le_bytes());
+        }
+        out
+    }
+
+    fn deserialize_le(bytes: &[u8]) -> Vec<Rgba<f16>> {
+        bytes.chunks_exact(8).map(|c| Rgba {
+            r: f16::from_le_bytes([c[0], c[1]]),
+            g: f16::from_le_bytes([c[2], c[3]]),
+            b: f16::from_le_bytes([c[4], c[5]]),
+            a: f16::from_le_bytes([c[6], c[7]]),
+        }).collect()
+    }
+
+    // ------------------------------------------------------------------
+    // High-level API
+    // ------------------------------------------------------------------
+
+    /// Read tile from disk or hot cache. Returns None if not stored.
+    pub fn read_tile(&self, coord: TileCoord) -> Result<Option<Tile<Rgba<f16>>>, Error> {
+        // 1. Check hot cache
+        {
+            let mut cache = self.hot_cache.write();
+            if let Some(cached) = cache.get(&coord) {
+                return Ok(Some(Tile::new(coord, cached.as_ref().clone())));
+            }
+        }
+
+        // 2. Read from disk
+        let path = self.tile_path(&coord);
         if !path.exists() {
             return Ok(None);
         }
-        let tile_size = (tile.width * tile.height) as usize;
-        let bytes = tokio::task::spawn_blocking(move || fs::read(path))
+        let bytes = std::fs::read(&path).map_err(Error::Io)?;
+        let expected = coord.pixel_count() * 8;
+        if bytes.len() != expected {
+            return Err(Error::invalid_param("Tile file size mismatch"));
+        }
+        let pixels = Self::deserialize_le(&bytes);
+
+        // 3. Populate hot cache
+        let arc = Arc::new(pixels);
+        {
+            let mut cache = self.hot_cache.write();
+            cache.put(coord, Arc::clone(&arc));
+        }
+        Ok(Some(Tile::new(coord, (*arc).clone())))
+    }
+
+    /// Write tile to disk, bypassing hot cache (disk is source of truth).
+    pub fn write_tile_blocking(&self, tile: &Tile<Rgba<f16>>) -> Result<(), Error> {
+        let path = self.tile_path(&tile.coord);
+        let data_bytes = Self::serialize_le(&tile.data);
+        std::fs::write(&path, data_bytes).map_err(Error::Io)?;
+        // Invalidate hot cache entry so next read_tile picks up new data
+        {
+            let mut cache = self.hot_cache.write();
+            cache.pop(&tile.coord);
+        }
+        Ok(())
+    }
+
+    /// Read a single pixel from any tile. Returns pixel at image-space (x, y).
+    pub fn sample(&self, x: u32, y: u32) -> Result<Rgba<f16>, Error> {
+        if x >= self.image_width || y >= self.image_height {
+            return Err(Error::invalid_param(format!("sample ({}, {}) out of bounds ({}x{})", x, y, self.image_width, self.image_height)));
+        }
+        let tx = x / self.tile_size;
+        let ty = y / self.tile_size;
+        let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, self.image_width, self.image_height);
+        let tile = self.read_tile(coord)?
+            .ok_or_else(|| Error::invalid_param(format!("Tile ({}, {}) not stored", tx, ty)))?;
+        let local_x = x - tile.coord.px;
+        let local_y = y - tile.coord.py;
+        let idx = (local_y * tile.coord.width + local_x) as usize;
+        Ok(tile.data[idx])
+    }
+
+    // ------------------------------------------------------------------
+    // Legacy async API — delegates to the blocking implementation
+    // ------------------------------------------------------------------
+
+    pub async fn put(&self, tile: TileCoord, data: &[Rgba<f16>]) -> Result<(), Error> {
+        let path = self.tile_path(&tile);
+        let data_bytes = Self::serialize_le(data);
+        tokio::task::spawn_blocking(move || std::fs::write(path, data_bytes))
             .await
             .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
             .map_err(Error::Io)?;
-        if bytes.len() != tile_size * std::mem::size_of::<Rgba<f16>>() {
-            return Err(Error::invalid_param("Tile file size mismatch"));
+        {
+            let mut cache = self.hot_cache.write();
+            cache.pop(&tile);
         }
-        let pixels = bytemuck::cast_slice(&bytes).to_vec();
-        Ok(Some(pixels))
+        Ok(())
     }
 
-    /// Checks if a tile has been decoded and stored.
-    pub fn has(&self, tile: &Tile) -> bool {
+    pub fn put_blocking(&self, tile: TileCoord, data: &[Rgba<f16>]) -> Result<(), Error> {
+        let path = self.tile_path(&tile);
+        let data_bytes = Self::serialize_le(data);
+        std::fs::write(path, data_bytes).map_err(Error::Io)?;
+        {
+            let mut cache = self.hot_cache.write();
+            cache.pop(&tile);
+        }
+        Ok(())
+    }
+
+    pub async fn get(&self, tile: TileCoord) -> Result<Option<Vec<Rgba<f16>>>, Error> {
+        let path = self.tile_path(&tile);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let num_pixels = tile.pixel_count();
+        let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
+            .await
+            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .map_err(Error::Io)?;
+        if bytes.len() != num_pixels * 8 {
+            return Err(Error::invalid_param("Tile file size mismatch"));
+        }
+        Ok(Some(Self::deserialize_le(&bytes)))
+    }
+
+    pub fn has(&self, tile: &TileCoord) -> bool {
         self.tile_path(tile).exists()
     }
 
-    /// Deletes a specific tile file from disk.
-    pub async fn delete_tile(&self, tile: &Tile) -> Result<(), Error> {
+    pub async fn delete_tile(&self, tile: &TileCoord) -> Result<(), Error> {
         let path = self.tile_path(tile);
+        {
+            let mut cache = self.hot_cache.write();
+            cache.pop(tile);
+        }
         if !path.exists() {
             return Ok(());
         }
-        tokio::task::spawn_blocking(move || fs::remove_file(path))
+        tokio::task::spawn_blocking(move || std::fs::remove_file(path))
             .await
             .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
             .map_err(Error::Io)
     }
 
-    /// Deletes multiple tile files from disk.
-    pub async fn delete_tiles(&self, tiles: &[Tile]) -> Result<(), Error> {
+    pub async fn delete_tiles(&self, tiles: &[TileCoord]) -> Result<(), Error> {
         let paths: Vec<PathBuf> = tiles.iter().map(|t| self.tile_path(t)).collect();
+        {
+            let mut cache = self.hot_cache.write();
+            for t in tiles {
+                cache.pop(t);
+            }
+        }
         tokio::task::spawn_blocking(move || {
-            for path in paths {
+            for path in &paths {
                 if path.exists() {
-                    let _ = fs::remove_file(path);
+                    let _ = std::fs::remove_file(path);
                 }
             }
             Ok(())
@@ -104,7 +253,7 @@ impl TileStore {
     /// Deletes ALL files (called on tab close).
     pub fn destroy(&self) -> Result<(), Error> {
         if self.base_dir.exists() {
-            fs::remove_dir_all(&self.base_dir).map_err(Error::Io)
+            std::fs::remove_dir_all(&self.base_dir).map_err(Error::Io)
         } else {
             Ok(())
         }
@@ -113,7 +262,78 @@ impl TileStore {
 
 impl Drop for TileStore {
     fn drop(&mut self) {
-        // Note: we might want to keep tiles for a while, but for now clean up.
         let _ = self.destroy();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pixel::Rgba;
+    use half::f16;
+
+    fn make_coord(tx: u32, ty: u32, tile_size: u32, w: u32, h: u32) -> TileCoord {
+        TileCoord::new(0, tx, ty, tile_size, w, h)
+    }
+
+    #[test]
+    fn test_write_read_roundtrip() {
+        let id = uuid::Uuid::new_v4();
+        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let coord = make_coord(0, 0, 256, 512, 512);
+        let pixels: Vec<Rgba<f16>> = (0..256*256).map(|i| {
+            let v = f16::from_f32((i % 256) as f32 / 255.0);
+            Rgba::new(v, v, v, f16::ONE)
+        }).collect();
+        let tile = Tile::new(coord, pixels.clone());
+
+        store.write_tile_blocking(&tile).unwrap();
+        let read_back = store.read_tile(coord).unwrap().unwrap();
+        assert_eq!(read_back.data.len(), pixels.len());
+        assert_eq!(read_back.data[0].r, pixels[0].r);
+    }
+
+    #[test]
+    fn test_read_nonexistent() {
+        let id = uuid::Uuid::new_v4();
+        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let coord = make_coord(99, 99, 256, 512, 512);
+        assert!(store.read_tile(coord).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_sample() {
+        let id = uuid::Uuid::new_v4();
+        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let coord = make_coord(0, 0, 256, 512, 512);
+        let pixels = vec![Rgba::new(f16::from_f32(0.5), f16::from_f32(0.3), f16::from_f32(0.2), f16::ONE); 256*256];
+        let tile = Tile::new(coord, pixels);
+        store.write_tile_blocking(&tile).unwrap();
+
+        let px = store.sample(10, 10).unwrap();
+        assert!((px.r.to_f32() - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_sample_out_of_bounds() {
+        let id = uuid::Uuid::new_v4();
+        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        assert!(store.sample(600, 600).is_err());
+    }
+
+    #[test]
+    fn test_hot_cache_hit() {
+        let id = uuid::Uuid::new_v4();
+        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let coord = make_coord(0, 0, 256, 512, 512);
+        let pixels = vec![Rgba::new(f16::ZERO, f16::ZERO, f16::ZERO, f16::ONE); 256*256];
+        let tile = Tile::new(coord, pixels);
+        store.write_tile_blocking(&tile).unwrap();
+
+        // First read populates cache
+        let _ = store.read_tile(coord).unwrap();
+        // Second read hits cache
+        let t = store.read_tile(coord).unwrap().unwrap();
+        assert_eq!(t.data.len(), 256*256);
     }
 }

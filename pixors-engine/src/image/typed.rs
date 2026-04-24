@@ -1,148 +1,113 @@
-//! Typed image: compile‑time pixel type + runtime color/alpha metadata.
+//! Lazy typed image: zero-copy view over raw buffer with on-demand color conversion.
 
 use crate::error::Error;
-use crate::color::ColorSpace;
-use crate::pixel::Pixel;
-use super::AlphaMode;
+use crate::color::{ColorSpace, ColorConversion};
+use crate::pixel::{Pixel, Rgba};
+use half::f16;
+use std::sync::Arc;
+use std::marker::PhantomData;
 
-
-/// Typed (compile‑time‑parameterized) image representation.
+/// Lazy typed image: zero-copy view over `ImageBuffer` with color conversion on read.
 ///
-/// The pixors-engine processes `TypedImage<P>`; the canonical working image is
-/// `TypedImage<Rgba<f16>>` in ACEScg premul.
-#[derive(Debug, Clone)]
+/// Generic over pixel type `P`. Stores `Arc<ImageBuffer>` + `ColorConversion`.
+/// No pixel data stored — conversion happens on-demand when pixels are read.
+#[derive(Clone)]
 pub struct TypedImage<P: Pixel> {
-    /// Width in pixels.
-    pub width: u32,
-    /// Height in pixels.
-    pub height: u32,
-    /// Interleaved pixel buffer, exactly `width * height` entries.
-    pub pixels: Vec<P>,
-
-    /// Color space of the stored pixels.
-    pub color_space: ColorSpace,
-    /// Alpha representation.
-    pub alpha_mode: AlphaMode,
+    /// Shared raw image data with layout descriptor.
+    source: Arc<super::ImageBuffer>,
+    /// Color conversion from source color space to target (depends on P).
+    conv: ColorConversion,
+    _phantom: PhantomData<P>,
 }
 
 impl<P: Pixel> TypedImage<P> {
-    /// Creates a new typed image, validating that `pixels` length matches dimensions.
-    pub fn new(
-        width: u32,
-        height: u32,
-        pixels: Vec<P>,
-        color_space: ColorSpace,
-        alpha_mode: AlphaMode,
-    ) -> Result<Self, Error> {
-        if width == 0 || height == 0 {
-            return Err(Error::InvalidDimensions { width, height });
-        }
-        let expected = width as usize * height as usize;
-        if pixels.len() != expected {
-            return Err(Error::invalid_param(format!(
-                "pixel count {} does not match dimensions {}x{} (expected {})",
-                pixels.len(),
-                width,
-                height,
-                expected
-            )));
-        }
-        Ok(Self {
-            width,
-            height,
-            pixels,
-            color_space,
-            alpha_mode,
-        })
+    /// Image width in pixels.
+    pub fn width(&self) -> u32 {
+        self.source.desc.width
     }
 
-    /// Creates an image with uninitialized pixels (filled with `P::default()`).
-    /// Useful for temporary buffers.
-    pub fn new_with_default(
-        width: u32,
-        height: u32,
-        color_space: ColorSpace,
-        alpha_mode: AlphaMode,
-    ) -> Self
-    where
-        P: Default,
-    {
-        let count = width as usize * height as usize;
-        let pixels = (0..count).map(|_| P::default()).collect();
-        Self {
-            width,
-            height,
-            pixels,
-            color_space,
-            alpha_mode,
-        }
+    /// Image height in pixels.
+    pub fn height(&self) -> u32 {
+        self.source.desc.height
     }
 
-    /// Returns the number of pixels (`width * height`).
+    /// Total pixel count.
     pub fn pixel_count(&self) -> usize {
-        self.width as usize * self.height as usize
+        self.width() as usize * self.height() as usize
     }
 
-    /// Returns a reference to the pixel buffer.
-    pub fn pixels(&self) -> &[P] {
-        &self.pixels
+    /// Source color space (before conversion).
+    pub fn source_color_space(&self) -> ColorSpace {
+        self.source.desc.color_space
     }
 
-    /// Returns a mutable reference to the pixel buffer.
-    pub fn pixels_mut(&mut self) -> &mut [P] {
-        &mut self.pixels
+    /// Alpha mode of the source data.
+    pub fn alpha_mode(&self) -> super::AlphaMode {
+        self.source.desc.alpha_mode
     }
 
-    /// Consumes the image and returns the pixel vector.
-    pub fn into_pixels(self) -> Vec<P> {
-        self.pixels
-    }
-
-    /// Returns a raw byte slice of the pixel data (via `bytemuck`).
-    ///
-    /// # Safety
-    /// This is safe only if `P` is `Pod` (which all pixel types in this crate are).
-    pub fn as_bytes(&self) -> &[u8] {
-        bytemuck::cast_slice(&self.pixels)
-    }
-
-    /// Returns the size in bytes of the pixel buffer.
-    pub fn byte_len(&self) -> usize {
-        self.pixels.len() * std::mem::size_of::<P>()
-    }
-
-    /// Returns `true` if the image has an alpha channel (according to pixel type).
-    pub fn has_alpha(&self) -> bool {
-        P::HAS_ALPHA
-    }
-
-    /// Returns a reference to the pixel at `(x, y)`.
-    ///
-    /// # Panics
-    /// If `x >= width` or `y >= height`.
-    pub fn pixel(&self, x: u32, y: u32) -> &P {
-        let idx = y as usize * self.width as usize + x as usize;
-        &self.pixels[idx]
-    }
-
-    /// Returns a mutable reference to the pixel at `(x, y)`.
-    ///
-    /// # Panics
-    /// If `x >= width` or `y >= height`.
-    pub fn pixel_mut(&mut self, x: u32, y: u32) -> &mut P {
-        let idx = y as usize * self.width as usize + x as usize;
-        &mut self.pixels[idx]
-    }
-
-    /// Iterates over pixels row‑by‑row.
-    pub fn rows(&self) -> impl Iterator<Item = &[P]> {
-        self.pixels.chunks_exact(self.width as usize)
-    }
-
-    /// Iterates mutably over pixels row‑by‑row.
-    pub fn rows_mut(&mut self) -> impl Iterator<Item = &mut [P]> {
-        let width = self.width as usize;
-        self.pixels.chunks_exact_mut(width)
+    /// Return raw source buffer (for low-level access, e.g. direct disk I/O).
+    pub fn source(&self) -> &Arc<super::ImageBuffer> {
+        &self.source
     }
 }
 
+/// Specialization for Rgba<f16> ACEScg premultiplied (canonical working format).
+impl TypedImage<Rgba<f16>> {
+    /// Create a lazy view over raw image data with color conversion to ACEScg.
+    /// Zero-copy: only wraps the `Arc` and builds the converter.
+    pub fn from_raw(source: Arc<super::ImageBuffer>) -> Result<Self, Error> {
+        let conv = source.desc.color_space.converter_to(ColorSpace::ACES_CG)?;
+        Ok(Self { source, conv, _phantom: PhantomData })
+    }
+
+    /// Target color space (always ACEScg for this specialization).
+    pub fn color_space(&self) -> ColorSpace {
+        ColorSpace::ACES_CG
+    }
+
+    /// Read a rectangular region of pixels, converting on-demand to Rgba<f16> ACEScg premul.
+    pub fn read_region(&self, x: u32, y: u32, w: u32, h: u32) -> Vec<Rgba<f16>> {
+        let mut out = Vec::with_capacity((w * h) as usize);
+
+        for py in y..y + h {
+            for px in x..x + w {
+                let r = self.source.read_sample(0, px, py);
+                let g = self.source.read_sample(1, px, py);
+                let b = self.source.read_sample(2, px, py);
+
+                let a = if self.source.desc.planes.len() >= 4 {
+                    self.source.read_sample(3, px, py)
+                } else {
+                    1.0
+                };
+
+                let linear = self.conv.decode_to_linear([r, g, b]);
+                out.push(pack_rgba_premul(linear, a));
+            }
+        }
+
+        out
+    }
+
+    /// Iterate over rows lazily, each row converted on-demand to Rgba<f16>.
+    pub fn row_iter(&self) -> impl Iterator<Item = Vec<Rgba<f16>>> + '_ {
+        (0..self.height()).map(move |y| self.read_region(0, y, self.width(), 1))
+    }
+
+    /// Read a single pixel at (x, y), converting on-demand.
+    pub fn read_pixel(&self, x: u32, y: u32) -> Rgba<f16> {
+        self.read_region(x, y, 1, 1)[0]
+    }
+}
+
+/// Pack linear RGB + alpha into premultiplied Rgba<f16>.
+#[inline(always)]
+fn pack_rgba_premul(rgb: [f32; 3], a: f32) -> Rgba<f16> {
+    Rgba {
+        r: f16::from_f32(rgb[0] * a),
+        g: f16::from_f32(rgb[1] * a),
+        b: f16::from_f32(rgb[2] * a),
+        a: f16::from_f32(a),
+    }
+}

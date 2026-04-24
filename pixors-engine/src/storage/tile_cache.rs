@@ -1,136 +1,186 @@
-//! In-memory LRU cache for tiles.
+//! In-memory caches for tiles.
+//!
+//! Two separate LRU caches:
+//! - `acescg`: ACEScg f16 tiles (source of truth for conversion & MIP gen)
+//! - `display`: sRGB u8 tiles (ready for WebSocket send)
+//!
+//! Both use `(Uuid, TileCoord)` as key (tab_id, coord).
 
+use crate::color::ColorConversion;
 use crate::error::Error;
-use crate::image::Tile;
+use crate::image::{Tile, TileCoord};
 use crate::pixel::Rgba;
-use crate::storage::{ImageSource, TileStore};
+use crate::storage::TileStore;
 use half::f16;
 use lru::LruCache;
+use parking_lot::RwLock;
+use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
-/// Key for identifying a tile in the cache.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct TileKey {
-    tab_id: Uuid,
-    x: u32,
-    y: u32,
-}
+/// Capacity limits (number of tiles per cache).
+const ACESCG_CAPACITY: usize = 128;   // ~16 MB for 256×256 tiles
+const DISPLAY_CAPACITY: usize = 256;  // ~64 MB for 256×256 tiles (u8 RGBA)
 
-impl TileKey {
-    fn new(tab_id: Uuid, tile: &Tile) -> Self {
-        Self {
-            tab_id,
-            x: tile.x,
-            y: tile.y,
-        }
-    }
-}
-
-/// In-memory LRU cache for tiles that are actively needed by the viewport.
-/// Capacity is in number of tiles (e.g., 256 tiles × 256×256×8 bytes ≈ 128 MB).
-#[derive(Debug)]
+/// In-memory tile caches for ACEScg and display tiles.
+///
+/// LRU eviction: least-recently-used tiles are evicted when capacity exceeded.
 pub struct TileCache {
-    cache: RwLock<LruCache<TileKey, Arc<Vec<Rgba<f16>>>>>,
+    /// ACEScg f16 tiles: (tab_id, TileCoord) → Arc<Vec<Rgba<f16>>>
+    acescg: RwLock<LruCache<(Uuid, TileCoord), Arc<Vec<Rgba<f16>>>>>,
+    /// sRGB u8 display tiles: (tab_id, TileCoord) → Arc<Vec<u8>>
+    display: RwLock<LruCache<(Uuid, TileCoord), Arc<Vec<u8>>>>,
+}
+
+impl fmt::Debug for TileCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TileCache")
+            .field("acescg_len", &self.acescg.read().len())
+            .field("display_len", &self.display.read().len())
+            .finish()
+    }
 }
 
 impl TileCache {
-    /// Creates a new tile cache with the given capacity (number of tiles).
-    pub fn new(capacity: usize) -> Self {
-        let max_tiles = capacity.max(1);
+    pub fn new() -> Self {
         Self {
-            cache: RwLock::new(LruCache::new(NonZeroUsize::new(max_tiles).unwrap())),
+            acescg: RwLock::new(
+                LruCache::new(NonZeroUsize::new(ACESCG_CAPACITY).unwrap())
+            ),
+            display: RwLock::new(
+                LruCache::new(NonZeroUsize::new(DISPLAY_CAPACITY).unwrap())
+            ),
         }
     }
 
-    /// Get a tile, promoting from TileStore → RAM if needed.
-    pub async fn get_or_load(
+    /// Get a display tile (sRGB u8). Load + convert from TileStore on miss.
+    pub async fn get_display(
         &self,
         tab_id: Uuid,
-        tile: &Tile,
+        coord: TileCoord,
         store: &TileStore,
-        source: &dyn ImageSource,
-    ) -> Result<Arc<Vec<Rgba<f16>>>, Error> {
-        let key = TileKey::new(tab_id, tile);
-        
-        // 1. Check RAM cache
+        conv: &ColorConversion,
+    ) -> Result<Arc<Vec<u8>>, Error> {
+        let key = (tab_id, coord);
+
+        // 1. Display cache hit
         {
-            let mut cache = self.cache.write().await;
-            if let Some(cached) = cache.get(&key) {
-                return Ok(Arc::clone(cached));
+            let mut cache = self.display.write();
+            if let Some(v) = cache.get(&key) {
+                return Ok(v.clone());
             }
         }
-        
-        // 2. Check disk store
-        if let Some(disk_data) = store.get(tile).await? {
-            let arc_data = Arc::new(disk_data);
-            let mut cache = self.cache.write().await;
-            cache.put(key, Arc::clone(&arc_data));
-            return Ok(arc_data);
+
+        // 2. ACEScg cache hit → convert to sRGB
+        {
+            let mut acescg_cache = self.acescg.write();
+            if let Some(acescg_tile) = acescg_cache.get(&key) {
+                let tile = Tile::new(coord, acescg_tile.as_ref().clone());
+                let display = tile.to_srgb_u8(conv);
+                let data = display.data.clone();
+                self.display.write().put(key, data.clone());
+                return Ok(data);
+            }
         }
-        
-        // 3. Decode from source
-        let decoded = source.decode_tile(tile.x, tile.y, tile.width, tile.height).await?;
-        // Store to disk
-        store.put(tile, &decoded).await?;
-        let arc_data = Arc::new(decoded);
-        let mut cache = self.cache.write().await;
-        cache.put(key, Arc::clone(&arc_data));
-        Ok(arc_data)
+
+        // 3. Miss → load from TileStore, cache both
+        let disk_tile = store
+            .read_tile(coord)?
+            .ok_or_else(|| Error::invalid_param(format!("tile not in store: {:?}", coord)))?;
+
+        let acescg_data = disk_tile.data.clone();
+        self.acescg.write().put(key, acescg_data.clone());
+
+        let display_data = disk_tile.to_srgb_u8(conv).data;
+        self.display.write().put(key, display_data.clone());
+
+        Ok(display_data)
+    }
+
+    /// Get ACEScg tile (f16). Load from TileStore on miss.
+    pub async fn get_acescg(
+        &self,
+        tab_id: Uuid,
+        coord: TileCoord,
+        store: &TileStore,
+    ) -> Result<Arc<Vec<Rgba<f16>>>, Error> {
+        let key = (tab_id, coord);
+
+        {
+            let mut cache = self.acescg.write();
+            if let Some(v) = cache.get(&key) {
+                return Ok(v.clone());
+            }
+        }
+
+        let disk_tile = store
+            .read_tile(coord)?
+            .ok_or_else(|| Error::invalid_param(format!("tile not in store: {:?}", coord)))?;
+
+        let data = disk_tile.data.clone();
+        self.acescg.write().put(key, data.clone());
+        Ok(data)
+    }
+
+    /// Invalidate a display tile (keep ACEScg for MIP regeneration).
+    pub fn invalidate_display(&self, tab_id: Uuid, coord: TileCoord) {
+        self.display.write().pop(&(tab_id, coord));
+    }
+
+    /// Invalidate all tiles for a MIP level (display + ACEScg).
+    pub fn invalidate_mip(&self, tab_id: Uuid, mip_level: u32) {
+        let keys_to_remove: Vec<_> = self.display.read().iter()
+            .filter(|(k, _)| k.0 == tab_id && k.1.mip_level == mip_level)
+            .map(|(k, _)| *k)
+            .collect();
+        for key in keys_to_remove {
+            self.display.write().pop(&key);
+        }
+
+        let keys_to_remove: Vec<_> = self.acescg.read().iter()
+            .filter(|(k, _)| k.0 == tab_id && k.1.mip_level == mip_level)
+            .map(|(k, _)| *k)
+            .collect();
+        for key in keys_to_remove {
+            self.acescg.write().pop(&key);
+        }
+    }
+
+    /// Invalidate a specific tile in both caches.
+    pub fn invalidate_tile(&self, tab_id: Uuid, coord: TileCoord) {
+        self.display.write().pop(&(tab_id, coord));
+        self.acescg.write().pop(&(tab_id, coord));
     }
 
     /// Evict all tiles for a tab.
-    pub async fn evict_tab(&self, tab_id: &Uuid) {
-        let mut cache = self.cache.write().await;
-        let keys_to_remove: Vec<_> = cache
-            .iter()
-            .filter(|(k, _)| k.tab_id == *tab_id)
-            .map(|(k, _)| k.clone())
+    pub fn evict_tab(&self, tab_id: &Uuid) {
+        let keys_to_remove: Vec<_> = self.display.read().iter()
+            .filter(|(k, _)| k.0 == *tab_id)
+            .map(|(k, _)| *k)
             .collect();
         for key in keys_to_remove {
-            cache.pop(&key);
+            self.display.write().pop(&key);
+        }
+
+        let keys_to_remove: Vec<_> = self.acescg.read().iter()
+            .filter(|(k, _)| k.0 == *tab_id)
+            .map(|(k, _)| *k)
+            .collect();
+        for key in keys_to_remove {
+            self.acescg.write().pop(&key);
         }
     }
 
-    /// Invalidate a specific tile (remove from cache).
-    pub async fn invalidate_tile(&self, tab_id: &Uuid, tile: &Tile) {
-        let key = TileKey::new(*tab_id, tile);
-        let mut cache = self.cache.write().await;
-        cache.pop(&key);
-    }
-
-    /// Invalidate multiple tiles (remove from cache).
-    pub async fn invalidate_tiles(&self, tab_id: &Uuid, tiles: &[Tile]) {
-        let mut cache = self.cache.write().await;
-        for tile in tiles {
-            let key = TileKey::new(*tab_id, tile);
-            cache.pop(&key);
-        }
-    }
-
-    /// Clear the entire cache.
-    pub async fn clear(&self) {
-        let mut cache = self.cache.write().await;
-        cache.clear();
-    }
-
-    /// Returns current number of cached tiles.
-    pub async fn len(&self) -> usize {
-        let cache = self.cache.read().await;
-        cache.len()
-    }
-
-    /// Returns true if cache is empty.
-    pub async fn is_empty(&self) -> bool {
-        let cache = self.cache.read().await;
-        cache.is_empty()
+    /// Clear all caches.
+    pub fn clear(&self) {
+        self.display.write().clear();
+        self.acescg.write().clear();
     }
 }
 
 impl Default for TileCache {
     fn default() -> Self {
-        Self::new(256) // default capacity: 256 tiles
+        Self::new()
     }
 }

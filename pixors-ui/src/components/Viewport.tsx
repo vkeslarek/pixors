@@ -1,34 +1,67 @@
 
-import { useWasmViewport } from './viewport/useWasmViewport';
+import React, { useEffect } from 'react';
 import { useViewportGestures } from './viewport/useViewportGestures';
-import { useTileStream } from './viewport/useTileStream';
+import type { PixorsViewport } from 'pixors-viewport';
+import type { EngineCommand } from '../engine/types';
 
 export interface ViewportComponentProps {
   activeTool: string;
-  zoom: number;
   onMouseMove: (x: number, y: number) => void;
+  sendCommand: (cmd: EngineCommand) => void;
+  requestTiles: (tabId: string, x: number, y: number, w: number, h: number, zoom: number) => void;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  viewportRef: React.RefObject<PixorsViewport | null>;
+  gpuError: string | null;
+  fit: () => void;
+  pan: (dx: number, dy: number) => void;
+  zoom: (factor: number, x: number, y: number) => void;
+  isReady: boolean;
   tabId: string | null;
+  connected: boolean;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
-export function Viewport({ activeTool, onMouseMove, tabId }: ViewportComponentProps) {
-  const { canvasRef, viewportRef, gpuError, fit, pan, zoom: viewportZoom, isReady } = useWasmViewport('main-viewport');
+export function Viewport({ 
+  activeTool, 
+  onMouseMove, 
+  sendCommand,
+  requestTiles,
+  canvasRef,
+  viewportRef: _viewportRef,
+  gpuError,
+  fit,
+  pan,
+  zoom: viewportZoom,
+  isReady,
+  tabId,
+  connected,
+  imageWidth,
+  imageHeight
+}: ViewportComponentProps) {
   
-  const { fitZoomRef, currentZoomRef } = useViewportGestures({
+  const { emitChange } = useViewportGestures({
     canvasRef,
     fit,
     pan,
     zoom: viewportZoom,
     isReady,
+    imageWidth,
+    imageHeight,
+    onViewportChange: (x, y, w, h, zoom) => {
+      sendCommand({ type: 'viewport_update', x, y, w, h, zoom });
+      if (tabId) {
+        requestTiles(tabId, x, y, w, h, zoom);
+      }
+    }
   });
 
-  const { connected } = useTileStream({
-    tabId,
-    viewportRef,
-    canvasRef,
-    isReady,
-    fitZoomRef,
-    currentZoomRef,
-  });
+  // Emit initial viewport size
+  useEffect(() => {
+    if (isReady && connected && canvasRef.current && tabId) {
+      emitChange();
+    }
+  }, [isReady, connected, canvasRef, tabId]);
 
   if (gpuError) {
     return (

@@ -7,128 +7,40 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use uuid::Uuid;
 
-use super::protocol::PixelFormat;
-
-// -----------------------------------------------------------------------------
-// EngineEvent (broadcast from engine to all clients)
-// -----------------------------------------------------------------------------
+use crate::server::service::system::SystemCommand;
+use crate::server::service::system::SystemEvent;
+use crate::server::service::tab::{TabCommand, TabEvent};
+use crate::server::service::tool::{ToolCommand, ToolEvent};
+use crate::server::service::viewport::{ViewportCommand, ViewportEvent};
 
 /// Events sent from engine to all connected clients.
+///
+/// Each variant wraps an event type defined alongside the service
+/// or system component that produces it. `#[serde(untagged)]` makes
+/// serde serialize the inner value directly, preserving the type tag
+/// from each wrapped enum.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum EngineEvent {
-    // Tab lifecycle
-    TabCreated {
-        tab_id: Uuid,
-        name: String,
-    },
-    TabClosed {
-        tab_id: Uuid,
-    },
-    TabActivated {
-        tab_id: Uuid,
-    },
-
-    // Image lifecycle
-    ImageLoaded {
-        tab_id: Uuid,
-        width: u32,
-        height: u32,
-        format: PixelFormat,
-    },
-    ImageClosed {
-        tab_id: Uuid,
-    },
-
-    // Tile streaming (per-tab WS only)
-    TileData {
-        tab_id: Uuid,
-        x: u32,
-        y: u32,
-        width: u32,
-        height: u32,
-        mip_level: usize,
-        size: usize,
-        #[serde(skip_serializing)]
-        data: Vec<u8>,
-    },
-    TilesComplete,
-    TilesDirty {
-        tab_id: Uuid,
-        regions: Vec<TileRect>,
-    },
-
-    // Tool / UI state
-    ToolChanged {
-        tool: String,
-    },
-    ViewportUpdated {
-        tab_id: Uuid,
-        zoom: f32,
-        pan_x: f32,
-        pan_y: f32,
-    },
-
-    // Errors
-    Error {
-        message: String,
-    },
+    Tab(TabEvent),
+    Viewport(ViewportEvent),
+    Tool(ToolEvent),
+    System(SystemEvent),
 }
-
-// -----------------------------------------------------------------------------
-// EngineCommand (sent from client to engine)
-// -----------------------------------------------------------------------------
 
 /// Commands sent from client to engine.
+///
+/// Each variant wraps a command type defined alongside the service
+/// that handles it. `#[serde(untagged)]` makes serde deserialize
+/// the inner value directly, using each wrapped enum's own type tag.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum EngineCommand {
-    CreateTab,
-    CloseTab {
-        tab_id: Uuid,
-    },
-    ActivateTab {
-        tab_id: Uuid,
-    },
-    OpenFile {
-        tab_id: Uuid,
-        path: String,
-    },
-    ViewportUpdate {
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        zoom: f32,
-    },
-    SelectTool {
-        tool: String,
-    },
-    GetState,
-    Screenshot,
-    Close,
-    /// Mark tiles as dirty (for testing tile invalidation).
-    MarkTilesDirty {
-        tab_id: Uuid,
-        regions: Vec<TileRect>,
-    },
-}
-
-// -----------------------------------------------------------------------------
-// Supporting types
-// -----------------------------------------------------------------------------
-
-
-
-/// Rectangle describing a tile region.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TileRect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
+    Tab(TabCommand),
+    Viewport(ViewportCommand),
+    Tool(ToolCommand),
+    System(SystemCommand),
 }
 
 // -----------------------------------------------------------------------------
@@ -161,11 +73,5 @@ impl EventBus {
     pub async fn broadcast(&self, event: EngineEvent) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.retain(|tx| tx.send(event.clone()).is_ok());
-    }
-
-    /// Broadcasts an event only to subscribers interested in a specific tab.
-    /// For now, we broadcast to all; per-tab filtering can be added later.
-    pub async fn broadcast_to_tab(&self, _tab_id: &Uuid, event: EngineEvent) {
-        self.broadcast(event).await;
     }
 }
