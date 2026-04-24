@@ -16,7 +16,7 @@ pub async fn run_writer_task(
             biased;
             Some(event) = event_rx.recv() => {
                 if let Some(bytes) = encode_event(event) {
-                    if sender.send(Message::Binary(bytes)).await.is_err() {
+                    if sender.send(Message::Binary(bytes.into())).await.is_err() {
                         tracing::warn!("Failed to send event to client");
                         break;
                     }
@@ -24,7 +24,7 @@ pub async fn run_writer_task(
             }
             Some(frame) = frame_rx.recv() => {
                 let bytes = build_tlv(frame);
-                if sender.send(Message::Binary(bytes)).await.is_err() {
+                if sender.send(Message::Binary(bytes.into())).await.is_err() {
                     tracing::warn!("Failed to send frame to client");
                     break;
                 }
@@ -59,7 +59,7 @@ async fn drain_pending_events(
         match event_rx.try_recv() {
             Ok(event) => {
                 if let Some(bytes) = encode_event(event) {
-                    if sender.send(Message::Binary(bytes)).await.is_err() {
+                    if sender.send(Message::Binary(bytes.into())).await.is_err() {
                         return;
                     }
                 }
