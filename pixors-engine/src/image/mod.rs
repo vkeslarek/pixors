@@ -13,5 +13,5 @@ pub use meta::{SampleType, SampleLayout};
 pub use raw::RawImage;
 pub use typed::TypedImage;
 pub use tile::{Tile, TileCoord, TileGrid, TileRect};
-pub use mip::{MipLevel, MipPyramid, mip_level_for_zoom};
+pub use mip::{MipLevel, MipPyramid, mip_level_for_zoom, generate_from_mip0};
 pub use buffer::{ComponentEncoding, PlaneDesc, BufferDesc, ImageBuffer, BandBuffer};

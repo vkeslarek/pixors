@@ -22,8 +22,8 @@ pub async fn run_reader_task(
                     if ctx.close_requested {
                         break;
                     }
-                } else {
-                    tracing::warn!("Invalid command received: {} bytes", data.len());
+                } else if let Err(e) = rmp_serde::from_slice::<EngineCommand>(&data) {
+                    tracing::warn!("Invalid command received: {} bytes, error: {}", data.len(), e);
                 }
             }
             Message::Close(_) => {

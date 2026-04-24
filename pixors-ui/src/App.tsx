@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { MenuBar, TabBar } from './components/MenuBar'
 import { ActivityBar, type Workspace } from './components/ActivityBar'
 import { Toolbar } from './components/Toolbar'
-import { Viewport } from './components/Viewport'
+import { ViewportV2 } from './components/ViewportV2'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
-import { useEngine } from './engine/useEngine'
-import { useWasmViewport } from './components/viewport/useWasmViewport'
-import type { Layer, Adjustment, MousePos } from './types'
+import { useEngineConnection, useEngineTabs, useEngineTools, useEngineCommands, useEngineViewportState, useEngineClient } from './engine'
+import type { Layer, Adjustment } from './types'
 import './App.css'
 
 // ── Initial state (mock, will be replaced by engine) ─────────────────────
@@ -34,38 +33,29 @@ const INIT_ADJ: Adjustment[] = [
 
 // ── App ───────────────────────────────────────────────────────────────────
 export default function App() {
-  const { canvasRef, viewportRef, gpuError, fit, pan, zoom, isReady } = useWasmViewport('main-viewport');
-
-  // Engine connection and state
-  const {
-    state: engineState,
-    connected,
-    error,
-    createTab,
-    createTabAndOpen,
-    closeTab: engineCloseTab,
-    activateTab,
-    openFile,
-    selectTool,
-    sendCommand,
-    requestTiles,
-  } = useEngine(viewportRef);
+  // Engine hooks
+  useEngineClient();
+  const connected = useEngineConnection();
+  const { tabs, activeTabId } = useEngineTabs();
+  const { activeTool } = useEngineTools();
+  const { zoom: engineZoom } = useEngineViewportState(activeTabId);
+  const cmds = useEngineCommands();
 
   // UI-specific state (mock, will be replaced by engine in later phases)
   const [workspace, setWorkspace]       = useState<Workspace>('editor');
   const [layers, setLayers]             = useState<Layer[]>(INIT_LAYERS);
   const [activeLayerId, setActiveLayerId] = useState('4');
   const [adjustments, setAdjustments]   = useState<Adjustment[]>(INIT_ADJ);
-  const [mousePos, setMousePos]         = useState<MousePos>({ x: 0, y: 0 });
   const [panelsOpen, setPanelsOpen]     = useState({ hist: true, props: true, adj: true, layers: true });
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
     if (connected && !initialLoadDone.current) {
       initialLoadDone.current = true;
-      createTabAndOpen('example1.png');
+      // Removed auto-opening of example1.png
+      // cmds.createTabAndOpen('example1.png');
     }
-  }, [connected, createTabAndOpen])
+  }, [connected, cmds])
   
   useEffect(() => {
     const toolMap: Record<string, string> = {
@@ -75,20 +65,15 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       const tool = toolMap[e.key.toLowerCase()];
-      if (tool) { selectTool(tool); e.preventDefault(); }
+      if (tool) { cmds.selectTool(tool); e.preventDefault(); }
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault();
-        const path = 'example1.png';
-        if (engineState.activeTabId) {
-          openFile(engineState.activeTabId, path);
-        } else {
-          createTabAndOpen(path);
-        }
+        cmds.sendCommand({ type: 'open_file_dialog', tab_id: activeTabId || undefined });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [createTabAndOpen, engineState.activeTabId, openFile, selectTool]);
+  }, [cmds, activeTabId]);
 
   // Layer mutations (mock)
   const toggleVisibility = (id: string) => setLayers(ls => ls.map(l => l.id===id ? {...l,visible:!l.visible} : l));
@@ -98,8 +83,9 @@ export default function App() {
     setActiveLayerId(id === activeLayerId ? (layers.find(l=>l.id!==id)?.id ?? '') : activeLayerId);
   };
   const addLayer = () => {
-    const l: Layer = { id: Date.now().toString(), name: `Layer ${layers.length+1}`, type:'image', visible:true, locked:false, opacity:100, blendMode:'Normal', color:'#aaa' };
-    setLayers(ls => [l, ...ls]); setActiveLayerId(l.id);
+    const nl = { id: Date.now().toString(), name: 'New Layer', type:'image', visible:true, locked:false, opacity:100, blendMode:'Normal', color:'#ccc' } as Layer;
+    setLayers([nl, ...layers]);
+    setActiveLayerId(nl.id);
   };
   const duplicateLayer = () => {
     const src = layers.find(l => l.id === activeLayerId);
@@ -114,63 +100,43 @@ export default function App() {
   const changeAdj = (id: string, v: number) => setAdjustments(as => as.map(a => a.id===id ? {...a,value:v} : a));
   const resetAdj  = () => setAdjustments(INIT_ADJ);
 
-  // Tab mutations (forward to engine)
-  const handleTabClick = (tabId: string) => {
-    activateTab(tabId);
-  };
-  const handleTabClose = (tabId: string) => {
-    engineCloseTab(tabId);
-  };
-  const handleTabAdd = () => {
-    createTab();
-  };
-  const handleOpenFile = useCallback(() => {
-    const path = window.prompt('Path to image (engine filesystem):', 'example1.png');
-    if (!path) return;
-    if (engineState.activeTabId) {
-      openFile(engineState.activeTabId, path);
-      return;
-    }
-    createTabAndOpen(path);
-  }, [createTabAndOpen, engineState.activeTabId, openFile]);
+  const handleTabClick = (id: string) => cmds.activateTab(id);
+  const handleTabClose = (id: string) => cmds.closeTab(id);
+  const handleTabAdd   = () => cmds.createTab();
 
-  const activeTabObj = engineState.tabs.find(t => t.id === engineState.activeTabId);
+  const handleOpenFileDialog = () => {
+    cmds.sendCommand({ type: 'open_file_dialog', tab_id: activeTabId || undefined });
+  };
+
+  const activeTabObj = tabs.find(t => t.id === activeTabId);
 
   return (
     <Tooltip.Provider>
       <div className="app-container">
         <MenuBar
           activeTabName={activeTabObj?.name}
-          onOpenFile={handleOpenFile}
+          onOpenFile={handleOpenFileDialog}
           onExport={() => console.log('export')}
         />
         <div className="workspace">
           <ActivityBar workspace={workspace} onWorkspaceChange={setWorkspace} />
-          <Toolbar activeTool={engineState.activeTool} onToolSelect={selectTool} />
+          <Toolbar activeTool={activeTool} onToolSelect={cmds.selectTool} />
           <div className="canvas-column">
             <TabBar
-              tabs={engineState.tabs}
-              activeTabId={engineState.activeTabId}
+              tabs={tabs}
+              activeTabId={activeTabId}
               onTabClick={handleTabClick}
               onTabClose={handleTabClose}
               onTabAdd={handleTabAdd}
             />
-            <Viewport
-              activeTool={engineState.activeTool}
-              onMouseMove={(x,y)=>setMousePos({x,y})}
-              sendCommand={sendCommand}
-              requestTiles={requestTiles}
-              canvasRef={canvasRef}
-              viewportRef={viewportRef}
-              gpuError={gpuError}
-              fit={fit}
-              pan={pan}
-              zoom={zoom}
-              isReady={isReady}
-              tabId={engineState.activeTabId}
-              connected={connected}
+            <ViewportV2
+              tabId={activeTabId}
               imageWidth={activeTabObj?.width}
               imageHeight={activeTabObj?.height}
+              activeTool={activeTool}
+              connected={connected}
+              sendCommand={cmds.sendCommand}
+              onMouseMove={(x, y) => window.dispatchEvent(new CustomEvent('mouse_pos', { detail: { x, y } }))}
             />
           </div>
           <Sidebar
@@ -192,12 +158,11 @@ export default function App() {
           />
         </div>
         <StatusBar
-          activeTool={engineState.activeTool}
-          mousePos={mousePos}
-          zoom={engineState.zoom}
+          activeTool={activeTool}
+          zoom={engineZoom}
           layerCount={layers.length}
           connected={connected}
-          error={error}
+          error={null}
         />
       </div>
     </Tooltip.Provider>

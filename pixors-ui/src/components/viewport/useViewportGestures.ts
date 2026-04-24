@@ -22,13 +22,16 @@ export function useViewportGestures({ canvasRef, fit, pan, zoom, isReady, onView
     onViewportChangeRef.current = onViewportChange;
   }, [onViewportChange]);
 
-  const emitChange = () => {
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Immediate: updates WASM camera. Debounced: sends request_tiles to backend.
+  const emitChange = (immediate = false) => {
     if (!canvasRef.current || !imageWidth || !imageHeight) return;
     const rect = canvasRef.current.getBoundingClientRect();
     
     const img_ar = imageWidth / imageHeight;
     const vp_ar = rect.width / rect.height;
-    
+
     let bw = 1.0;
     let bh = 1.0;
     if (img_ar >= vp_ar) {
@@ -36,26 +39,33 @@ export function useViewportGestures({ canvasRef, fit, pan, zoom, isReady, onView
     } else {
       bw = vp_ar / img_ar;
     }
-    
+
     const scaleX = bw / zoomRef.current;
     const scaleY = bh / zoomRef.current;
-    
+
     const offsetX = centerRef.current.x - scaleX * 0.5;
     const offsetY = centerRef.current.y - scaleY * 0.5;
-    
+
     const x = offsetX * imageWidth;
     const y = offsetY * imageHeight;
     const w = scaleX * imageWidth;
     const h = scaleY * imageHeight;
-    
-    onViewportChangeRef.current(x, y, w, h, zoomRef.current);
+
+    if (immediate) {
+      onViewportChangeRef.current(x, y, w, h, zoomRef.current);
+    } else {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        onViewportChangeRef.current(x, y, w, h, zoomRef.current);
+      }, 120);
+    }
   };
 
   useEffect(() => {
     if (isReady && canvasRef.current && imageWidth && imageHeight) {
       centerRef.current = { x: 0.5, y: 0.5 };
       zoomRef.current = 1.0;
-      emitChange();
+      emitChange(true); // new image: immediate
     }
   }, [imageWidth, imageHeight, isReady]);
 
@@ -97,7 +107,7 @@ export function useViewportGestures({ canvasRef, fit, pan, zoom, isReady, onView
       
       lastX = e.clientX;
       lastY = e.clientY;
-      emitChange();
+      emitChange(true); // pan: immediate
     };
 
     const onMouseUp = () => { dragging = false; };
@@ -148,7 +158,7 @@ export function useViewportGestures({ canvasRef, fit, pan, zoom, isReady, onView
       fit();
       centerRef.current = { x: 0.5, y: 0.5 };
       zoomRef.current = 1.0;
-      emitChange();
+      emitChange(false); // wheel: debounced — avoids flooding backend per scroll step
     };
 
     canvas.addEventListener('mousedown', onMouseDown);

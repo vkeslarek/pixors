@@ -21,6 +21,8 @@ pub struct TileStore {
     image_height: u32,
     mip_level: u32,
     hot_cache: RwLock<LruCache<TileCoord, Arc<Vec<Rgba<f16>>>>>,
+    /// When false, Drop does NOT delete files. Used for read-only views sharing a path.
+    auto_destroy: bool,
 }
 
 impl TileStore {
@@ -37,6 +39,24 @@ impl TileStore {
             image_height,
             mip_level: 0,
             hot_cache: RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            auto_destroy: true,
+        })
+    }
+
+    /// Open an existing TileStore path without taking ownership (no auto-cleanup on drop).
+    /// Used to read tiles without holding the TabState write lock during generation.
+    pub fn open(tab_id: &uuid::Uuid, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
+        let base_dir = std::env::temp_dir()
+            .join("pixors")
+            .join(tab_id.to_string());
+        Ok(Self {
+            base_dir,
+            tile_size,
+            image_width,
+            image_height,
+            mip_level: 0,
+            hot_cache: RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            auto_destroy: false,
         })
     }
 
@@ -49,7 +69,6 @@ impl TileStore {
             .join(subdir);
         std::fs::create_dir_all(&base_dir)?;
 
-        // Extract mip level from subdir name if present
         let mip_level = if let Some(rest) = subdir.strip_prefix("mip_") {
             rest.parse::<u32>().unwrap_or(0)
         } else {
@@ -63,6 +82,7 @@ impl TileStore {
             image_height,
             mip_level,
             hot_cache: RwLock::new(LruCache::new(NonZeroUsize::new(64).unwrap())),
+            auto_destroy: true,
         })
     }
 
@@ -262,7 +282,9 @@ impl TileStore {
 
 impl Drop for TileStore {
     fn drop(&mut self) {
-        let _ = self.destroy();
+        if self.auto_destroy {
+            let _ = self.destroy();
+        }
     }
 }
 

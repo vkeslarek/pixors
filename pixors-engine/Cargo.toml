@@ -35,5 +35,6 @@ lru = "0.12"
 dashmap = "6"
 parking_lot = "0.12"
 tempfile = "3.27.0"
+rfd = "0.17.2"
 
 [dev-dependencies]

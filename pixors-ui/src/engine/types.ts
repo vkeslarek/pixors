@@ -21,6 +21,7 @@ export type EngineEvent =
   | { type: 'image_closed'; tab_id: string }
   | { type: 'tiles_complete' }
   | { type: 'tiles_dirty'; tab_id: string; regions: TileRect[] }
+  | { type: 'mip_level_ready'; tab_id: string; level: number; width: number; height: number }
   | { type: 'tool_changed'; tool: string }
   | { type: 'viewport_updated'; tab_id: string; zoom: number; pan_x: number; pan_y: number }
   | { type: 'error'; message: string };
@@ -34,6 +35,7 @@ export type EngineCommand =
   | { type: 'close_tab'; tab_id: string }
   | { type: 'activate_tab'; tab_id: string }
   | { type: 'open_file'; tab_id: string; path: string }
+  | { type: 'open_file_dialog'; tab_id?: string }
   | { type: 'viewport_update'; x: number; y: number; w: number; h: number; zoom: number }
   | { type: 'request_tiles'; tab_id: string; x: number; y: number; w: number; h: number; zoom: number }
   | { type: 'select_tool'; tool: string }
