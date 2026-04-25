@@ -1,6 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { FolderOpen, Download, Plus, X } from 'lucide-react'
-import type { UITab as Tab } from '../engine/types'
+import { useTabs, useActiveTabId, useActiveTab, engine } from '@/engine'
 
 const MENU_ITEMS = [
   { label: 'File', items: ['New', 'Open...', 'Save', 'Save As...', 'Export...', 'Close'] },
@@ -14,13 +14,9 @@ const MENU_ITEMS = [
   { label: 'Help', items: ['Documentation', 'About'] },
 ]
 
-interface MenuBarProps {
-  activeTabName?: string
-  onOpenFile: () => void
-  onExport: () => void
-}
+export function MenuBar() {
+  const activeTab = useActiveTab()
 
-export function MenuBar({ activeTabName, onOpenFile, onExport }: MenuBarProps) {
   return (
     <div className="menubar">
       <div className="menubar-logo">PIXORS</div>
@@ -36,8 +32,8 @@ export function MenuBar({ activeTabName, onOpenFile, onExport }: MenuBarProps) {
                   key={item}
                   className="dropdown-item"
                   onSelect={() => {
-                    if (menu.label === 'File' && item === 'Open...') onOpenFile()
-                    if (menu.label === 'File' && item === 'Export...') onExport()
+                    if (menu.label === 'File' && item === 'Open...') engine.dispatch({ type: 'open_file_dialog' })
+                    if (menu.label === 'File' && item === 'Export...') console.log('export')
                   }}
                 >
                   {item}
@@ -48,40 +44,34 @@ export function MenuBar({ activeTabName, onOpenFile, onExport }: MenuBarProps) {
         </DropdownMenu.Root>
       ))}
       <div className="menubar-right">
-        {activeTabName && <span className="document-name">{activeTabName}</span>}
-        <button className="btn btn-outline" onClick={onOpenFile}><FolderOpen size={13} /> Open</button>
-        <button className="btn btn-accent" onClick={onExport}><Download size={13} /> Export</button>
+        {activeTab?.name && <span className="document-name">{activeTab.name}</span>}
+        <button className="btn btn-outline" onClick={() => engine.dispatch({ type: 'open_file_dialog' })}><FolderOpen size={13} /> Open</button>
+        <button className="btn btn-accent" onClick={() => console.log('export')}><Download size={13} /> Export</button>
       </div>
     </div>
   )
 }
 
-// ── TabBar — lives inside the canvas column, not full-width ──────────────────
-interface TabBarProps {
-  tabs: Tab[]
-  activeTabId: string | null
-  onTabClick: (id: string) => void
-  onTabClose: (id: string) => void
-  onTabAdd: () => void
-}
+export function TabBar() {
+  const tabs = useTabs()
+  const activeTabId = useActiveTabId()
 
-export function TabBar({ tabs, activeTabId, onTabClick, onTabClose, onTabAdd }: TabBarProps) {
   return (
     <div className="tabbar">
       {tabs.map(tab => (
         <div
           key={tab.id}
           className={`doc-tab${tab.id === activeTabId ? ' active' : ''}`}
-          onClick={() => onTabClick(tab.id)}
+          onClick={() => engine.dispatch({ type: 'activate_tab', tab_id: tab.id })}
         >
           <div className="doc-tab-dot" style={{ background: tab.color }} />
           <span>{tab.modified && tab.id === activeTabId ? '● ' : ''}{tab.name}</span>
-          <button className="doc-tab-close" onClick={e => { e.stopPropagation(); onTabClose(tab.id) }}>
+          <button className="doc-tab-close" onClick={e => { e.stopPropagation(); engine.dispatch({ type: 'close_tab', tab_id: tab.id }) }}>
             <X size={8} />
           </button>
         </div>
       ))}
-      <button className="tab-add-btn" onClick={onTabAdd}><Plus size={10} /></button>
+      <button className="tab-add-btn" onClick={() => engine.dispatch({ type: 'create_tab' })}><Plus size={10} /></button>
     </div>
   )
 }

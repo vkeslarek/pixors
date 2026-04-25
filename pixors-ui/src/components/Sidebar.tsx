@@ -1,6 +1,7 @@
 import { Eye, EyeOff, Lock, Trash2, Plus, Copy, Filter } from 'lucide-react'
 import { ChevronRight } from 'lucide-react'
-import type { Layer, Adjustment } from '../types'
+import type { Layer, Adjustment } from '@/types'
+import { useUIStore } from '@/ui/uiStore'
 
 // ── Histogram (fake RGB data) ─────────────────────────────────────────────
 import { useEffect, useRef } from 'react'
@@ -224,29 +225,23 @@ function LayersPanel({ open, onToggle, layers, activeLayerId, onLayerClick, onTo
 }
 
 // ── Sidebar (composes all panels) ─────────────────────────────────────────
-interface SidebarProps {
-  layers: Layer[]
-  activeLayerId: string
-  adjustments: Adjustment[]
-  panelsOpen: Record<string, boolean>
-  onPanelToggle: (key: string) => void
-  onLayerClick: (id: string) => void
-  onToggleVisibility: (id: string) => void
-  onToggleLock: (id: string) => void
-  onDeleteLayer: (id: string) => void
-  onAddLayer: () => void
-  onDuplicateLayer: () => void
-  onBlendChange: (id: string, mode: string) => void
-  onLayerOpacityChange: (id: string, v: number) => void
-  onAdjChange: (id: string, v: number) => void
-  onAdjReset: () => void
-}
+export function Sidebar() {
+  const layers = useUIStore(s => s.layers)
+  const activeLayerId = useUIStore(s => s.activeLayerId)
+  const adjustments = useUIStore(s => s.adjustments)
+  const panelsOpen = useUIStore(s => s.panelsOpen)
+  const onPanelToggle = useUIStore(s => s.togglePanel)
+  const onLayerClick = useUIStore(s => s.setActiveLayerId)
+  const onToggleVisibility = useUIStore(s => s.toggleVisibility)
+  const onToggleLock = useUIStore(s => s.toggleLock)
+  const onDeleteLayer = useUIStore(s => s.deleteLayer)
+  const onAddLayer = useUIStore(s => s.addLayer)
+  const onDuplicateLayer = useUIStore(s => s.duplicateLayer)
+  const onBlendChange = useUIStore(s => s.changeBlend)
+  const onLayerOpacityChange = useUIStore(s => s.changeOpacity)
+  const onAdjChange = useUIStore(s => s.changeAdj)
+  const onAdjReset = useUIStore(s => s.resetAdj)
 
-export function Sidebar({
-  layers, activeLayerId, adjustments, panelsOpen, onPanelToggle,
-  onLayerClick, onToggleVisibility, onToggleLock, onDeleteLayer, onAddLayer, onDuplicateLayer,
-  onBlendChange, onLayerOpacityChange, onAdjChange, onAdjReset,
-}: SidebarProps) {
   const activeLayer = layers.find(l => l.id === activeLayerId)
   return (
     <div className="sidebar">

@@ -1,60 +1,44 @@
-/**
- * Viewport — Canvas 2D viewport, no WASM/WebGPU.
- * Acts as the drop-in React wrapper for the native canvas renderer.
- * Handles mouse events, zooming, and coordinating tile requests with the Engine.
- */
 import { useEffect, useRef } from 'react';
-import { useCanvas2DViewport } from './viewport/ViewportCanvas2D';
-import { useEngineEvent } from '../engine';
-import type { EngineCommand } from '../engine/types';
+import { useCanvas2DViewport } from '@/components/viewport/ViewportCanvas2D';
+import { useActiveTabId, useActiveTab, useTool, useConnected, engine } from '@/engine';
+import { useUIStore } from '@/ui/uiStore';
 
-interface Props {
-  tabId: string | null;
-  imageWidth?: number;
-  imageHeight?: number;
-  activeTool: string;
-  connected: boolean;
-  sendCommand: (cmd: EngineCommand) => void;
-  onMouseMove: (x: number, y: number) => void;
-}
+export function Viewport() {
+  const tabId = useActiveTabId();
+  const activeTab = useActiveTab();
+  const activeTool = useTool();
+  const connected = useConnected();
 
-export function Viewport({ tabId, imageWidth, imageHeight, activeTool, connected, sendCommand, onMouseMove }: Props) {
   const { canvasRef, isReady, fit, pan, zoom, getCamera, hasAllTiles } = useCanvas2DViewport(tabId);
 
-  // Debounce ref to prevent flooding the engine with tile requests during rapid panning
+  const tabIdRef = useRef(tabId);
+  tabIdRef.current = tabId;
+  const imageWidthRef = useRef(activeTab?.width);
+  imageWidthRef.current = activeTab?.width;
+  const imageHeightRef = useRef(activeTab?.height);
+  imageHeightRef.current = activeTab?.height;
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // Pending flag to ensure we don't request tiles if a previous request is still streaming
   const pendingRef = useRef(false);
-  
-  // Tracks the timestamp of the last mouse move event dispatched to the StatusBar to throttle React updates
-  const lastMousePosRef = useRef(0);
 
-  /** Pre-fetch margin as fraction of the viewport on each side (0.5 = 50%). */
   const TILE_MARGIN = 0.5;
-
-  /** Tile dimension in pixels (matches engine tile_size). */
   const TILE_SIZE = 256;
 
-  /** Compute MIP level from zoom (duplicates engine logic). */
   const mipLevelForZoom = (z: number): number => {
     if (z >= 1) return 0;
     return Math.ceil(Math.log2(1 / z));
   };
 
-  /** Returns the tile cache keys for all tiles overlapping the viewport at the given MIP level. */
   const tileKeysForViewport = (panX: number, panY: number, vpW: number, vpH: number, mipLevel: number): string[] => {
     const mipScale = Math.pow(2, mipLevel);
     const mipX = panX / mipScale;
     const mipY = panY / mipScale;
     const mipW = vpW / mipScale;
     const mipH = vpH / mipScale;
-
     const txMin = Math.floor(mipX / TILE_SIZE) * TILE_SIZE;
     const tyMin = Math.floor(mipY / TILE_SIZE) * TILE_SIZE;
     const txMax = Math.floor((mipX + mipW) / TILE_SIZE) * TILE_SIZE;
     const tyMax = Math.floor((mipY + mipH) / TILE_SIZE) * TILE_SIZE;
-
     const keys: string[] = [];
     for (let py = tyMin; py <= tyMax; py += TILE_SIZE) {
       for (let px = txMin; px <= txMax; px += TILE_SIZE) {
@@ -64,19 +48,14 @@ export function Viewport({ tabId, imageWidth, imageHeight, activeTool, connected
     return keys;
   };
 
-  /**
-   * Dispatches a command to the engine to generate/stream tiles for the current visible area
-   * plus a margin on all sides — preemptively fetches neighboring tiles so they are already
-   * cached when the user pans.
-   *
-   * When `force` is false (default), skips the request if all tiles covering the visible
-   * viewport are already cached.
-   */
   const requestTiles = (force = false) => {
-    if (!tabId || !canvasRef.current || !imageWidth || !imageHeight) return;
-    const { panX, panY, zoom: z } = getCamera();
+    const id = tabIdRef.current;
+    const iw = imageWidthRef.current;
+    const ih = imageHeightRef.current;
     const canvas = canvasRef.current;
+    if (!id || !canvas || !iw || !ih) return;
 
+    const { panX, panY, zoom: z } = getCamera();
     const w = canvas.width / z;
     const h = canvas.height / z;
 
@@ -88,22 +67,16 @@ export function Viewport({ tabId, imageWidth, imageHeight, activeTool, connected
 
     const mx = w * TILE_MARGIN;
     const my = h * TILE_MARGIN;
-
-    sendCommand({ type: 'request_tiles', tab_id: tabId, x: panX - mx, y: panY - my, w: w + 2 * mx, h: h + 2 * my, zoom: z });
+    engine.dispatch({ type: 'request_tiles', tab_id: id, x: panX - mx, y: panY - my, w: w + 2 * mx, h: h + 2 * my, zoom: z });
     pendingRef.current = true;
   };
 
-  /**
-   * Debounces tile requests. Only actually triggers 120ms after the user stops moving the canvas.
-   * This is critical to maintain high 60fps pan performance, as the viewport natively translates
-   * existing tiles until movement stops.
-   */
   const requestDebounced = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(requestTiles, 120);
   };
 
-  // Canvas event handlers
+  // Canvas mouse event handlers
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !isReady) return;
@@ -123,27 +96,16 @@ export function Viewport({ tabId, imageWidth, imageHeight, activeTool, connected
     };
     const onMouseMoveHandler = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const now = Date.now();
-      
-      // Throttle mouse coordinates event (used by StatusBar) to ~20 FPS.
-      // This massively improves performance by decoupling native mouse move speed
-      // from heavy React component re-renders higher in the DOM tree.
-      if (now - lastMousePosRef.current > 50) {
-        onMouseMove(e.clientX - rect.left, e.clientY - rect.top);
-        lastMousePosRef.current = now;
-      }
-      
+      useUIStore.getState().setMousePos({
+        x: Math.round(e.clientX - rect.left),
+        y: Math.round(e.clientY - rect.top),
+      });
       if (!dragging) return;
-      
-      // Translate the camera (pan) using the delta movement
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
       pan(dx, dy);
-      
       lastX = e.clientX;
       lastY = e.clientY;
-      
-      // Defer loading new tiles until movement stops
       requestDebounced();
     };
     const onMouseUp = () => { dragging = false; };
@@ -158,7 +120,9 @@ export function Viewport({ tabId, imageWidth, imageHeight, activeTool, connected
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') spaceDown = true;
       if (e.key === 'Home') {
-        if (imageWidth && imageHeight) fit(imageWidth, imageHeight);
+        const iw = imageWidthRef.current;
+        const ih = imageHeightRef.current;
+        if (iw && ih) fit(iw, ih);
         requestDebounced();
         e.preventDefault();
       }
@@ -183,35 +147,40 @@ export function Viewport({ tabId, imageWidth, imageHeight, activeTool, connected
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [canvasRef, isReady, pan, zoom, fit, imageWidth, imageHeight]);
+  }, [canvasRef, isReady, pan, zoom, fit]);
 
-  // Request tiles immediately when image finishes loading
-  useEngineEvent('image_loaded', (msg) => {
-    if (msg.tab_id !== tabId || !isReady || !canvasRef.current) return;
-    fit(msg.width, msg.height);
-    requestTiles();
-  });
-
-  // Fallback: also request when props arrive (reconnect / session restore)
+  // Engine event subscriptions — stable, uses refs for latest values
   useEffect(() => {
-    if (!isReady || !imageWidth || !imageHeight) return;
-    fit(imageWidth, imageHeight);
-    requestTiles();
-  }, [isReady, imageWidth, imageHeight]);
+    const unsubs = [
+      engine.subscribe('image_loaded', (msg) => {
+        if (msg.tab_id !== tabIdRef.current) return;
+        fit(msg.width, msg.height);
+        requestTiles();
+      }),
+      engine.subscribe('mip_level_ready', (msg) => {
+        if (msg.tab_id === tabIdRef.current && !pendingRef.current) {
+          pendingRef.current = true;
+          requestTiles();
+        }
+      }),
+      engine.subscribe('tiles_complete', () => {
+        pendingRef.current = false;
+      }),
+      engine.subscribe('tiles_dirty', (msg) => {
+        if (msg.tab_id === tabIdRef.current) { pendingRef.current = false; requestTiles(true); }
+      }),
+    ];
+    return () => unsubs.forEach(fn => fn());
+  }, []);
 
-  // Re-request on new MIP
-  useEngineEvent('mip_level_ready', (msg) => {
-    if (msg.tab_id === tabId && !pendingRef.current) {
-      pendingRef.current = true;
-      requestTiles();
-    }
-  });
-  useEngineEvent('tiles_complete', () => { 
-    pendingRef.current = false; 
-  });
-  useEngineEvent('tiles_dirty', (msg) => {
-    if (msg.tab_id === tabId) { pendingRef.current = false; requestTiles(true); }
-  });
+  // Initial tile request when image props arrive
+  useEffect(() => {
+    const iw = imageWidthRef.current;
+    const ih = imageHeightRef.current;
+    if (!isReady || !iw || !ih) return;
+    fit(iw, ih);
+    requestTiles();
+  }, [isReady, activeTab?.width, activeTab?.height]);
 
   return (
     <div className={`canvas-area tool-${activeTool}`} style={{ position: 'relative', width: '100%', height: '100%' }}>

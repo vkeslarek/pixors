@@ -1,5 +1,5 @@
 import { decode, encode } from '@msgpack/msgpack';
-import type { EngineCommand, EngineEvent } from './types';
+import type { EngineCommand, EngineEvent } from '@/engine/types';
 
 // Toggle this flag if you need to debug WebSocket payloads (can be noisy)
 const DEBUG = import.meta.env.DEV;
@@ -34,6 +34,7 @@ type BinaryCallback = (type: number, payload: Uint8Array, len: number) => void;
 export class EngineClient {
   private ws: WebSocket | null = null;
   private eventListeners: Map<string, Set<Function>> = new Map();
+  private wildcardListeners: Set<(e: EngineEvent) => void> = new Set();
   private binaryListeners: Set<BinaryCallback> = new Set();
   private connectionListeners: Set<(connected: boolean) => void> = new Set();
   
@@ -45,10 +46,7 @@ export class EngineClient {
   }
 
   constructor() {
-    this.on('heartbeat', () => {
-      console.log('[Engine] heartbeat received → sending heartbeat command');
-      this.sendCommand({ type: 'heartbeat' });
-    });
+    // heartbeat auto-reply moved to engine.boot()
   }
 
   public connect() {
@@ -123,6 +121,11 @@ export class EngineClient {
     }
   }
 
+  public onAnyEvent(cb: (e: EngineEvent) => void): () => void {
+    this.wildcardListeners.add(cb);
+    return () => { this.wildcardListeners.delete(cb); };
+  }
+
   public on<T extends EngineEvent['type']>(type: T, cb: EventCallback<T>) {
     if (!this.eventListeners.has(type)) {
       this.eventListeners.set(type, new Set());
@@ -146,6 +149,7 @@ export class EngineClient {
   }
 
   private emit(event: EngineEvent) {
+    for (const cb of this.wildcardListeners) cb(event);
     const listeners = this.eventListeners.get(event.type);
     if (listeners) {
       for (const cb of listeners) {

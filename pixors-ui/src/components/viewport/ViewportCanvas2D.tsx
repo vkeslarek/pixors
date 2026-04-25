@@ -9,27 +9,16 @@
  * the image-space canvas, scale by 2^mip_level.
  */
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { engineClient, MSG_TILE } from '../../engine/client';
-import { LRUTileCache } from './LRUTileCache';
+import { engine, MSG_TILE } from '@/engine';
+import { LRUTileCache } from '@/components/viewport/LRUTileCache';
 
 // --- Types ---
 
 interface Camera {
-  panX: number;   // image-space X at canvas top-left
-  panY: number;   // image-space Y at canvas top-left
-  zoom: number;   // screen pixels per image pixel
+  panX: number;
+  panY: number;
+  zoom: number;
 }
-
-interface TileEntry {
-  bitmap: ImageBitmap;
-  imgX: number;   // image-space top-left X
-  imgY: number;   // image-space top-left Y
-  imgW: number;   // image-space width
-  imgH: number;   // image-space height
-  mipLevel: number;
-}
-
-// --- Hook ---
 
 export interface UseCanvas2DViewportReturn {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -171,7 +160,7 @@ export function useCanvas2DViewport(tabId: string | null) {
 
   // Binary tile reception
   useEffect(() => {
-    const unsub = engineClient.onBinary((type, payload) => {
+    const unsub = engine.onBinary((type, payload) => {
       if (type !== MSG_TILE) return;
 
       const view = new DataView(payload.buffer, payload.byteOffset);

@@ -1,5 +1,6 @@
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Move, Square, Circle, Wand, Crop, Droplet, Brush, Eraser, Heart, Palette, FileText, Shapes, Hand, ZoomIn } from 'lucide-react'
+import { useTool, engine } from '@/engine'
 
 export const TOOLS = [
   { id: 'move', icon: Move, label: 'Move (V)' },
@@ -22,12 +23,8 @@ export const TOOLS = [
   { id: 'zoom', icon: ZoomIn, label: 'Zoom (Z)' },
 ] as const
 
-interface ToolbarProps {
-  activeTool: string
-  onToolSelect: (id: string) => void
-}
-
-export function Toolbar({ activeTool, onToolSelect }: ToolbarProps) {
+export function Toolbar() {
+  const activeTool = useTool()
   return (
     <div className="toolbar">
       {TOOLS.map((tool, i) =>
@@ -38,7 +35,7 @@ export function Toolbar({ activeTool, onToolSelect }: ToolbarProps) {
             <Tooltip.Trigger asChild>
               <button
                 className={`tool-btn${activeTool === tool.id ? ' active' : ''}`}
-                onClick={() => onToolSelect(tool.id)}
+                onClick={() => engine.dispatch({ type: 'select_tool', tool: tool.id })}
               >
                 <tool.icon size={16} />
               </button>

@@ -1,36 +1,18 @@
-import { useState, useEffect } from 'react'
-import type { MousePos } from '../types'
-import { TOOLS } from './Toolbar'
+import { useTool, useConnected } from '@/engine'
+import { useEngineStore } from '@/engine/store'
+import { useUIStore } from '@/ui/uiStore'
+import { TOOLS } from '@/components/Toolbar'
 
-interface StatusBarProps {
-  activeTool: string
-  zoom: number
-  layerCount: number
-  connected?: boolean
-  error?: string | null
-}
-
-/**
- * StatusBar Component
- * Displays current tool, canvas info, mouse position, and engine connection status.
- *
- * Performance note:
- * To avoid triggering full-app React renders during high-frequency mouse movements (e.g. 60+ Hz panning),
- * the `mousePos` state is fully internalized. It listens directly to the native DOM `mouse_pos` 
- * CustomEvent dispatched by the Viewport, completely bypassing the parent component tree.
- */
-export function StatusBar({ activeTool, zoom, layerCount, connected = true, error = null }: StatusBarProps) {
-  const [mousePos, setMousePos] = useState<MousePos>({ x: 0, y: 0 });
-
-  useEffect(() => {
-    // Native event listener for decoupled high-performance updates
-    const onMousePos = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      setMousePos(customEvent.detail);
-    };
-    window.addEventListener('mouse_pos', onMousePos);
-    return () => window.removeEventListener('mouse_pos', onMousePos);
-  }, []);
+export function StatusBar() {
+  const activeTool = useTool()
+  const connected = useConnected()
+  const zoom = useEngineStore(s => {
+    const id = s.activeTabId
+    return id ? s.viewport[id]?.zoom ?? 1 : 1
+  })
+  const error = useEngineStore(s => s.lastError)
+  const layerCount = useUIStore(s => s.layers.length)
+  const mousePos = useUIStore(s => s.mousePos)
 
   const toolLabel = TOOLS.find(t => t?.id === activeTool)?.label.split(' ')[0] ?? activeTool
   return (
@@ -60,13 +42,9 @@ export function StatusBar({ activeTool, zoom, layerCount, connected = true, erro
       <div style={{ flex: 1 }} />
       <div className="statusbar-item" title={error ? `Error: ${error}` : connected ? 'Engine connected' : 'Engine disconnected'}>
         <span style={{
-          display: 'inline-block',
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
+          display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
           backgroundColor: error ? 'var(--error)' : connected ? 'oklch(0.72 0.15 145)' : 'var(--text-muted)',
-          marginRight: 6,
-          verticalAlign: 'middle',
+          marginRight: 6, verticalAlign: 'middle',
         }} />
         <span style={{ fontSize: 11 }}>{error ? 'Error' : connected ? 'Connected' : 'Disconnected'}</span>
       </div>
