@@ -71,9 +71,9 @@ impl<P: Clone> Tile<P> {
 }
 
 impl Tile<Rgba<f16>> {
-    /// Converts ACEScg f16 premul pixels to sRGB u8 RGBA using pre-computed matrix.
+    /// Converts ACEScg f16 premul pixels to sRGB u8 RGBA using pre-computed converter.
     pub fn to_srgb_u8(&self, conv: &ColorConversion) -> Tile<u8> {
-        let srgb = acescg_f16_to_srgb_u8_simd(&self.data, conv.matrix().as_3x3_array());
+        let srgb = acescg_f16_to_srgb_u8_simd(&self.data, conv);
         Tile { coord: self.coord, data: Arc::new(srgb) }
     }
 
@@ -183,7 +183,6 @@ impl TileGrid {
 mod tests {
     use super::*;
     use crate::color::ColorSpace;
-    use crate::image::buffer::BufferDesc;
 
     #[test]
     fn test_tile_coord_creation() {

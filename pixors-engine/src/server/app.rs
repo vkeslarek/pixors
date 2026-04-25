@@ -1,50 +1,15 @@
 //! Application composition root — AppState and command routing.
 
-use crate::color::ColorSpace;
 use crate::server::event_bus::{EngineCommand, EventBus};
+use crate::server::service::Service;
+use crate::server::service::session::SessionService;
 use crate::server::service::system::SystemService;
 use crate::server::service::tab::TabService;
 use crate::server::service::tool::ToolService;
 use crate::server::service::viewport::ViewportService;
+use crate::server::session::SessionManager;
 use crate::server::ws::types::ConnectionContext;
 use std::sync::Arc;
-
-// ---------------------------------------------------------------------------
-// Conversion matrices
-// ---------------------------------------------------------------------------
-
-/// Pre-computed color conversion matrices for common transformations.
-#[derive(Debug, Clone)]
-pub struct ConversionMatrices {
-    /// sRGB → ACEScg conversion matrix (3×3).
-    #[allow(dead_code)]
-    pub srgb_to_acescg: [[f32; 3]; 3],
-    /// ACEScg → sRGB conversion matrix (3×3).
-    #[allow(dead_code)]
-    pub acescg_to_srgb: [[f32; 3]; 3],
-}
-
-impl ConversionMatrices {
-    pub fn new() -> Self {
-        let fwd = ColorSpace::SRGB
-            .converter_to(ColorSpace::ACES_CG)
-            .expect("sRGB → ACEScg conversion always valid");
-        let rev = ColorSpace::ACES_CG
-            .converter_to(ColorSpace::SRGB)
-            .expect("ACEScg → sRGB conversion always valid");
-
-        Self {
-            srgb_to_acescg: fwd.matrix().as_3x3_array(),
-            acescg_to_srgb: rev.matrix().as_3x3_array(),
-        }
-    }
-}
-
-impl Default for ConversionMatrices {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Global state
@@ -58,9 +23,9 @@ pub struct AppState {
     pub tool_service: Arc<ToolService>,
     pub viewport_service: Arc<ViewportService>,
     pub system_service: Arc<SystemService>,
+    pub session_service: Arc<SessionService>,
     pub event_bus: Arc<EventBus>,
-    #[allow(dead_code)]
-    pub conv_matrices: ConversionMatrices,
+    pub session_manager: Arc<SessionManager>,
 }
 
 impl AppState {
@@ -71,7 +36,8 @@ impl AppState {
             tool_service: Arc::new(ToolService::new()),
             viewport_service: Arc::new(ViewportService::new()),
             system_service: Arc::new(SystemService::new()),
-            conv_matrices: ConversionMatrices::new(),
+            session_service: Arc::new(SessionService::new()),
+            session_manager: Arc::new(SessionManager::new()),
         }
     }
 
@@ -80,6 +46,9 @@ impl AppState {
     pub async fn route_command(&self, cmd: EngineCommand, ctx: &mut ConnectionContext) {
         let state = Arc::new(self.clone());
         match cmd {
+            EngineCommand::Session(c) => {
+                self.session_service.handle_command(c, &state, ctx).await;
+            }
             EngineCommand::Tab(c) => {
                 self.tab_service.handle_command(c, &state, ctx).await;
             }
@@ -95,4 +64,3 @@ impl AppState {
         }
     }
 }
-

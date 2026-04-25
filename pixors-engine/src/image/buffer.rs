@@ -4,6 +4,7 @@
 //! Enables interleaved, planar, padded, and mixed layouts without hardcoding assumptions.
 
 use crate::color::{ColorSpace, ColorConversion};
+use crate::convert::pack_rgba_premul;
 use crate::error::Error;
 use crate::pixel::Rgba;
 use half::f16;
@@ -127,90 +128,51 @@ impl BufferDesc {
             .unwrap_or(0)
     }
 
-    /// Factory: RGBA8 interleaved (common for PNG output).
-    pub fn rgba8_interleaved(
+    /// Generic helper: interleaved buffer with given parameters.
+    fn interleaved(
         width: u32,
         height: u32,
+        bits: u8,
+        offsets: &[usize],
+        stride: usize,
         color_space: ColorSpace,
         alpha_mode: crate::image::AlphaMode,
     ) -> Self {
-        let row_stride = width as usize * 4;
-        let enc = ComponentEncoding::UnsignedNormalized { bits: 8 };
-        Self {
-            width,
-            height,
-            planes: vec![
-                PlaneDesc { offset: 0, stride: 4, row_stride, row_length: width, encoding: enc.clone() },
-                PlaneDesc { offset: 1, stride: 4, row_stride, row_length: width, encoding: enc.clone() },
-                PlaneDesc { offset: 2, stride: 4, row_stride, row_length: width, encoding: enc.clone() },
-                PlaneDesc { offset: 3, stride: 4, row_stride, row_length: width, encoding: enc },
-            ],
-            color_space,
-            alpha_mode,
-        }
+        let row_stride = width as usize * stride;
+        let enc = ComponentEncoding::UnsignedNormalized { bits };
+        let planes: Vec<_> = offsets
+            .iter()
+            .map(|&offset| PlaneDesc {
+                offset,
+                stride,
+                row_stride,
+                row_length: width,
+                encoding: enc.clone(),
+            })
+            .collect();
+        Self { width, height, planes, color_space, alpha_mode }
     }
 
-    /// Factory: RGB8 interleaved.
-    pub fn rgb8_interleaved(
-        width: u32,
-        height: u32,
-        color_space: ColorSpace,
-        alpha_mode: crate::image::AlphaMode,
-    ) -> Self {
-        let row_stride = width as usize * 3;
-        let enc = ComponentEncoding::UnsignedNormalized { bits: 8 };
-        Self {
-            width,
-            height,
-            planes: vec![
-                PlaneDesc { offset: 0, stride: 3, row_stride, row_length: width, encoding: enc.clone() },
-                PlaneDesc { offset: 1, stride: 3, row_stride, row_length: width, encoding: enc.clone() },
-                PlaneDesc { offset: 2, stride: 3, row_stride, row_length: width, encoding: enc },
-            ],
-            color_space,
-            alpha_mode,
-        }
+    pub fn rgba8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 8, &[0, 1, 2, 3], 4, cs, a)
     }
-
-    /// Factory: Grayscale (single channel) 8-bit interleaved.
-    pub fn gray8_interleaved(
-        width: u32,
-        height: u32,
-        color_space: ColorSpace,
-        alpha_mode: crate::image::AlphaMode,
-    ) -> Self {
-        let row_stride = width as usize;
-        let enc = ComponentEncoding::UnsignedNormalized { bits: 8 };
-        Self {
-            width,
-            height,
-            planes: vec![
-                PlaneDesc { offset: 0, stride: 1, row_stride, row_length: width, encoding: enc },
-            ],
-            color_space,
-            alpha_mode,
-        }
+    pub fn rgb8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 8, &[0, 1, 2], 3, cs, a)
     }
-
-    /// Factory: Grayscale + Alpha (2 channels) 8-bit interleaved.
-    pub fn gray_alpha8_interleaved(
-        width: u32,
-        height: u32,
-        color_space: ColorSpace,
-        alpha_mode: crate::image::AlphaMode,
-    ) -> Self {
-        let row_stride = width as usize * 2;
-        let enc = ComponentEncoding::UnsignedNormalized { bits: 8 };
-        Self {
-            width,
-            height,
-            planes: vec![
-                PlaneDesc { offset: 0, stride: 2, row_stride, row_length: width, encoding: enc.clone() },
-                PlaneDesc { offset: 1, stride: 2, row_stride, row_length: width, encoding: enc },
-            ],
-            color_space,
-            alpha_mode,
-        }
+    pub fn gray8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 8, &[0], 1, cs, a)
+    }
+    pub fn gray_alpha8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 8, &[0, 1], 2, cs, a)
+    }
+    pub fn rgba16_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 16, &[0, 2, 4, 6], 8, cs, a)
+    }
+    pub fn rgb16_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 16, &[0, 2, 4], 6, cs, a)
+    }
+    pub fn gray16_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
+        Self::interleaved(w, h, 16, &[0], 2, cs, a)
     }
 }
 
@@ -252,6 +214,8 @@ impl ImageBuffer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Image Buffer
 // ---------------------------------------------------------------------------
 // Band Buffer — streaming workhorse
 // ---------------------------------------------------------------------------
@@ -333,20 +297,5 @@ impl BandBuffer {
         }
 
         Ok(out)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Pack linear RGB + alpha into premultiplied Rgba<f16>.
-#[inline(always)]
-fn pack_rgba_premul(rgb: [f32; 3], a: f32) -> Rgba<f16> {
-    Rgba {
-        r: f16::from_f32(rgb[0] * a),
-        g: f16::from_f32(rgb[1] * a),
-        b: f16::from_f32(rgb[2] * a),
-        a: f16::from_f32(a),
     }
 }

@@ -1,47 +1,45 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-/// Commands handled by the ToolService.
+use crate::server::app::AppState;
+use crate::server::service::Service;
+use crate::server::ws::types::ConnectionContext;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolCommand {
-    SelectTool {
-        tool: String,
-    },
+    SelectTool { tool: String },
 }
 
-/// Events emitted by the ToolService.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolEvent {
-    ToolChanged {
-        tool: String,
-    },
+    ToolChanged { tool: String },
 }
 
-/// Service responsible for tracking active tool state.
 #[derive(Debug, Default)]
 pub struct ToolService;
 
-impl ToolService {
-    pub fn new() -> Self {
-        Self
-    }
+#[async_trait]
+impl Service for ToolService {
+    type Command = ToolCommand;
+    type Event = ToolEvent;
 
-    /// Handles a `ToolCommand`, broadcasting events.
-    pub async fn handle_command(
-        &self,
-        cmd: ToolCommand,
-        state: &crate::server::app::AppState,
-        _ctx: &mut crate::server::ws::types::ConnectionContext,
-    ) {
-        use crate::server::event_bus::EngineEvent;
-
+    async fn handle_command(&self, cmd: ToolCommand, state: &Arc<AppState>, _ctx: &mut ConnectionContext) {
         match cmd {
-            ToolCommand::SelectTool { tool } => {
-                state.event_bus.broadcast(
-                    EngineEvent::Tool(ToolEvent::ToolChanged { tool }),
-                ).await;
-            }
+            ToolCommand::SelectTool { tool } => self.handle_select_tool(tool, state).await,
         }
+    }
+}
+
+impl ToolService {
+    pub fn new() -> Self { Self }
+
+    async fn handle_select_tool(&self, tool: String, state: &Arc<AppState>) {
+        use crate::server::event_bus::EngineEvent;
+        state.event_bus.broadcast(
+            EngineEvent::Tool(ToolEvent::ToolChanged { tool }),
+        ).await;
     }
 }

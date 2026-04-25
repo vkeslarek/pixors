@@ -7,6 +7,7 @@ mod app;
 mod event_bus;
 mod server;
 mod service;
+mod session;
 mod ws;
 
 pub use event_bus::{EngineCommand, EngineEvent, EventBus};

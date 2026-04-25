@@ -16,6 +16,14 @@ export function hexToBin(h: string): Uint8Array {
   return a;
 }
 
+function generateUUID(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  return binToHex(b);
+}
+
 export const MSG_EVENT = 0x00;
 export const MSG_TILE = 0x01;
 export const MSG_TILES_COMPLETE = 0x02;
@@ -30,14 +38,26 @@ export class EngineClient {
   private connectionListeners: Set<(connected: boolean) => void> = new Set();
   
   public connected = false;
+  public readonly sessionId: string = generateUUID();
+
+  private wsUrl(): string {
+    return `ws://127.0.0.1:8080/ws?session_id=${this.sessionId}`;
+  }
+
+  constructor() {
+    this.on('heartbeat', () => {
+      console.log('[Engine] heartbeat received → sending heartbeat command');
+      this.sendCommand({ type: 'heartbeat' });
+    });
+  }
 
   public connect() {
     if (this.ws) {
       if (DEBUG) console.log('[Engine] connect() called but already have a WS instance');
       return;
     }
-    if (DEBUG) console.log('[Engine] Connecting to ws://127.0.0.1:8080/ws');
-    this.ws = new WebSocket(`ws://127.0.0.1:8080/ws`);
+    if (DEBUG) console.log('[Engine] Connecting with session', this.sessionId);
+    this.ws = new WebSocket(this.wsUrl());
     this.ws.binaryType = 'arraybuffer';
 
     this.ws.onopen = () => {
@@ -45,6 +65,7 @@ export class EngineClient {
       this.connected = true;
       this.notifyConnection(true);
       this.sendCommand({ type: 'get_state' });
+      this.sendCommand({ type: 'get_session_state' });
     };
 
     this.ws.onclose = (e) => {
@@ -78,6 +99,9 @@ export class EngineClient {
         }
         if (DEBUG_WS) console.log('[Engine] RECV EVENT:', msg.type, msg);
         this.emit(msg);
+      } else if (type === MSG_TILES_COMPLETE) {
+        if (DEBUG_WS) console.log('[Engine] RECV TILES_COMPLETE');
+        this.emit({ type: 'tiles_complete' } as EngineEvent);
       } else {
         this.emitBinary(type, payload, payloadLen);
       }

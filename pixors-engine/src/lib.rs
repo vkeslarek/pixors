@@ -3,6 +3,7 @@
 //! This library provides color-managed image loading and saving with support for PNG.
 //! All internal processing uses ACEScg linear premultiplied RGBA f16 format.
 
+pub mod config;
 pub mod approx;
 pub mod color;
 pub mod pixel;
@@ -17,7 +18,7 @@ pub use color::ColorSpace;
 pub use image::{AlphaMode, RawImage, TypedImage};
 pub use pixel::{Component, Pixel, Rgba, Rgb, Gray, GrayAlpha};
 pub use convert::{premultiply, unpremultiply};
-pub use io::png;
+pub use io::ImageReader;
 
 /// Error type for all library operations.
 pub mod error;

@@ -85,6 +85,7 @@ impl TileCache {
         }
 
         // 3. Miss → load from TileStore, cache both
+        let _sw = crate::debug_stopwatch!("get_display:miss");
         let disk_tile = store
             .read_tile(coord)?
             .ok_or_else(|| Error::invalid_param(format!("tile not in store: {:?}", coord)))?;

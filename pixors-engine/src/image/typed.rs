@@ -2,6 +2,7 @@
 
 use crate::error::Error;
 use crate::color::{ColorSpace, ColorConversion};
+use crate::convert::pack_rgba_premul;
 use crate::pixel::{Pixel, Rgba};
 use half::f16;
 use std::sync::Arc;
@@ -98,16 +99,5 @@ impl TypedImage<Rgba<f16>> {
     /// Read a single pixel at (x, y), converting on-demand.
     pub fn read_pixel(&self, x: u32, y: u32) -> Rgba<f16> {
         self.read_region(x, y, 1, 1)[0]
-    }
-}
-
-/// Pack linear RGB + alpha into premultiplied Rgba<f16>.
-#[inline(always)]
-fn pack_rgba_premul(rgb: [f32; 3], a: f32) -> Rgba<f16> {
-    Rgba {
-        r: f16::from_f32(rgb[0] * a),
-        g: f16::from_f32(rgb[1] * a),
-        b: f16::from_f32(rgb[2] * a),
-        a: f16::from_f32(a),
     }
 }

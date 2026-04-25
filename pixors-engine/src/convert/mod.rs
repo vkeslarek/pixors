@@ -1,11 +1,20 @@
 //! Color and pixel conversion pipelines.
 
 mod premultiply;
-mod pipeline;
-pub mod simd;
+pub(crate) mod simd;
 
 pub use premultiply::{premultiply, unpremultiply};
-pub use pipeline::convert_raw_to_typed;
-pub use pipeline::convert_acescg_premul_to_srgb_u8;
-pub use pipeline::convert_acescg_premul_pixels_to_srgb_u8;
-pub use pipeline::convert_acescg_premul_region_to_srgb_u8;
+
+use crate::pixel::Rgba;
+use half::f16;
+
+/// Pack linear RGB + straight alpha into premultiplied Rgba<f16>.
+#[inline(always)]
+pub(crate) fn pack_rgba_premul(rgb: [f32; 3], a: f32) -> Rgba<f16> {
+    Rgba {
+        r: f16::from_f32(rgb[0] * a),
+        g: f16::from_f32(rgb[1] * a),
+        b: f16::from_f32(rgb[2] * a),
+        a: f16::from_f32(a),
+    }
+}

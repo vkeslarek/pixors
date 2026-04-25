@@ -1,26 +1,18 @@
-//! Pixors engine headless server.
-//!
-//! Starts a WebSocket server that accepts commands from the frontend
-//! and streams image data to connected clients.
-
+use clap::Parser;
+use pixors_engine::config::{load_from, CliConfig};
 use pixors_engine::server::start_server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
-    let log_level = if cfg!(debug_assertions) {
-        tracing::Level::DEBUG
-    } else {
-        tracing::Level::INFO
-    };
+    let cfg = load_from(CliConfig::parse());
 
     tracing_subscriber::fmt()
-        .with_max_level(log_level)
+        .with_max_level(tracing::Level::from(&cfg.max_level))
         .init();
 
-    let addr = "127.0.0.1:8080";
+    let addr = format!("127.0.0.1:{}", cfg.engine.port);
     tracing::info!("Starting Pixors engine server on {}", addr);
-    match start_server(addr).await {
+    match start_server(&addr).await {
         Ok(()) => tracing::info!("Server exited normally"),
         Err(e) => {
             tracing::error!("Server failed: {}", e);

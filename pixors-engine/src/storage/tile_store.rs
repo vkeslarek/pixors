@@ -26,11 +26,9 @@ pub struct TileStore {
 }
 
 impl TileStore {
-    /// Creates a new tile store for a given tab.
-    pub fn new(tab_id: &uuid::Uuid, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
-        let base_dir = std::env::temp_dir()
-            .join("pixors")
-            .join(tab_id.to_string());
+    /// Creates a new tile store at the given base directory.
+    /// Creates the directory if it doesn't exist.
+    pub fn new(base_dir: PathBuf, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
         std::fs::create_dir_all(&base_dir)?;
         Ok(Self {
             base_dir,
@@ -45,10 +43,7 @@ impl TileStore {
 
     /// Open an existing TileStore path without taking ownership (no auto-cleanup on drop).
     /// Used to read tiles without holding the TabState write lock during generation.
-    pub fn open(tab_id: &uuid::Uuid, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
-        let base_dir = std::env::temp_dir()
-            .join("pixors")
-            .join(tab_id.to_string());
+    pub fn open(base_dir: PathBuf, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
         Ok(Self {
             base_dir,
             tile_size,
@@ -60,13 +55,10 @@ impl TileStore {
         })
     }
 
-    /// Creates a tile store in a subdirectory under the tab's temp directory.
+    /// Creates a tile store in a subdirectory of the given base directory.
     /// Used for MIP levels to avoid file collisions.
-    pub fn new_with_subdir(tab_id: &uuid::Uuid, subdir: &str, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
-        let base_dir = std::env::temp_dir()
-            .join("pixors")
-            .join(tab_id.to_string())
-            .join(subdir);
+    pub fn new_with_subdir(base_dir: PathBuf, subdir: &str, tile_size: u32, image_width: u32, image_height: u32) -> Result<Self, Error> {
+        let base_dir = base_dir.join(subdir);
         std::fs::create_dir_all(&base_dir)?;
 
         let mip_level = if let Some(rest) = subdir.strip_prefix("mip_") {
@@ -162,11 +154,10 @@ impl TileStore {
         let path = self.tile_path(&tile.coord);
         let data_bytes = Self::serialize_le(&tile.data);
         std::fs::write(&path, data_bytes).map_err(Error::Io)?;
-        // Invalidate hot cache entry so next read_tile picks up new data
-        {
-            let mut cache = self.hot_cache.write();
-            cache.pop(&tile.coord);
-        }
+        // Keep tile in hot cache — next read hits memory not disk
+        let arc = Arc::new(tile.data.clone());
+        let mut cache = self.hot_cache.write();
+        cache.put(tile.coord, Arc::clone(&arc));
         Ok(())
     }
 
@@ -280,6 +271,22 @@ impl TileStore {
     }
 }
 
+impl Clone for TileStore {
+    fn clone(&self) -> Self {
+        Self {
+            base_dir: self.base_dir.clone(),
+            tile_size: self.tile_size,
+            image_width: self.image_width,
+            image_height: self.image_height,
+            mip_level: self.mip_level,
+            hot_cache: RwLock::new(LruCache::new(
+                self.hot_cache.read().cap()
+            )),
+            auto_destroy: false, // Cloned stores don't auto-destroy
+        }
+    }
+}
+
 impl Drop for TileStore {
     fn drop(&mut self) {
         if self.auto_destroy {
@@ -298,10 +305,14 @@ mod tests {
         TileCoord::new(0, tx, ty, tile_size, w, h)
     }
 
+    fn test_dir(id: &uuid::Uuid) -> PathBuf {
+        std::env::temp_dir().join("pixors").join(id.to_string())
+    }
+
     #[test]
     fn test_write_read_roundtrip() {
         let id = uuid::Uuid::new_v4();
-        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let store = TileStore::new(test_dir(&id), 256, 512, 512).unwrap();
         let coord = make_coord(0, 0, 256, 512, 512);
         let pixels: Vec<Rgba<f16>> = (0..256*256).map(|i| {
             let v = f16::from_f32((i % 256) as f32 / 255.0);
@@ -318,7 +329,7 @@ mod tests {
     #[test]
     fn test_read_nonexistent() {
         let id = uuid::Uuid::new_v4();
-        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let store = TileStore::new(test_dir(&id), 256, 512, 512).unwrap();
         let coord = make_coord(99, 99, 256, 512, 512);
         assert!(store.read_tile(coord).unwrap().is_none());
     }
@@ -326,7 +337,7 @@ mod tests {
     #[test]
     fn test_sample() {
         let id = uuid::Uuid::new_v4();
-        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let store = TileStore::new(test_dir(&id), 256, 512, 512).unwrap();
         let coord = make_coord(0, 0, 256, 512, 512);
         let pixels = vec![Rgba::new(f16::from_f32(0.5), f16::from_f32(0.3), f16::from_f32(0.2), f16::ONE); 256*256];
         let tile = Tile::new(coord, pixels);
@@ -339,14 +350,14 @@ mod tests {
     #[test]
     fn test_sample_out_of_bounds() {
         let id = uuid::Uuid::new_v4();
-        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let store = TileStore::new(test_dir(&id), 256, 512, 512).unwrap();
         assert!(store.sample(600, 600).is_err());
     }
 
     #[test]
     fn test_hot_cache_hit() {
         let id = uuid::Uuid::new_v4();
-        let store = TileStore::new(&id, 256, 512, 512).unwrap();
+        let store = TileStore::new(test_dir(&id), 256, 512, 512).unwrap();
         let coord = make_coord(0, 0, 256, 512, 512);
         let pixels = vec![Rgba::new(f16::ZERO, f16::ZERO, f16::ZERO, f16::ONE); 256*256];
         let tile = Tile::new(coord, pixels);

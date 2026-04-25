@@ -645,6 +645,18 @@
 .statusbar-sep { width: 1px; height: 12px; background: var(--border-subtle); }
 .statusbar-accent { color: var(--accent); }
 
+/* ── Progress bar ──────────────────────────────────────── */
+.progressbar {
+  height: 4px;
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+.progressbar-fill {
+  height: 100%;
+  background: oklch(0.72 0.15 145);
+  transition: width 0.15s ease-out;
+}
+
 /* ── Radix Dropdown ────────────────────────────────────── */
 .dropdown-content {
   background: var(--bg-elevated);

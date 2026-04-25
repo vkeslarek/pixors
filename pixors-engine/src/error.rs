@@ -40,6 +40,10 @@ pub enum Error {
     #[error("PNG error: {0}")]
     Png(String),
 
+    /// TIFF decoding/encoding error.
+    #[error("TIFF error: {0}")]
+    Tiff(String),
+
     /// Invalid parameter value.
     #[error("invalid parameter: {0}")]
     InvalidParameter(String),

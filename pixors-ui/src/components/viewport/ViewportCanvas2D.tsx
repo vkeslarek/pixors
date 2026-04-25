@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { engineClient, MSG_TILE } from '../../engine/client';
+import { LRUTileCache } from './LRUTileCache';
 
 // --- Types ---
 
@@ -39,6 +40,7 @@ export interface UseCanvas2DViewportReturn {
   zoom: (factor: number, anchorScreenX: number, anchorScreenY: number) => void;
   getCamera: () => Camera;
   clearOldTiles: () => void;
+  hasAllTiles: (keys: string[]) => boolean;
 }
 
 /**
@@ -54,21 +56,14 @@ export function useCanvas2DViewport(tabId: string | null) {
   const [isReady, setIsReady] = useState(false);
   const [error] = useState<string | null>(null);
 
-  // Holds the camera state. We use a ref instead of useState to ensure
-  // 60fps panning without triggering React component tree reconciliation.
   const cameraRef = useRef<Camera>({ panX: 0, panY: 0, zoom: 1 });
-  
-  // Stores the actual bitmap data for each tile. Keyed by `${mipLevel}_${px}_${py}`
-  const tilesRef = useRef<Map<string, TileEntry>>(new Map());
+  const tilesRef = useRef<LRUTileCache>(new LRUTileCache(256));
   const rafRef = useRef<number | null>(null);
   const tabIdRef = useRef(tabId);
+  const renderRef = useRef<() => void>(() => {});
 
   useEffect(() => { tabIdRef.current = tabId; }, [tabId]);
 
-  /**
-   * The core render loop. Called on every animation frame.
-   * Clears the canvas, sorts tiles by MIP level, and composites them.
-   */
   const render = useCallback(() => {
 
     const canvas = canvasRef.current;
@@ -86,20 +81,51 @@ export function useCanvas2DViewport(tabId: string | null) {
     ctx.fillStyle = '#2a2a2a';
     ctx.fillRect(0, 0, W, H);
 
-    // Collect tiles and sort: higher mip (lower res) first so higher-res overwrites
-    const tiles = Array.from(tilesRef.current.values())
-      .sort((a, b) => b.mipLevel - a.mipLevel);
+    // Disable interpolation for pixel-perfect rendering
+    ctx.imageSmoothingEnabled = false;
 
-    for (const tile of tiles) {
-      const screenX = (tile.imgX - panX) * zoom;
-      const screenY = (tile.imgY - panY) * zoom;
-      const screenW = tile.imgW * zoom;
-      const screenH = tile.imgH * zoom;
+    // Collect tiles sorted by (key, tile) pairs: higher mip first so higher-res overwrites.
+    // Sorting creates a new array; LRU entries() iteration does NOT change LRU order.
+    const sorted = Array.from(tilesRef.current.entries())
+      .sort(([, a], [, b]) => b.mipLevel - a.mipLevel);
+
+    for (const [key, tile] of sorted) {
+      const screenX = Math.floor((tile.imgX - panX) * zoom);
+      const screenY = Math.floor((tile.imgY - panY) * zoom);
+      const screenW = Math.ceil(tile.imgW * zoom);
+      const screenH = Math.ceil(tile.imgH * zoom);
 
       // Cull off-screen tiles
       if (screenX + screenW < 0 || screenY + screenH < 0 || screenX > W || screenY > H) continue;
 
       ctx.drawImage(tile.bitmap, screenX, screenY, screenW, screenH);
+
+      // Touch on-screen tile in LRU so visible tiles stay cached
+      tilesRef.current.get(key);
+    }
+
+    // Pixel grid overlay when zoomed in enough to see individual pixels
+    if (zoom >= 6) {
+      const pxStartX = Math.floor(panX);
+      const pxEndX = Math.ceil(panX + W / zoom);
+      const pxStartY = Math.floor(panY);
+      const pxEndY = Math.ceil(panY + H / zoom);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+
+      ctx.beginPath();
+      for (let x = pxStartX; x <= pxEndX; x++) {
+        const sx = (x - panX) * zoom + 0.5;
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, H);
+      }
+      for (let y = pxStartY; y <= pxEndY; y++) {
+        const sy = (y - panY) * zoom + 0.5;
+        ctx.moveTo(0, sy);
+        ctx.lineTo(W, sy);
+      }
+      ctx.stroke();
     }
   }, []);
 
@@ -117,6 +143,8 @@ export function useCanvas2DViewport(tabId: string | null) {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [render]);
+
+  useEffect(() => { renderRef.current = render; }, [render]);
 
   // Canvas setup + resize observer
   useEffect(() => {
@@ -171,11 +199,9 @@ export function useCanvas2DViewport(tabId: string | null) {
 
       createImageBitmap(imageData).then((bitmap) => {
         const key = `${mipLevel}_${px}_${py}`;
-        // Evict lower-res tile if a higher-res tile arrives for same region
-        const existing = tilesRef.current.get(key);
-        if (existing) existing.bitmap.close();
         tilesRef.current.set(key, { bitmap, imgX, imgY, imgW, imgH, mipLevel });
         latestMipRef.current = mipLevel;
+        renderRef.current();  // render immediately on tile ready (tailing effect)
       });
     });
     return unsub;
@@ -183,7 +209,6 @@ export function useCanvas2DViewport(tabId: string | null) {
 
   // Clear tiles when tab changes
   useEffect(() => {
-    tilesRef.current.forEach((t) => t.bitmap.close());
     tilesRef.current.clear();
   }, [tabId]);
 
@@ -255,7 +280,6 @@ export function useCanvas2DViewport(tabId: string | null) {
                           tile.imgX > maxX || tile.imgY > maxY;
       
       if (isWrongMip || isOffscreen) {
-        tile.bitmap.close();
         tilesRef.current.delete(key);
       }
     }
@@ -263,5 +287,12 @@ export function useCanvas2DViewport(tabId: string | null) {
 
   const getCamera = useCallback(() => cameraRef.current, []);
 
-  return { canvasRef, isReady, error, fit, pan, zoom, getCamera, clearOldTiles };
+  const hasAllTiles = useCallback((keys: string[]): boolean => {
+    for (const key of keys) {
+      if (!tilesRef.current.has(key)) return false;
+    }
+    return true;
+  }, []);
+
+  return { canvasRef, isReady, error, fit, pan, zoom, getCamera, clearOldTiles, hasAllTiles };
 }

@@ -6,8 +6,11 @@ use tokio::sync::{mpsc, RwLock, Semaphore};
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
+use async_trait::async_trait;
+use crate::debug_stopwatch;
 use crate::server::app::AppState;
 use crate::server::event_bus::EngineEvent;
+use crate::server::service::Service;
 use crate::server::ws::types::{ClientFrame, ConnectionContext, MSG_TILE, MSG_TILES_COMPLETE};
 use crate::image::TileCoord;
 
@@ -80,9 +83,17 @@ impl Default for ViewportState {
 #[derive(Debug, Default)]
 pub struct ViewportService {
     viewports: RwLock<HashMap<Uuid, ViewportState>>,
-    /// Per-tab request generation counter. Increments on each RequestTiles.
-    /// stream_tiles_for_tab checks its snapshot vs current to bail early on stale requests.
     request_gen: RwLock<HashMap<Uuid, Arc<AtomicU64>>>,
+}
+
+#[async_trait]
+impl Service for ViewportService {
+    type Command = ViewportCommand;
+    type Event = ViewportEvent;
+
+    async fn handle_command(&self, cmd: ViewportCommand, state: &Arc<AppState>, ctx: &mut ConnectionContext) {
+        self.handle_command_impl(cmd, state, ctx).await
+    }
 }
 
 impl ViewportService {
@@ -120,62 +131,62 @@ impl ViewportService {
         viewports.remove(tab_id);
     }
 
-    /// Handles a `ViewportCommand`, updating state and streaming tiles.
-    pub async fn handle_command(
+    async fn handle_command_impl(
         &self,
         cmd: ViewportCommand,
         state: &Arc<AppState>,
         ctx: &mut ConnectionContext,
     ) {
         match cmd {
-            ViewportCommand::ViewportUpdate { x, y, w, h, zoom } => {
-                let tab_id = match state.tab_service.active_tab().await {
-                    Some(id) => id,
-                    None => return,
-                };
-
-                let vp_state = ViewportState {
-                    width: w as u32,
-                    height: h as u32,
-                    zoom,
-                    pan_x: x,
-                    pan_y: y,
-                };
-                self.update_viewport(&tab_id, vp_state).await;
-
-                state
-                    .event_bus
-                    .broadcast(EngineEvent::Viewport(ViewportEvent::ViewportUpdated {
-                        tab_id,
-                        zoom,
-                        pan_x: x,
-                        pan_y: y,
-                    }))
-                    .await;
-
-                // ViewportUpdate apenas salva estado — frontend envia RequestTiles explicitamente
-            }
-            ViewportCommand::RequestTiles { tab_id, x, y, w, h, zoom } => {
-                tracing::debug!("RequestTiles: tab={} zoom={:.3} x={:.0} y={:.0} w={:.0} h={:.0}", tab_id, zoom, x, y, w, h);
-                let vp_state = ViewportState {
-                    width: w as u32,
-                    height: h as u32,
-                    zoom,
-                    pan_x: x,
-                    pan_y: y,
-                };
-                self.update_viewport(&tab_id, vp_state.clone()).await;
-
-                // Bump generation counter — previous in-flight streams will see stale gen and bail.
-                let (gen_counter, my_gen) = self.next_request_gen(&tab_id).await;
-
-                let frame_tx = ctx.frame_tx.clone();
-                let state = state.clone();
-                tokio::spawn(async move {
-                    stream_tiles_for_tab(tab_id, frame_tx, state, Some(vp_state), gen_counter, my_gen).await;
-                });
-            }
+            ViewportCommand::ViewportUpdate { x, y, w, h, zoom } => self.handle_viewport_update(x, y, w, h, zoom, state, ctx).await,
+            ViewportCommand::RequestTiles { tab_id, x, y, w, h, zoom } => self.handle_request_tiles(tab_id, x, y, w, h, zoom, state, ctx).await,
         }
+    }
+
+    async fn handle_viewport_update(
+        &self,
+        x: f32, y: f32, w: f32, h: f32, zoom: f32,
+        state: &Arc<AppState>,
+        ctx: &mut ConnectionContext,
+    ) {
+        let Some(tab_id) = state.session_manager.with_tab_session(&ctx.session_id, |ts| ts.active_tab_id).await.flatten() else { return };
+        let vp_state = ViewportState {
+            width: w as u32,
+            height: h as u32,
+            zoom,
+            pan_x: x,
+            pan_y: y,
+        };
+        self.update_viewport(&tab_id, vp_state).await;
+        use crate::server::ws::types::send_session_event;
+        send_session_event(
+            &ctx.frame_tx,
+            &EngineEvent::Viewport(ViewportEvent::ViewportUpdated { tab_id, zoom, pan_x: x, pan_y: y }),
+        );
+    }
+
+    async fn handle_request_tiles(
+        &self,
+        tab_id: Uuid, x: f32, y: f32, w: f32, h: f32, zoom: f32,
+        state: &Arc<AppState>,
+        ctx: &mut ConnectionContext,
+    ) {
+        tracing::trace!("request_tiles: tab={} zoom={:.3} x={:.0} y={:.0} w={:.0} h={:.0}", tab_id, zoom, x, y, w, h);
+        let vp_state = ViewportState {
+            width: w as u32,
+            height: h as u32,
+            zoom,
+            pan_x: x,
+            pan_y: y,
+        };
+        self.update_viewport(&tab_id, vp_state.clone()).await;
+        let (gen_counter, my_gen) = self.next_request_gen(&tab_id).await;
+        let frame_tx = ctx.frame_tx.clone();
+        let session_id = ctx.session_id;
+        let state = state.clone();
+        tokio::spawn(async move {
+            stream_tiles_for_tab(tab_id, session_id, frame_tx, state, Some(vp_state), gen_counter, my_gen).await;
+        });
     }
 }
 
@@ -192,8 +203,10 @@ macro_rules! bail_if_stale {
     };
 }
 
+
 pub(crate) async fn stream_tiles_for_tab(
     tab_id: Uuid,
+    session_id: Uuid,
     frame_tx: mpsc::UnboundedSender<ClientFrame>,
     state: Arc<AppState>,
     vp_state: Option<ViewportState>,
@@ -202,8 +215,13 @@ pub(crate) async fn stream_tiles_for_tab(
 ) {
     let vp_state = match vp_state {
         Some(s) => s,
-        None => return,
+        None => {
+            tracing::warn!("stream_tiles: no viewport state for tab {}", tab_id);
+            return;
+        }
     };
+
+    tracing::debug!("stream_tiles: start tab={} zoom={:.3}", tab_id, vp_state.zoom);
 
     bail_if_stale!(gen_counter, my_gen);
 
@@ -212,13 +230,24 @@ pub(crate) async fn stream_tiles_for_tab(
     let viewport_height = vp_state.height as f32;
     let desired_mip = compute_mip_level(zoom) as u32;
     tracing::debug!("stream_tiles_for_tab: tab={} zoom={:.3} desired_mip={}", tab_id, zoom, desired_mip);
+    tracing::debug!("stream_tiles: desired_mip={}", desired_mip);
 
     let mut mip_level = 0;
     if desired_mip > 0 {
         // Find the highest generated MIP level up to desired_mip
         let mut best_mip = 0;
         for m in (1..=desired_mip).rev() {
-            if state.tab_service.tile_grid_for_mip(&tab_id, m as usize).await.is_some() {
+            let has_grid = {
+                let Some(session_arc) = state.session_manager.get(&session_id).await else { break };
+                let session = session_arc.read().await;
+                session
+                    .tab_session
+                    .tabs
+                    .get(&tab_id)
+                    .and_then(|tab| tab.tile_grid_for_mip(m as usize))
+                    .is_some()
+            };
+            if has_grid {
                 best_mip = m;
                 break;
             }
@@ -227,86 +256,133 @@ pub(crate) async fn stream_tiles_for_tab(
         if best_mip == 0 {
             // No MIPs generated yet! Spawn background generation
             let state_bg = state.clone();
+            let tab_id_bg = tab_id;
+            let session_id_bg = session_id;
+            let frame_tx_bg = frame_tx.clone();
             tokio::spawn(async move {
-                if let Err(e) = state_bg.tab_service.ensure_mip_level(&tab_id, zoom).await {
+                let Some(s) = state_bg.session_manager.get(&session_id_bg).await else { return };
+                let mut tab = match s.write().await.tab_session.tabs.remove(&tab_id_bg) {
+                    Some(t) => t,
+                    None => return,
+                };
+                if let Err(e) = crate::server::service::tab::TabService::ensure_mip_level(&mut tab, zoom).await {
                     tracing::error!("Background MIP generation failed: {}", e);
+                    if let Some(s) = state_bg.session_manager.get(&session_id_bg).await {
+                        s.write().await.tab_session.tabs.insert(tab_id_bg, tab);
+                    }
                     return;
                 }
-                tracing::debug!("Background MIP {} ready, notifying client", desired_mip);
-                if let Some((width, height)) = state_bg.tab_service.image_info(&tab_id).await {
-                    state_bg.event_bus.broadcast(EngineEvent::Viewport(
-                        ViewportEvent::MipLevelReady { tab_id, level: desired_mip, width, height }
-                    )).await;
+                let (width, height) = tab.image_info().unwrap_or((0, 0));
+                if let Some(s) = state_bg.session_manager.get(&session_id_bg).await {
+                    s.write().await.tab_session.tabs.insert(tab_id_bg, tab);
                 }
+                tracing::debug!("Background MIP {} ready, notifying client", desired_mip);
+                let event = EngineEvent::Viewport(
+                    ViewportEvent::MipLevelReady { tab_id: tab_id_bg, level: desired_mip, width, height }
+                );
+                use crate::server::ws::types::send_session_event;
+                send_session_event(&frame_tx_bg, &event);
             });
             mip_level = 0; // stream MIP 0 while generating
         } else {
-            // If best_mip < desired_mip, it means the image is too small for desired_mip.
-            // We just use the best available one!
             mip_level = best_mip;
         }
     }
 
-    // Use the tile grid for the appropriate MIP level.
-    // For MIP level N, viewport coords must be scaled by 0.5^N into MIP space.
-    let mip_scale = 0.5_f32.powi(mip_level as i32);
-    let tile_grid = match state.tab_service.tile_grid_for_mip(&tab_id, mip_level as usize).await {
-        Some(g) => g,
-        None => {
-            tracing::warn!("No tile grid for mip_level={}, tab={}", mip_level, tab_id);
-            return;
-        }
+    // Get tile grid (read from session)
+    let (tile_grid, mip_scale) = {
+        let session_arc = match state.session_manager.get(&session_id).await {
+            Some(s) => s,
+            None => return,
+        };
+        let session = session_arc.read().await;
+        let tab = match session.tab_session.tabs.get(&tab_id) {
+            Some(t) => t,
+            None => return,
+        };
+        let mip_scale = 0.5_f32.powi(mip_level as i32);
+        let tile_grid = match tab.tile_grid_for_mip(mip_level as usize) {
+            Some(g) => g,
+            None => {
+                tracing::warn!("No tile grid for mip_level={}, tab={}", mip_level, tab_id);
+                return;
+            }
+        };
+        (tile_grid, mip_scale)
     };
 
-    let visible_tiles = tile_grid.tiles_in_viewport(
-        mip_level,
-        vp_state.pan_x * mip_scale,
-        vp_state.pan_y * mip_scale,
-        viewport_width * mip_scale,
-        viewport_height * mip_scale,
-    );
+    let visible_tiles = {
+        let _sw = debug_stopwatch!("stream_tiles:viewport_calc");
+        tile_grid.tiles_in_viewport(
+            mip_level,
+            vp_state.pan_x * mip_scale,
+            vp_state.pan_y * mip_scale,
+            viewport_width * mip_scale,
+            viewport_height * mip_scale,
+        )
+    };
 
-    tracing::info!("stream_tiles_for_tab: Sending {} tiles for MIP {} (desired_mip={})", visible_tiles.len(), mip_level, desired_mip);
+    tracing::debug!("stream_tiles: sending {} tiles at mip={} (desired={})", visible_tiles.len(), mip_level, desired_mip);
 
     if visible_tiles.is_empty() {
         let _ = frame_tx.send(ClientFrame::empty(MSG_TILES_COMPLETE));
+        tracing::debug!("stream_tiles: no visible tiles");
         return;
     }
 
     let semaphore = Arc::new(Semaphore::new(8));
     let mut join_set = JoinSet::new();
+    let tiles_count = visible_tiles.len();
 
-    for tile_ref in &visible_tiles {
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
-        let state = state.clone();
-        let frame_tx = frame_tx.clone();
-        let tile = *tile_ref;
-        join_set.spawn(async move {
-            let _permit = permit;
+    {
+        let _sw = debug_stopwatch!("stream_tiles:tile_fetching");
+        for tile_ref in &visible_tiles {
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let state = state.clone();
+            let frame_tx = frame_tx.clone();
+            let tile = *tile_ref;
+            let tid = tab_id;
+            let sid = session_id;
+            let mip_lvl = mip_level;
+            join_set.spawn(async move {
+                let _permit = permit;
 
-            let rgba8 = match state.tab_service.get_tile_rgba8(&tab_id, tile, mip_level as usize).await {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::error!("Failed to get tile data: {}", e);
-                    return;
+                let rgba8 = {
+                    let session_arc = match state.session_manager.get(&sid).await {
+                        Some(s) => s,
+                        None => return,
+                    };
+                    let session = session_arc.read().await;
+                    let tab = match session.tab_session.tabs.get(&tid) {
+                        Some(t) => t,
+                        None => return,
+                    };
+                    match tab.get_tile_rgba8(state.tab_service.tile_cache(), tile, mip_lvl as usize).await {
+                        Ok(d) => d,
+                        Err(e) => {
+                            tracing::error!("Failed to get tile data: {}", e);
+                            return;
+                        }
+                    }
+                };
+
+                let mut pixel_data = rgba8;
+                let payload = encode_tile_payload(tid, &tile, mip_lvl, &mut pixel_data);
+
+                if frame_tx.send(ClientFrame::new(MSG_TILE, payload)).is_err() {
+                    tracing::error!("Writer task closed");
                 }
-            };
+            });
+        }
 
-            let mut pixel_data = rgba8;
-            let payload = encode_tile_payload(tab_id, &tile, mip_level, &mut pixel_data);
-
-            if frame_tx.send(ClientFrame::new(MSG_TILE, payload)).is_err() {
-                tracing::error!("Writer task closed");
+        while let Some(result) = join_set.join_next().await {
+            if let Err(e) = result {
+                tracing::error!("Tile streaming task panicked: {}", e);
             }
-        });
-    }
-
-    while let Some(result) = join_set.join_next().await {
-        if let Err(e) = result {
-            tracing::error!("Tile streaming task panicked: {}", e);
         }
     }
 
+    tracing::debug!("stream_tiles: done {} tiles", tiles_count);
     let _ = frame_tx.send(ClientFrame::empty(MSG_TILES_COMPLETE));
 }
 

@@ -3,10 +3,11 @@ import * as Tooltip from '@radix-ui/react-tooltip'
 import { MenuBar, TabBar } from './components/MenuBar'
 import { ActivityBar, type Workspace } from './components/ActivityBar'
 import { Toolbar } from './components/Toolbar'
-import { ViewportV2 } from './components/ViewportV2'
+import { Viewport } from './components/Viewport'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
-import { useEngineConnection, useEngineTabs, useEngineTools, useEngineCommands, useEngineViewportState, useEngineClient } from './engine'
+import { ProgressBar } from './components/ProgressBar'
+import { useEngineConnection, useEngineTabs, useEngineTools, useEngineCommands, useEngineViewportState, useEngineClient, useLoadingProgress } from './engine'
 import type { Layer, Adjustment } from './types'
 import './App.css'
 
@@ -40,6 +41,7 @@ export default function App() {
   const { activeTool } = useEngineTools();
   const { zoom: engineZoom } = useEngineViewportState(activeTabId);
   const cmds = useEngineCommands();
+  const loadingProgress = useLoadingProgress(activeTabId);
 
   // UI-specific state (mock, will be replaced by engine in later phases)
   const [workspace, setWorkspace]       = useState<Workspace>('editor');
@@ -129,7 +131,7 @@ export default function App() {
               onTabClose={handleTabClose}
               onTabAdd={handleTabAdd}
             />
-            <ViewportV2
+            <Viewport
               tabId={activeTabId}
               imageWidth={activeTabObj?.width}
               imageHeight={activeTabObj?.height}
@@ -157,6 +159,7 @@ export default function App() {
             onAdjReset={resetAdj}
           />
         </div>
+        <ProgressBar percent={loadingProgress.percent} />
         <StatusBar
           activeTool={activeTool}
           zoom={engineZoom}

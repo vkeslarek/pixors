@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { engineClient } from './client';
-import type { EngineEvent, EngineCommand, UITab } from './types';
+import type { EngineEvent, EngineCommand, TabData, UITab } from './types';
 
 export function useEngineClient() {
   useEffect(() => {
@@ -33,11 +33,36 @@ export function useEngineConnection() {
   return connected;
 }
 
+export function useEngineSession() {
+  const [sessionId] = useState(engineClient.sessionId);
+  const [tabData, setTabData] = useState<TabData[]>([]);
+  const [status, setStatus] = useState<'Connected' | 'Disconnected'>('Connected');
+
+  useEngineEvent('session_state', (msg) => {
+    setTabData(msg.tabs);
+    setStatus(msg.status);
+  });
+
+  return { sessionId, tabData, status };
+}
+
 const TAB_COLORS = ['#ff4d4d', '#4dff4d', '#4d4dff', '#ffff4d', '#ff4dff', '#6ffff'];
 
 export function useEngineTabs() {
   const [tabs, setTabs] = useState<UITab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  useEngineEvent('session_state', (msg) => {
+    setTabs(msg.tabs.map((td, i) => ({
+      id: td.id,
+      name: td.name,
+      color: TAB_COLORS[i % TAB_COLORS.length],
+      modified: false,
+      hasImage: td.has_image,
+      width: td.width,
+      height: td.height,
+    })));
+  });
 
   useEngineEvent('tab_created', (msg) => {
     setTabs(prev => {
@@ -96,6 +121,30 @@ export function useEngineViewportState(tabId: string | null) {
   });
 
   return { zoom, pan };
+}
+
+export function useLoadingProgress(tabId: string | null) {
+  const [progress, setProgress] = useState<{ active: boolean; percent: number }>({
+    active: false,
+    percent: 0,
+  });
+
+  useEngineEvent('image_load_progress', (msg) => {
+    if (msg.tab_id !== tabId) return;
+    setProgress({ active: true, percent: msg.percent });
+  });
+
+  useEngineEvent('image_loaded', (msg) => {
+    if (msg.tab_id !== tabId) return;
+    setProgress({ active: false, percent: 100 });
+  });
+
+  useEngineEvent('image_closed', (msg) => {
+    if (msg.tab_id !== tabId) return;
+    setProgress({ active: false, percent: 0 });
+  });
+
+  return progress;
 }
 
 export function useEngineCommands() {

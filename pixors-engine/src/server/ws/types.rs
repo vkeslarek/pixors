@@ -1,4 +1,5 @@
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // Wire protocol type tags (server → client TLV framing)
@@ -47,13 +48,27 @@ pub struct ConnectionContext {
     /// Channel to push binary frames directly to this connection's writer task.
     pub frame_tx: mpsc::UnboundedSender<ClientFrame>,
     pub close_requested: bool,
+    /// The session this connection belongs to.
+    pub session_id: Uuid,
 }
 
 impl ConnectionContext {
-    pub fn new(frame_tx: mpsc::UnboundedSender<ClientFrame>) -> Self {
+    pub fn new(frame_tx: mpsc::UnboundedSender<ClientFrame>, session_id: Uuid) -> Self {
         Self {
             frame_tx,
             close_requested: false,
+            session_id,
         }
+    }
+}
+
+/// Send an event directly to one client's writer task (session-scoped delivery).
+/// Use this instead of EventBus::broadcast for events that belong to a single session.
+pub fn send_session_event(
+    frame_tx: &mpsc::UnboundedSender<ClientFrame>,
+    event: &crate::server::event_bus::EngineEvent,
+) {
+    if let Ok(payload) = rmp_serde::to_vec_named(event) {
+        let _ = frame_tx.send(ClientFrame::new(MSG_EVENT, payload));
     }
 }

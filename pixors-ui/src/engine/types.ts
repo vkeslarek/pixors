@@ -1,5 +1,14 @@
 // Engine event and command types (mirror Rust enums)
 
+export interface TabData {
+  id: string;
+  name: string;
+  created_at: number;
+  has_image: boolean;
+  width: number;
+  height: number;
+}
+
 export type PixelFormat = 'rgba8' | 'rgba16' | 'rgba32f' | 'rgba16f';
 
 export interface TileRect {
@@ -14,11 +23,14 @@ export interface TileRect {
 // -----------------------------------------------------------------------------
 
 export type EngineEvent =
+  | { type: 'session_state'; session_id: string; tabs: TabData[]; active_tab_id: string | null; status: 'Connected' | 'Disconnected' }
+  | { type: 'heartbeat' }
   | { type: 'tab_created'; tab_id: string; name: string }
   | { type: 'tab_closed'; tab_id: string }
   | { type: 'tab_activated'; tab_id: string }
   | { type: 'image_loaded'; tab_id: string; width: number; height: number; format: PixelFormat }
   | { type: 'image_closed'; tab_id: string }
+  | { type: 'image_load_progress'; tab_id: string; percent: number }
   | { type: 'tiles_complete' }
   | { type: 'tiles_dirty'; tab_id: string; regions: TileRect[] }
   | { type: 'mip_level_ready'; tab_id: string; level: number; width: number; height: number }
@@ -40,6 +52,8 @@ export type EngineCommand =
   | { type: 'request_tiles'; tab_id: string; x: number; y: number; w: number; h: number; zoom: number }
   | { type: 'select_tool'; tool: string }
   | { type: 'get_state' }
+  | { type: 'get_session_state' }
+  | { type: 'heartbeat' }
   | { type: 'screenshot' }
   | { type: 'close' };
 
