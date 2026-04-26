@@ -2,4 +2,4 @@
 
 pub mod writer;
 
-pub use writer::{DisplayWriter, FanoutWriter, WorkingWriter};
+pub use writer::WorkingWriter;

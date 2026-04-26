@@ -2,23 +2,14 @@
 //!
 //! - `WorkingWriter`: disk-backed tile storage (ACEScg f16) — owns the tiles,
 //!    converts raw bytes → ACEScg f16, reads/writes/caches tiles on disk.
-//! - `DisplayWriter`: raw bytes → sRGB u8 → full RAM HashMap
-//! - `FanoutWriter`: sync DisplayWriter + async channel to background disk thread
 
-use crate::convert::ColorConversion;
 use crate::error::Error;
-use crate::image::buffer::BufferDesc;
 use crate::image::{Tile, TileCoord};
-use crate::pixel::{AlphaPolicy, Rgba};
+use crate::pixel::Rgba;
 use bytemuck::Pod;
 use half::f16;
-use parking_lot::RwLock;
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc;
 use std::sync::Arc;
-use uuid::Uuid;
 
 pub trait TileWriter<P: Pod>: Sync {
     fn write_tile(&self, coord: TileCoord, pixels: &[P]) -> Result<(), Error>;
@@ -166,159 +157,17 @@ impl Drop for WorkingWriter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// DisplayWriter — raw bytes (source) → sRGB u8 → full RAM HashMap
-// ---------------------------------------------------------------------------
-
-pub struct DisplayWriter {
-    conv: ColorConversion,
-    desc: BufferDesc,
-    tiles: RwLock<HashMap<(Uuid, u32, TileCoord), Arc<Vec<u8>>>>,
-    layer_id: Uuid,
-    mip_level: u32,
-    generated_levels: AtomicU32,
-}
-
-impl DisplayWriter {
-    pub fn new(conv: ColorConversion, desc: BufferDesc, layer_id: Uuid) -> Self {
-        Self {
-            conv,
-            desc,
-            tiles: RwLock::new(HashMap::new()),
-            layer_id,
-            mip_level: 0,
-            generated_levels: AtomicU32::new(1),
-        }
-    }
-
-    pub fn set_mip_level(&mut self, mip: u32) {
-        self.mip_level = mip;
-    }
-
-    pub fn get(&self, mip: u32, coord: TileCoord) -> Option<Arc<Vec<u8>>> {
-        self.tiles
-            .read()
-            .get(&(self.layer_id, mip, coord))
-            .cloned()
-    }
-
-    pub fn put(&self, mip: u32, coord: TileCoord, data: Arc<Vec<u8>>) {
-        self.tiles
-            .write()
-            .insert((self.layer_id, mip, coord), data);
-    }
-
-    pub fn mark_level_generated(&self, mip: u32) {
-        self.generated_levels.fetch_or(1 << mip, Ordering::Release);
-    }
-
-    pub fn is_level_generated(&self, mip: u32) -> bool {
-        self.generated_levels.load(Ordering::Acquire) & (1 << mip) != 0
-    }
-}
-
-impl TileWriter<u8> for DisplayWriter {
-    fn write_tile(&self, coord: TileCoord, pixels: &[u8]) -> Result<(), Error> {
-        let bpp = self.desc.planes.len() * self.desc.planes[0].encoding.byte_size();
-        let actual_pixels = pixels.len() / bpp.max(1);
-        let tile_w = coord.width as usize;
-        let tile_h = actual_pixels / tile_w.max(1);
-        let tile_stride = tile_w * bpp;
-        let mut desc = self.desc.clone();
-        desc.width = tile_w as u32;
-        desc.height = tile_h as u32;
-        for p in &mut desc.planes {
-            p.row_length = tile_w as u32;
-            p.row_stride = tile_stride;
-        }
-        let srgb: Vec<[u8; 4]> = self
-            .conv
-            .convert_buffer(pixels, &desc, AlphaPolicy::Straight);
-        let bytes: Vec<u8> = bytemuck::cast_slice::<[u8; 4], u8>(&srgb).to_vec();
-        self.tiles
-            .write()
-            .insert((self.layer_id, self.mip_level, coord), Arc::new(bytes));
-        Ok(())
-    }
-
-    fn name(&self) -> &'static str {
-        "DisplayWriter"
-    }
-}
-
-// ---------------------------------------------------------------------------
-// FanoutWriter — sync DisplayWriter + async channel to disk thread
-// ---------------------------------------------------------------------------
-
-pub struct FanoutWriter<'a> {
-    display: &'a DisplayWriter,
-    disk_tx: mpsc::Sender<(TileCoord, Vec<u8>)>,
-}
-
-impl<'a> FanoutWriter<'a> {
-    pub fn new(display: &'a DisplayWriter, disk_tx: mpsc::Sender<(TileCoord, Vec<u8>)>) -> Self {
-        Self { display, disk_tx }
-    }
-}
-
-impl<'a> TileWriter<u8> for FanoutWriter<'a> {
-    fn write_tile(&self, coord: TileCoord, pixels: &[u8]) -> Result<(), Error> {
-        self.display.write_tile(coord, pixels)?;
-        let _ = self.disk_tx.send((coord, pixels.to_vec()));
-        Ok(())
-    }
-
-    fn name(&self) -> &'static str {
-        "FanoutWriter"
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::image::buffer::{BufferDesc, PlaneDesc, SampleFormat};
-    use crate::image::AlphaMode;
+    use uuid::Uuid;
 
     fn test_dir(id: &Uuid) -> PathBuf {
         std::env::temp_dir().join("pixors").join(id.to_string())
     }
 
-    #[test]
-    fn fanout_writes_to_display_and_channel() {
-        let desc = BufferDesc {
-            width: 16,
-            height: 16,
-            planes: vec![
-                PlaneDesc { offset: 0, stride: 4, row_stride: 64, row_length: 16, encoding: SampleFormat::U8 },
-                PlaneDesc { offset: 1, stride: 4, row_stride: 64, row_length: 16, encoding: SampleFormat::U8 },
-                PlaneDesc { offset: 2, stride: 4, row_stride: 64, row_length: 16, encoding: SampleFormat::U8 },
-                PlaneDesc { offset: 3, stride: 4, row_stride: 64, row_length: 16, encoding: SampleFormat::U8 },
-            ],
-            color_space: crate::color::ColorSpace::SRGB,
-            alpha_mode: AlphaMode::Straight,
-        };
-        let conv = crate::color::ColorSpace::SRGB
-            .converter_to(crate::color::ColorSpace::SRGB)
-            .unwrap();
-        let layer_id = Uuid::new_v4();
-        let display = DisplayWriter::new(conv, desc, layer_id);
-        let (tx, rx) = mpsc::channel();
-
-        let fanout = FanoutWriter::new(&display, tx);
-        let coord = TileCoord::new(0, 0, 0, 16, 16, 16);
-        let pixels = vec![128u8; 16 * 16 * 4];
-        fanout.write_tile(coord, &pixels).unwrap();
-
-        // Display should have the tile
-        assert!(display.get(0, coord).is_some());
-
-        // Channel should have received the tile
-        let (rx_coord, rx_data) = rx.recv().unwrap();
-        assert_eq!(rx_coord, coord);
-        assert_eq!(rx_data.len(), pixels.len());
-    }
-
-    #[test]
+#[test]
     fn test_write_read_roundtrip() {
         let id = Uuid::new_v4();
         let store = WorkingWriter::new(test_dir(&id), 256, 512, 512).unwrap();
