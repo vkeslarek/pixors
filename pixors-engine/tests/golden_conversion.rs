@@ -206,7 +206,7 @@ fn acescg_f16_to_srgb_u8_bitexact() {
 fn rgba16_to_acescg_f16_bitexact() {
     let buf = make_rgba16_image();
     let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf, AlphaPolicy::PremultiplyOnPack);
+    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
     let output = serialize_f16_pixels(&pixels);
 
     let golden_name = "rgba16_to_acescg.bin";
@@ -228,7 +228,7 @@ fn rgba16_to_acescg_f16_bitexact() {
 fn gray8_to_acescg_f16_bitexact() {
     let buf = make_gray8_image();
     let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf, AlphaPolicy::PremultiplyOnPack);
+    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
     let output = serialize_f16_pixels(&pixels);
 
     let golden_name = "gray8_to_acescg.bin";
