@@ -3,8 +3,8 @@
 //! Storage is **column-major**: `self.0[col][row]`. Use `from_cols` / `from_rows`
 //! to construct; use `mul_vec` to apply to a column vector.
 
-use super::{RgbPrimaries, WhitePoint};
-use crate::Error;
+use crate::color::{RgbPrimaries, WhitePoint};
+use crate::error::Error;
 use wide::f32x4;
 
 /// A 3×3 column-major matrix.

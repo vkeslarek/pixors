@@ -1,15 +1,15 @@
 //! Image types: raw (runtime-resolved) and typed (compile-time pixel type).
 
 mod meta;
-mod raw;
 mod tile;
 mod mip;
 pub mod buffer;
+pub mod document;
 
 pub use meta::AlphaMode;
 pub use meta::{ChannelKind, ChannelLayoutKind};
 pub use meta::{SampleType, SampleLayout};
-pub use raw::RawImage;
-pub use tile::{Tile, TileCoord, TileGrid, TileRect};
-pub use mip::{MipLevel, MipPyramid, mip_level_for_zoom, generate_from_mip0};
+pub use tile::{Tile, TileCoord, TileGrid};
+pub use mip::{MipLevel, MipPyramid};
 pub use buffer::{SampleFormat, PlaneDesc, BufferDesc, ImageBuffer};
+pub use document::{Image, ImageMetadata, ImageInfo, Layer, LayerMetadata, Orientation, BlendMode};

@@ -83,7 +83,7 @@ describe('applyEvent reducer', () => {
 
   it('image_loaded updates existing tab', () => {
     const prev = makeState({ tabs: [T('t1', 'a')] })
-    const ev: EngineEvent = { type: 'image_loaded', tab_id: 't1', width: 400, height: 300, format: 'rgba8' }
+    const ev: EngineEvent = { type: 'image_loaded', tab_id: 't1', width: 400, height: 300, format: 'rgba8', layer_count: 1 }
     const next = applyEvent(prev, ev)
     expect(next.tabs![0]).toMatchObject({ hasImage: true, width: 400, height: 300 })
     expect(next.loading!['t1']).toEqual({ active: false, percent: 100 })
@@ -91,7 +91,7 @@ describe('applyEvent reducer', () => {
 
   it('image_loaded creates tab if unknown (out-of-order)', () => {
     const prev = makeState()
-    const ev: EngineEvent = { type: 'image_loaded', tab_id: 't99', width: 100, height: 100, format: 'rgba8' }
+    const ev: EngineEvent = { type: 'image_loaded', tab_id: 't99', width: 100, height: 100, format: 'rgba8', layer_count: 1 }
     const next = applyEvent(prev, ev)
     expect(next.tabs).toHaveLength(1)
     expect(next.tabs![0]).toMatchObject({ id: 't99', hasImage: true, width: 100, height: 100 })

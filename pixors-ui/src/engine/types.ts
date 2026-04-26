@@ -28,11 +28,13 @@ export type EngineEvent =
   | { type: 'tab_created'; tab_id: string; name: string }
   | { type: 'tab_closed'; tab_id: string }
   | { type: 'tab_activated'; tab_id: string }
-  | { type: 'image_loaded'; tab_id: string; width: number; height: number; format: PixelFormat }
+  | { type: 'image_loaded'; tab_id: string; width: number; height: number; format: PixelFormat; layer_count: number }
   | { type: 'image_closed'; tab_id: string }
   | { type: 'image_load_progress'; tab_id: string; percent: number }
   | { type: 'tiles_complete' }
   | { type: 'tiles_dirty'; tab_id: string; regions: TileRect[] }
+  | { type: 'layer_changed'; tab_id: string; layer_id: string; field: string; composition_sig: number }
+  | { type: 'doc_size_changed'; tab_id: string; width: number; height: number }
   | { type: 'mip_level_ready'; tab_id: string; level: number; width: number; height: number }
   | { type: 'tool_changed'; tool: string }
   | { type: 'viewport_updated'; tab_id: string; zoom: number; pan_x: number; pan_y: number }

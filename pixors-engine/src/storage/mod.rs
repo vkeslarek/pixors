@@ -1,9 +1,5 @@
-//! Tile-aware storage with lazy promotion from disk to RAM.
+//! Tile-aware storage.
 
-mod source;
-mod tile_store;
-mod tile_cache;
+pub mod writer;
 
-pub use source::{ImageSource, FormatSource};
-pub use tile_store::TileStore;
-pub use tile_cache::TileCache;
+pub use writer::{DisplayWriter, FanoutWriter, WorkingWriter};

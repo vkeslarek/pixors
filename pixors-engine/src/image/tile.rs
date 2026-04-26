@@ -1,5 +1,5 @@
 use crate::pixel::Rgba;
-use crate::color::{ColorSpace, ColorConversion};
+use crate::convert::ColorConversion;
 use crate::pixel::AlphaPolicy;
 use half::f16;
 use serde::{Deserialize, Serialize};
@@ -46,15 +46,6 @@ impl TileCoord {
     }
 }
 
-/// Rect serializable for protocol messages.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TileRect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
 /// Tile with data in memory — generic over pixel type.
 /// `P = Rgba<f16>` for ACEScg storage.
 /// `P = u8` for display sRGB (raw RGBA8).
@@ -75,15 +66,7 @@ impl Tile<Rgba<f16>> {
         let pixels: Vec<[u8; 4]> =
             conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&self.data, AlphaPolicy::Straight);
         let bytes: Vec<u8> = bytemuck::cast_slice::<[u8; 4], u8>(pixels.as_slice()).to_vec();
-        Tile {
-            coord: self.coord,
-            data: Arc::new(bytes),
-        }
-    }
-
-    pub fn to_f32_straight(&self) -> Vec<Rgba<f32>> {
-        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap();
-        conv.convert_pixels::<Rgba<f16>, Rgba<f32>>(&self.data, AlphaPolicy::Straight)
+        Tile { coord: self.coord, data: Arc::new(bytes) }
     }
 }
 
@@ -220,22 +203,6 @@ mod tests {
         let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
         let srgb = tile.to_srgb_u8(&conv);
         assert_eq!(srgb.data.len(), 4); // 1 pixel × 4 channels
-    }
-
-    #[test]
-    fn test_tile_to_f32_straight() {
-        let coord = TileCoord::new(0, 0, 0, 256, 256, 256);
-        let a_half = f16::from_f32(0.5);
-        let data = vec![Rgba::new(
-            f16::from_f32(0.25), // premul: 0.5 * 0.5
-            f16::from_f32(0.15), // premul: 0.3 * 0.5
-            f16::from_f32(0.1),  // premul: 0.2 * 0.5
-            a_half,
-        )];
-        let tile = Tile::new(coord, data);
-        let straight = tile.to_f32_straight();
-        assert!((straight[0].r - 0.5).abs() < 1e-5);
-        assert!((straight[0].a - 0.5).abs() < 1e-5);
     }
 
     #[test]

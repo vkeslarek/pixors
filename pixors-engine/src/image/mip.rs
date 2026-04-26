@@ -3,7 +3,7 @@
 use crate::error::Error;
 use crate::image::{TileCoord, TileGrid};
 use crate::pixel::Rgba;
-use crate::storage::TileStore;
+        use crate::storage::WorkingWriter;
 use half::f16;
 use std::path::PathBuf;
 
@@ -21,7 +21,7 @@ pub struct MipLevel {
     /// Tile grid for this level.
     pub tile_grid: TileGrid,
     /// Tile store for this level (disk-backed).
-    pub tile_store: TileStore,
+    pub tile_store: WorkingWriter,
     /// Whether this level has been generated (tiles populated).
     pub generated: bool,
 }
@@ -38,7 +38,7 @@ impl MipLevel {
     ) -> Result<Self, Error> {
         let tile_grid = TileGrid::new(width, height, tile_size);
         // Each MIP level gets its own subdirectory to prevent tile file collisions.
-        let tile_store = TileStore::new_with_subdir(
+        let tile_store = WorkingWriter::new_with_subdir(
             base_dir,
             &format!("mip_{}", index),
             tile_size,
@@ -72,14 +72,9 @@ impl MipLevel {
 /// Each level has its own tile store for lazy generation.
 #[derive(Debug)]
 pub struct MipPyramid {
-    /// Level 0 = full resolution (not stored here, uses main tile store).
-    /// Stored levels start at 1 (half resolution).
     levels: Vec<MipLevel>,
-    /// Tile size used for all levels.
     #[allow(dead_code)]
     tile_size: u32,
-    /// Base directory for tile store paths.
-    base_dir: PathBuf,
 }
 
 impl MipPyramid {
@@ -95,24 +90,18 @@ impl MipPyramid {
         let mut width = src_width.max(1);
         let mut height = src_height.max(1);
         let mut scale = 0.5_f32;
-        let mut index = 1; // Level 1 = half resolution
-        
+        let mut index = 1;
+
         while width > 1 || height > 1 {
             width = (width / 2).max(1);
             height = (height / 2).max(1);
-            
             let level = MipLevel::new(index, width, height, scale, tile_size, base_dir.clone())?;
             levels.push(level);
-            
             scale *= 0.5;
             index += 1;
         }
-        
-        Ok(Self {
-            levels,
-            tile_size,
-            base_dir,
-        })
+
+        Ok(Self { levels, tile_size })
     }
     
     /// Returns the number of MIP levels (excluding level 0).
@@ -149,42 +138,53 @@ impl MipPyramid {
     pub fn into_levels(self) -> Vec<MipLevel> {
         self.levels
     }
-    
-    /// Ensures the appropriate MIP level for the given zoom is generated.
-    /// Uses `generate_from_mip0` which runs box-filter downsampling via rayon.
-    pub async fn ensure_level_for_zoom(
-        &mut self,
-        zoom: f32,
-        mip0: &TileStore,
-    ) -> Result<(), Error> {
-        let level_index = mip_level_for_zoom(zoom);
 
-        if level_index == 0 {
-            return Ok(());
+    /// Ensure a specific MIP level is generated.
+    pub fn is_level_ready(&self, level: usize) -> bool {
+        self.level(level).map_or(false, |l| l.generated)
+    }
+
+    /// Select the appropriate MIP level for the given zoom.
+    pub fn level_for_zoom(zoom: f32) -> usize {
+        if zoom >= 0.5 { return 0; }
+        (-(zoom.max(1e-6).log2())).floor() as usize
+    }
+
+    /// Generate all MIP levels from MIP 0 tile store.
+    /// Runs box-filter downsampling in parallel via rayon.
+    pub fn generate_from_mip0(mip0: &WorkingWriter, base_dir: &PathBuf) -> Result<Self, Error> {
+        let _sw = crate::debug_stopwatch!("generate_from_mip0");
+        let tile_size = mip0.tile_size();
+        let mut width = mip0.image_width();
+        let mut height = mip0.image_height();
+
+        tracing::debug!("generate_from_mip0: {}x{} tile_size={}", width, height, tile_size);
+
+        let mut levels: Vec<MipLevel> = Vec::new();
+        let mut level_idx = 1u32;
+
+        while width > 1 || height > 1 {
+            width = (width + 1).max(1) / 2;
+            height = (height + 1).max(1) / 2;
+
+            let store = WorkingWriter::new_with_subdir(
+                base_dir.clone(), &format!("mip_{}", level_idx), tile_size, width, height,
+            )?;
+            downsample_level_rayon(
+                &levels.last().map(|l: &MipLevel| &l.tile_store).unwrap_or(mip0), &store, level_idx,
+            )?;
+
+            let scale = 0.5_f32.powi(level_idx as i32);
+            let tile_grid = TileGrid::new(width, height, tile_size);
+            levels.push(MipLevel {
+                index: level_idx as usize, width, height, scale, tile_grid, tile_store: store, generated: true,
+            });
+            level_idx += 1;
         }
 
-        let already_generated = self.level(level_index)
-            .map(|l| l.generated)
-            .unwrap_or(false);
-
-        if already_generated {
-            return Ok(());
-        }
-
-        tracing::debug!("Generating MIP levels from level {}", level_index);
-        let regenerated = generate_from_mip0(mip0, &self.base_dir)?;
-        self.levels = regenerated.levels;
-        Ok(())
+        tracing::debug!("generate_from_mip0: {} levels generated", levels.len());
+        Ok(Self { levels, tile_size })
     }
-}
-
-/// Select the appropriate MIP level for the current zoom.
-/// Returns 0 for base level (full-res), 1 for half, etc.
-pub fn mip_level_for_zoom(zoom: f32) -> usize {
-    if zoom >= 0.5 {
-        return 0;
-    }
-    (-(zoom.max(1e-6).log2())).floor() as usize
 }
 
 // ---------------------------------------------------------------------------
@@ -193,67 +193,10 @@ pub fn mip_level_for_zoom(zoom: f32) -> usize {
 
 use rayon::prelude::*;
 
-/// Generate all MIP levels from MIP 0 tile store.
-/// Runs box-filter downsampling in parallel via rayon.
-pub fn generate_from_mip0(
-    mip0: &TileStore,
-    base_dir: &PathBuf,
-) -> Result<MipPyramid, Error> {
-    let _sw = crate::debug_stopwatch!("generate_from_mip0");
-    let tile_size = mip0.tile_size();
-    let mut width = mip0.image_width();
-    let mut height = mip0.image_height();
-
-    tracing::debug!("generate_from_mip0: {}x{} tile_size={}", width, height, tile_size);
-
-    let mut levels: Vec<MipLevel> = Vec::new();
-    let mut level_idx = 1u32;
-
-    loop {
-        width = (width + 1).max(1) / 2;
-        height = (height + 1).max(1) / 2;
-
-        if (width <= tile_size || height <= tile_size) && level_idx > 1 {
-            break;
-        }
-
-        let store = TileStore::new_with_subdir(
-            base_dir.clone(),
-            &format!("mip_{}", level_idx),
-            tile_size,
-            width,
-            height,
-        )?;
-
-        downsample_level_rayon(&levels.last().map(|l: &MipLevel| &l.tile_store).unwrap_or(mip0), &store, level_idx)?;
-
-        let scale = 0.5_f32.powi(level_idx as i32);
-        let tile_grid = TileGrid::new(width, height, tile_size);
-        levels.push(MipLevel {
-            index: level_idx as usize,
-            width,
-            height,
-            scale,
-            tile_grid,
-            tile_store: store,
-            generated: true,
-        });
-
-        level_idx += 1;
-    }
-
-    tracing::debug!("generate_from_mip0: {} levels generated", levels.len());
-    Ok(MipPyramid {
-        levels,
-        tile_size,
-        base_dir: base_dir.clone(),
-    })
-}
-
 /// Downsample one level: 2×2 box filter, parallel over destination tiles.
 fn downsample_level_rayon(
-    src: &TileStore,
-    dst: &TileStore,
+    src: &WorkingWriter,
+    dst: &WorkingWriter,
     dst_mip: u32,
 ) -> Result<(), Error> {
     let _sw = crate::debug_stopwatch!("downsample_level_rayon");
@@ -318,7 +261,7 @@ fn downsample_level_rayon(
                 }
             }
 
-            dst.write_tile_blocking(&crate::image::Tile::new(coord, data))
+            dst.write_tile_f16(&crate::image::Tile::new(coord, data))
         })
     })
 }
@@ -349,21 +292,21 @@ mod tests {
 
     #[test]
     fn zoom_level_selection() {
-        assert_eq!(mip_level_for_zoom(1.0), 0);
-        assert_eq!(mip_level_for_zoom(0.5), 0);
-        assert_eq!(mip_level_for_zoom(0.25), 2);
+        assert_eq!(MipPyramid::level_for_zoom(1.0), 0);
+        assert_eq!(MipPyramid::level_for_zoom(0.5), 0);
+        assert_eq!(MipPyramid::level_for_zoom(0.25), 2);
     }
 
     #[test]
     fn generate_from_mip0_test() {
         use crate::image::Tile;
-        use crate::storage::TileStore;
+use crate::storage::WorkingWriter;
 
         let tab_id = uuid::Uuid::new_v4();
         let tile_size = 16;
 
         // Create MIP 0: 32×32, grey ramp, 4 tiles of 16×16
-        let mip0 = TileStore::new(test_dir(&tab_id), tile_size, 32, 32).unwrap();
+        let mip0 = WorkingWriter::new(test_dir(&tab_id), tile_size, 32, 32).unwrap();
         for ty in 0..2 {
             for tx in 0..2 {
                 let coord = TileCoord::new(0, tx, ty, tile_size, 32, 32);
@@ -374,12 +317,12 @@ mod tests {
                         data.push(Rgba::new(v, v, v, f16::ONE));
                     }
                 }
-                mip0.write_tile_blocking(&Tile::new(coord, data)).unwrap();
+                mip0.write_tile_f16(&Tile::new(coord, data)).unwrap();
             }
         }
 
         // Generate MIP levels
-        let pyramid = generate_from_mip0(&mip0, &test_dir(&tab_id)).unwrap();
+        let pyramid = MipPyramid::generate_from_mip0(&mip0, &test_dir(&tab_id)).unwrap();
         assert!(!pyramid.levels.is_empty(), "should have at least one MIP level");
 
         // Level 1: 16×16, 1 tile

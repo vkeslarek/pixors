@@ -24,16 +24,14 @@ pub enum SessionStatus {
 
 #[derive(Debug)]
 pub struct Session {
-    pub id: Uuid,
     pub tab_session: TabSessionData,
     pub status: SessionStatus,
     pub last_status: Instant,
 }
 
 impl Session {
-    fn new(id: Uuid) -> Self {
+    fn new() -> Self {
         Self {
-            id,
             tab_session: TabSessionData::new(),
             status: SessionStatus::Connected,
             last_status: Instant::now(),
@@ -67,7 +65,7 @@ impl SessionManager {
             s.last_status = Instant::now();
             (existing.clone(), true)
         } else {
-            let arc = Arc::new(RwLock::new(Session::new(id)));
+            let arc = Arc::new(RwLock::new(Session::new()));
             sessions.insert(id, arc.clone());
             (arc, false)
         }

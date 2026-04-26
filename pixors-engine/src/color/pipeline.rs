@@ -1,23 +1,23 @@
 //! Generic SIMD conversion pipeline parameterized by source reader and destination pixel type.
 //!
 //! Two concepts:
-//! - `SrcReader` — gathers 4 lanes of (r,g,b,a) from an ImageBuffer row.
+//! - `SrcReader` — gathers 4 lanes of (r,g,b,a) from a raw byte slice + BufferDesc.
 //! - `Pixel` — unified pack/unpack between a concrete type and `[f32;4]`.
 //! - `run<R, D>` — the generic inner loop: gather → decode → matrix → encode → pack.
 
 use crate::convert::ColorConversion;
 use crate::color::TransferFn;
-use crate::image::ImageBuffer;
+use crate::image::buffer::BufferDesc;
 use crate::pixel::{AlphaPolicy, Pixel};
 use wide::f32x4;
 
 // ---------------------------------------------------------------------------
-// SrcReader — reads 4 lanes of (r,g,b,a) from an ImageBuffer row
+// SrcReader — reads 4 lanes of (r,g,b,a) from data + desc
 // ---------------------------------------------------------------------------
 
 pub trait SrcReader {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4);
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4];
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4);
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4];
 }
 
 // ---------------------------------------------------------------------------
@@ -26,7 +26,8 @@ pub trait SrcReader {
 
 pub fn run<R: SrcReader, D: Pixel>(
     conv: &ColorConversion,
-    buf: &ImageBuffer,
+    data: &[u8],
+    desc: &BufferDesc,
     y: u32,
     x_start: u32,
     x_end: u32,
@@ -43,7 +44,7 @@ pub fn run<R: SrcReader, D: Pixel>(
     let mut x = x_start as usize;
 
     for _ in 0..full {
-        let (r_lin, g_lin, b_lin, a_vals) = R::read_x4(buf, x as u32, y);
+        let (r_lin, g_lin, b_lin, a_vals) = R::read_x4(data, desc, x as u32, y);
 
         let (rr, gg, bb) = mat.mul_vec_simd_x4(
             decode_simd(r_lin, tf),
@@ -62,7 +63,7 @@ pub fn run<R: SrcReader, D: Pixel>(
     }
 
     for i in 0..rem {
-        let [rl, gl, bl, a] = R::read_one(buf, (x + i) as u32, y);
+        let [rl, gl, bl, a] = R::read_one(data, desc, (x + i) as u32, y);
         let decoded = [tf.decode(rl), tf.decode(gl), tf.decode(bl)];
         let linear = mat.mul_vec(decoded);
         let [r, g, b] = apply_mode_one(linear, a, mode);
@@ -113,10 +114,10 @@ pub fn apply_mode_one(linear: [f32; 3], a: f32, mode: AlphaPolicy) -> [f32; 3] {
 
 pub struct RgbaU8Interleaved;
 impl SrcReader for RgbaU8Interleaved {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
         let row: &[[u8; 4]] = {
-            let plane = &buf.desc.planes[0];
-            let bytes = plane.interleaved_row::<u8, 4>(&buf.data, y).unwrap_or(&[]);
+            let plane = &desc.planes[0];
+            let bytes = plane.interleaved_row::<u8, 4>(data, y).unwrap_or(&[]);
             bytemuck::cast_slice(bytes)
         };
         let base = x as usize;
@@ -133,18 +134,18 @@ impl SrcReader for RgbaU8Interleaved {
         }
         (f32x4::from(r), f32x4::from(g), f32x4::from(b), f32x4::from(a))
     }
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4] {
-        [buf.read_sample(0, x, y), buf.read_sample(1, x, y),
-         buf.read_sample(2, x, y), buf.read_sample(3, x, y)]
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4] {
+        [desc.planes[0].read_sample(data, x, y), desc.planes[1].read_sample(data, x, y),
+         desc.planes[2].read_sample(data, x, y), desc.planes[3].read_sample(data, x, y)]
     }
 }
 
 pub struct RgbU8Interleaved;
 impl SrcReader for RgbU8Interleaved {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
         let row: &[[u8; 3]] = {
-            let plane = &buf.desc.planes[0];
-            let bytes = plane.interleaved_row::<u8, 3>(&buf.data, y).unwrap_or(&[]);
+            let plane = &desc.planes[0];
+            let bytes = plane.interleaved_row::<u8, 3>(data, y).unwrap_or(&[]);
             bytemuck::cast_slice(bytes)
         };
         let base = x as usize;
@@ -160,18 +161,18 @@ impl SrcReader for RgbU8Interleaved {
         }
         (f32x4::from(r), f32x4::from(g), f32x4::from(b), f32x4::from(a))
     }
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4] {
-        [buf.read_sample(0, x, y), buf.read_sample(1, x, y),
-         buf.read_sample(2, x, y), 1.0]
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4] {
+        [desc.planes[0].read_sample(data, x, y), desc.planes[1].read_sample(data, x, y),
+         desc.planes[2].read_sample(data, x, y), 1.0]
     }
 }
 
 pub struct GrayU8Interleaved;
 impl SrcReader for GrayU8Interleaved {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
         let row: &[u8] = {
-            let plane = &buf.desc.planes[0];
-            plane.interleaved_row::<u8, 1>(&buf.data, y).unwrap_or(&[])
+            let plane = &desc.planes[0];
+            plane.interleaved_row::<u8, 1>(data, y).unwrap_or(&[])
         };
         let base = x as usize;
         let mut v = [0.0_f32; 4];
@@ -182,18 +183,18 @@ impl SrcReader for GrayU8Interleaved {
         let vv = f32x4::from(v);
         (vv, vv, vv, one)
     }
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4] {
-        let v = buf.read_sample(0, x, y);
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4] {
+        let v = desc.planes[0].read_sample(data, x, y);
         [v, v, v, 1.0]
     }
 }
 
 pub struct GrayAlphaU8Interleaved;
 impl SrcReader for GrayAlphaU8Interleaved {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
         let row: &[[u8; 2]] = {
-            let plane = &buf.desc.planes[0];
-            let bytes = plane.interleaved_row::<u8, 2>(&buf.data, y).unwrap_or(&[]);
+            let plane = &desc.planes[0];
+            let bytes = plane.interleaved_row::<u8, 2>(data, y).unwrap_or(&[]);
             bytemuck::cast_slice(bytes)
         };
         let base = x as usize;
@@ -208,18 +209,18 @@ impl SrcReader for GrayAlphaU8Interleaved {
         let vv = f32x4::from(v);
         (vv, vv, vv, f32x4::from(a))
     }
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4] {
-        let v = buf.read_sample(0, x, y);
-        [v, v, v, buf.read_sample(1, x, y)]
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4] {
+        let v = desc.planes[0].read_sample(data, x, y);
+        [v, v, v, desc.planes[1].read_sample(data, x, y)]
     }
 }
 
 pub struct RgbaU16Interleaved;
 impl SrcReader for RgbaU16Interleaved {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
         let row: &[[u16; 4]] = {
-            let plane = &buf.desc.planes[0];
-            let bytes = plane.interleaved_row::<u16, 4>(&buf.data, y).unwrap_or(&[]);
+            let plane = &desc.planes[0];
+            let bytes = plane.interleaved_row::<u16, 4>(data, y).unwrap_or(&[]);
             bytemuck::cast_slice(bytes)
         };
         let base = x as usize;
@@ -236,17 +237,17 @@ impl SrcReader for RgbaU16Interleaved {
         }
         (f32x4::from(r), f32x4::from(g), f32x4::from(b), f32x4::from(a))
     }
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4] {
-        [buf.read_sample(0, x, y), buf.read_sample(1, x, y),
-         buf.read_sample(2, x, y), buf.read_sample(3, x, y)]
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4] {
+        [desc.planes[0].read_sample(data, x, y), desc.planes[1].read_sample(data, x, y),
+         desc.planes[2].read_sample(data, x, y), desc.planes[3].read_sample(data, x, y)]
     }
 }
 
 pub struct GenericReader;
 impl SrcReader for GenericReader {
-    fn read_x4(buf: &ImageBuffer, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
-        let has_alpha = buf.desc.planes.len() >= 4;
-        let is_gray = buf.desc.planes.len() <= 2;
+    fn read_x4(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> (f32x4, f32x4, f32x4, f32x4) {
+        let has_alpha = desc.planes.len() >= 4;
+        let is_gray = desc.planes.len() <= 2;
         let mut r = [0.0_f32; 4];
         let mut g = [0.0_f32; 4];
         let mut b = [0.0_f32; 4];
@@ -254,13 +255,13 @@ impl SrcReader for GenericReader {
         for i in 0..4 {
             let px = x + i as u32;
             let (rv, gv, bv) = if is_gray {
-                let v = buf.read_sample(0, px, y);
+                let v = desc.planes[0].read_sample(data, px, y);
                 (v, v, v)
             } else {
-                (buf.read_sample(0, px, y), buf.read_sample(1, px, y), buf.read_sample(2, px, y))
+                (desc.planes[0].read_sample(data, px, y), desc.planes[1].read_sample(data, px, y), desc.planes[2].read_sample(data, px, y))
             };
             let a = if has_alpha {
-                buf.read_sample(if is_gray { 1 } else { 3 }, px, y)
+                desc.planes[if is_gray { 1 } else { 3 }].read_sample(data, px, y)
             } else {
                 1.0
             };
@@ -271,17 +272,17 @@ impl SrcReader for GenericReader {
         }
         (f32x4::from(r), f32x4::from(g), f32x4::from(b), f32x4::from(av))
     }
-    fn read_one(buf: &ImageBuffer, x: u32, y: u32) -> [f32; 4] {
-        let has_alpha = buf.desc.planes.len() >= 4;
-        let is_gray = buf.desc.planes.len() <= 2;
+    fn read_one(data: &[u8], desc: &BufferDesc, x: u32, y: u32) -> [f32; 4] {
+        let has_alpha = desc.planes.len() >= 4;
+        let is_gray = desc.planes.len() <= 2;
         let (r, g, b) = if is_gray {
-            let v = buf.read_sample(0, x, y);
+            let v = desc.planes[0].read_sample(data, x, y);
             (v, v, v)
         } else {
-            (buf.read_sample(0, x, y), buf.read_sample(1, x, y), buf.read_sample(2, x, y))
+            (desc.planes[0].read_sample(data, x, y), desc.planes[1].read_sample(data, x, y), desc.planes[2].read_sample(data, x, y))
         };
         let a = if has_alpha {
-            buf.read_sample(if is_gray { 1 } else { 3 }, x, y)
+            desc.planes[if is_gray { 1 } else { 3 }].read_sample(data, x, y)
         } else {
             1.0
         };

@@ -49,6 +49,21 @@ impl TransferFn {
     pub const fn is_linear(self) -> bool {
         matches!(self, Self::Linear)
     }
+
+    /// Map a gamma decode value to a known transfer function, or return `None`.
+    pub fn from_gamma(g: f32) -> Option<Self> {
+        if (g - 1.0 / 2.2).abs() < 0.01 {
+            Some(Self::Gamma22)
+        } else if (g - 1.0 / 2.4).abs() < 0.01 {
+            Some(Self::Gamma24)
+        } else if (g - 1.0 / 2.2).abs() < 0.05 {
+            Some(Self::Gamma22)
+        } else if (g - 1.0).abs() < 0.01 {
+            Some(Self::Linear)
+        } else {
+            None
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

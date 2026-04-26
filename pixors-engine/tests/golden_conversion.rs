@@ -160,7 +160,7 @@ fn write_golden(name: &str, data: &[u8]) {
 fn srgb_u8_to_acescg_f16_bitexact() {
     let buf = make_srgb_u8_image();
     let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf, AlphaPolicy::PremultiplyOnPack);
+    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
     let output = serialize_f16_pixels(&pixels);
 
     let golden_name = "srgb_u8_to_acescg.bin";

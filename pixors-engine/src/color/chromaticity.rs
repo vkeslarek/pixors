@@ -5,6 +5,8 @@ pub struct Chromaticity {
     pub y: f32,
 }
 
+impl Eq for Chromaticity {} // safe: f32 values are compile-time constants, never NaN
+
 impl Chromaticity {
     /// Creates a new chromaticity point.
     pub const fn new(x: f32, y: f32) -> Self {

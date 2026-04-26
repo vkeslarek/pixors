@@ -228,65 +228,88 @@ pub(crate) async fn stream_tiles_for_tab(
     let zoom = vp_state.zoom.max(0.0001);
     let viewport_width = vp_state.width as f32;
     let viewport_height = vp_state.height as f32;
-    let desired_mip = compute_mip_level(zoom) as u32;
+    let desired_mip = crate::image::MipPyramid::level_for_zoom(zoom) as u32;
     tracing::debug!("stream_tiles_for_tab: tab={} zoom={:.3} desired_mip={}", tab_id, zoom, desired_mip);
     tracing::debug!("stream_tiles: desired_mip={}", desired_mip);
 
-    let mut mip_level = 0;
+    let mut mip_level = 0u32;
+    let mut need_sot_generation = false;
     if desired_mip > 0 {
-        // Find the highest generated MIP level up to desired_mip
-        let mut best_mip = 0;
-        for m in (1..=desired_mip).rev() {
-            let has_grid = {
-                let Some(session_arc) = state.session_manager.get(&session_id).await else { break };
+        // Check display MIPs (RAM) — primary source for viewport streaming
+        let (display_ready, sot_ready) = {
+            let session_arc = match state.session_manager.get(&session_id).await {
+                Some(s) => s,
+                None => return,
+            };
+            let session = session_arc.read().await;
+            let tab = match session.tab_session.tabs.get(&tab_id) {
+                Some(t) => t,
+                None => return,
+            };
+            (
+                tab.is_display_mip_ready(desired_mip as usize),
+                tab.is_mip_ready(desired_mip as usize),
+            )
+        };
+
+        if display_ready {
+            mip_level = desired_mip;
+        } else {
+            // Fallback: find highest display MIP level available
+            let mut best_display = 0u32;
+            for m in (1..desired_mip).rev() {
+                let session_arc = match state.session_manager.get(&session_id).await {
+                    Some(s) => s,
+                    None => return,
+                };
                 let session = session_arc.read().await;
-                session
+                let ready = session
                     .tab_session
                     .tabs
                     .get(&tab_id)
-                    .and_then(|tab| tab.tile_grid_for_mip(m as usize))
-                    .is_some()
-            };
-            if has_grid {
-                best_mip = m;
-                break;
+                    .map(|tab| tab.is_display_mip_ready(m as usize))
+                    .unwrap_or(false);
+                if ready {
+                    best_display = m;
+                    break;
+                }
             }
+            mip_level = best_display;
         }
 
-        if best_mip == 0 {
-            // No MIPs generated yet! Spawn background generation
-            let state_bg = state.clone();
-            let tab_id_bg = tab_id;
-            let session_id_bg = session_id;
-            let frame_tx_bg = frame_tx.clone();
-            tokio::spawn(async move {
-                let Some(s) = state_bg.session_manager.get(&session_id_bg).await else { return };
-                let mut tab = match s.write().await.tab_session.tabs.remove(&tab_id_bg) {
-                    Some(t) => t,
-                    None => return,
-                };
-                if let Err(e) = crate::server::service::tab::TabService::ensure_mip_level(&mut tab, zoom).await {
-                    tracing::error!("Background MIP generation failed: {}", e);
-                    if let Some(s) = state_bg.session_manager.get(&session_id_bg).await {
-                        s.write().await.tab_session.tabs.insert(tab_id_bg, tab);
-                    }
-                    return;
-                }
-                let (width, height) = tab.image_info().unwrap_or((0, 0));
+        need_sot_generation = !sot_ready;
+    }
+
+    // Spawn background SOT MIP generation in the background if needed
+    if need_sot_generation {
+        let state_bg = state.clone();
+        let tab_id_bg = tab_id;
+        let session_id_bg = session_id;
+        let frame_tx_bg = frame_tx.clone();
+        tokio::spawn(async move {
+            let Some(s) = state_bg.session_manager.get(&session_id_bg).await else { return };
+            let mut tab = match s.write().await.tab_session.tabs.remove(&tab_id_bg) {
+                Some(t) => t,
+                None => return,
+            };
+            if let Err(e) = crate::server::service::tab::TabService::ensure_mip_level(&mut tab, zoom).await {
+                tracing::error!("Background MIP generation failed: {}", e);
                 if let Some(s) = state_bg.session_manager.get(&session_id_bg).await {
                     s.write().await.tab_session.tabs.insert(tab_id_bg, tab);
                 }
-                tracing::debug!("Background MIP {} ready, notifying client", desired_mip);
-                let event = EngineEvent::Viewport(
-                    ViewportEvent::MipLevelReady { tab_id: tab_id_bg, level: desired_mip, width, height }
-                );
-                use crate::server::ws::types::send_session_event;
-                send_session_event(&frame_tx_bg, &event);
-            });
-            mip_level = 0; // stream MIP 0 while generating
-        } else {
-            mip_level = best_mip;
-        }
+                return;
+            }
+            let (width, height) = tab.image_info().unwrap_or((0, 0));
+            if let Some(s) = state_bg.session_manager.get(&session_id_bg).await {
+                s.write().await.tab_session.tabs.insert(tab_id_bg, tab);
+            }
+            tracing::debug!("Background MIP {} ready, notifying client", desired_mip);
+            let event = EngineEvent::Viewport(
+                ViewportEvent::MipLevelReady { tab_id: tab_id_bg, level: desired_mip, width, height }
+            );
+            use crate::server::ws::types::send_session_event;
+            send_session_event(&frame_tx_bg, &event);
+        });
     }
 
     // Get tile grid (read from session)
@@ -357,7 +380,7 @@ pub(crate) async fn stream_tiles_for_tab(
                         Some(t) => t,
                         None => return,
                     };
-                    match tab.get_tile_rgba8(state.tab_service.tile_cache(), tile, mip_lvl as usize).await {
+                    match tab.get_tile_rgba8(tile, mip_lvl as usize).await {
                         Ok(d) => d,
                         Err(e) => {
                             tracing::error!("Failed to get tile data: {}", e);
@@ -366,8 +389,7 @@ pub(crate) async fn stream_tiles_for_tab(
                     }
                 };
 
-                let mut pixel_data = rgba8;
-                let payload = encode_tile_payload(tid, &tile, mip_lvl, &mut pixel_data);
+                let payload = encode_tile_payload(tid, &tile, mip_lvl, &rgba8);
 
                 if frame_tx.send(ClientFrame::new(MSG_TILE, payload)).is_err() {
                     tracing::error!("Writer task closed");
@@ -386,21 +408,11 @@ pub(crate) async fn stream_tiles_for_tab(
     let _ = frame_tx.send(ClientFrame::empty(MSG_TILES_COMPLETE));
 }
 
-/// Computes the MIP level to use for a given zoom factor.
-/// Returns 0 for zoom >= 1.0 (base level), otherwise ceil(log2(1/zoom)).
-fn compute_mip_level(zoom: f32) -> usize {
-    if zoom >= 1.0 {
-        return 0;
-    }
-    let level = (1.0 / zoom).log2().ceil() as usize;
-    level
-}
-
 /// Build binary tile message: 36-byte header + RGBA8 pixel data.
 ///
 /// Header format (little-endian):
 /// [4B px][4B py][4B width][4B height][4B mip_level][16B tab_id UUID]
-fn encode_tile_payload(tab_id: Uuid, tile: &TileCoord, mip_level: u32, pixels: &mut Vec<u8>) -> Vec<u8> {
+pub fn encode_tile_payload(tab_id: Uuid, tile: &TileCoord, mip_level: u32, pixels: &[u8]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(36 + pixels.len());
     buf.extend_from_slice(&tile.px.to_le_bytes());
     buf.extend_from_slice(&tile.py.to_le_bytes());
@@ -408,6 +420,6 @@ fn encode_tile_payload(tab_id: Uuid, tile: &TileCoord, mip_level: u32, pixels: &
     buf.extend_from_slice(&tile.height.to_le_bytes());
     buf.extend_from_slice(&mip_level.to_le_bytes());
     buf.extend_from_slice(tab_id.as_bytes());
-    buf.append(pixels);
+    buf.extend_from_slice(pixels);
     buf
 }

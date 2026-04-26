@@ -1,6 +1,6 @@
 //! CIE XYZ and xyY color spaces.
 
-use super::Chromaticity;
+use crate::color::Chromaticity;
 
 /// CIE XYZ tristimulus values.
 #[derive(Debug, Clone, Copy, PartialEq)]

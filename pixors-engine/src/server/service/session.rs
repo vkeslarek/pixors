@@ -76,9 +76,9 @@ impl SessionService {
                 id: t.id,
                 name: t.name.clone(),
                 created_at: t.created_at,
-                has_image: t.source.is_some(),
-                width: t.width,
-                height: t.height,
+                has_image: t.has_image,
+                width: t.doc_width,
+                height: t.doc_height,
             }).collect();
             send_session_event(
                 &ctx.frame_tx,

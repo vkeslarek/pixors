@@ -5,7 +5,7 @@
 use super::Chromaticity;
 
 /// A set of primary colors that define an RGB color space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub enum RgbPrimaries {
     /// No primaries (placeholder).
@@ -110,7 +110,7 @@ impl RgbPrimaries {
 }
 
 /// Defines the white point ("achromatic point") of a color space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub enum WhitePoint {
     /// No white point (placeholder).

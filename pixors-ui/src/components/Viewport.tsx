@@ -154,7 +154,18 @@ export function Viewport() {
     const unsubs = [
       engine.subscribe('image_loaded', (msg) => {
         if (msg.tab_id !== tabIdRef.current) return;
+        console.log(`[ImageLoaded] tab=${msg.tab_id} ${msg.width}x${msg.height} layers=${msg.layer_count}`);
         fit(msg.width, msg.height);
+        requestTiles();
+      }),
+      engine.subscribe('layer_changed', (msg) => {
+        if (msg.tab_id !== tabIdRef.current) return;
+        console.log(`[LayerChanged] tab=${msg.tab_id} layer=${msg.layer_id} field=${msg.field} sig=${msg.composition_sig}`);
+        requestTiles();
+      }),
+      engine.subscribe('doc_size_changed', (msg) => {
+        if (msg.tab_id !== tabIdRef.current) return;
+        console.log(`[DocSizeChanged] tab=${msg.tab_id} ${msg.width}x${msg.height}`);
         requestTiles();
       }),
       engine.subscribe('mip_level_ready', (msg) => {
