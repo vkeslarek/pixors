@@ -364,8 +364,10 @@ impl TabData {
     }
 
     pub async fn open_image(
-        &mut self, 
+        &mut self,
         path: impl AsRef<Path>,
+        tab_id: Uuid,
+        frame_tx: &tokio::sync::mpsc::UnboundedSender<crate::server::ws::types::ClientFrame>,
         vp_cb: Option<Arc<dyn Fn(u32, crate::image::TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
     ) -> Result<(), Error> {
         self.close_image().await;
@@ -420,7 +422,8 @@ impl TabData {
             };
             rx = MipPipe::new(self.tile_size, num_levels).pipe(rx);
 
-            let mut rx_vec = tee(rx, 2);
+            let mut rx_vec = tee(rx, 3);
+            let pr_rx = rx_vec.pop().unwrap();
             let wk_rx = rx_vec.pop().unwrap();
             let vp_rx = rx_vec.pop().unwrap();
 
@@ -434,8 +437,22 @@ impl TabData {
             let vp_sink = ViewportSink::new(Arc::clone(&viewport));
             let wk_sink = WorkingSink::new(Arc::clone(&store));
 
+            // Progress branch: emit ImageLoadProgress events
+            use crate::stream::ProgressSink;
+            let frame_tx_progress = frame_tx.clone();
+            let tab_id_progress = tab_id;
+            let pr_sink = ProgressSink::new(move |percent| {
+                let event = crate::server::event_bus::EngineEvent::Tab(crate::server::service::tab::TabEvent::ImageLoadProgress {
+                    tab_id: tab_id_progress,
+                    percent,
+                });
+                use crate::server::ws::types::send_session_event;
+                send_session_event(&frame_tx_progress, &event);
+            });
+
             let _vp_handle = vp_sink.run(vp_rx);
             let wk_handle = wk_sink.run(wk_rx);
+            let _pr_handle = pr_sink.run(pr_rx);
 
             // DON'T join — tiles auto-stream to frontend via vp_cb callback
             // Disk handle joined in Drop
@@ -867,7 +884,7 @@ impl TabService {
 
         {
             let _sw = debug_stopwatch!("OpenFile:open_image");
-            match tab.open_image(path, Some(cb)).await {
+            match tab.open_image(path, tab_id, &ctx.frame_tx, Some(cb)).await {
                 Ok(()) => tracing::debug!("open_image: done tab={}", tab_id),
                 Err(e) => {
                     tracing::error!("Failed to load image: {}", e);

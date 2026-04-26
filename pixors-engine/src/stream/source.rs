@@ -102,7 +102,13 @@ impl ImageFileSource {
                 )).is_err() { break; }
                 emitted += 1;
 
-                if emitted % 50 == 0 || emitted == total_tiles {
+                // Emit progress every 10 tiles or at end
+                if emitted % 10 == 0 || emitted == total_tiles {
+                    let _ = tx.send(Frame::new(
+                        FrameMeta { layer_id: layer_idx as u32, mip_level: 0, image_w: w, image_h: h, color_space: meta.desc.color_space, total_tiles, generation },
+                        FrameKind::Progress { done: emitted, total: total_tiles },
+                        vec![],
+                    ));
                     tracing::debug!("source: emitted {}/{} tiles", emitted, total_tiles);
                 }
             }
