@@ -96,16 +96,16 @@ cargo test --lib viewport
 
 ## Design Documents
 
-Detailed architecture decisions are in `pixors-engine/docs/`:
+Detailed architecture decisions are in `docs/`:
 
-- [OVERVIEW.md](pixors-engine/docs/OVERVIEW.md) – Goals & principles
-- [DATA_MODEL.md](pixors-engine/docs/DATA_MODEL.md) – Pixel format, color, alpha
-- [DECISIONS.md](pixors-engine/docs/DECISIONS.md) – Locked architectural decisions
-- [PHASE_2.md](pixors-engine/docs/PHASE_2.md) – Viewport & swapchain specification
+- [OVERVIEW.md](docs/OVERVIEW.md) – Goals & principles
+- [DATA_MODEL.md](docs/DATA_MODEL.md) – Pixel format, color, alpha
+- [DECISIONS.md](docs/DECISIONS.md) – Locked architectural decisions
+- [PHASE_2.md](docs/PHASE_2.md) – Viewport & swapchain specification
 
 ## Roadmap
 
-See [ROADMAP.md](pixors-engine/docs/ROADMAP.md) and [IMPLEMENTATION_PLAN.md](pixors-engine/docs/IMPLEMENTATION_PLAN.md) for detailed phase breakdown.
+See [ROADMAP.md](docs/ROADMAP.md) and [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for detailed phase breakdown.
 
 **Next up**: Phase 3 (Operations basics) – synchronous CPU‑only ops with CLI.
 

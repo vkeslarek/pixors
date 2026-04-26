@@ -118,7 +118,7 @@ cargo check --workspace
 
 ## Design Documents
 
-Refer to `pixors-engine/docs/` for authoritative design decisions:
+Refer to `docs/` for authoritative design decisions:
 
 - `OVERVIEW.md` – Principles & scope
 - `DATA_MODEL.md` – Pixel format, color, alpha

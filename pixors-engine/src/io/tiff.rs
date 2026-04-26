@@ -300,7 +300,7 @@ fn alpha_mode_for(ct: tiff::ColorType) -> AlphaMode {
 // ---------------------------------------------------------------------------
 
 fn detect_tiff_color_space(decoder: &mut Decoder<BufReader<File>>) -> ColorSpace {
-    
+
 
     // PhotometricInterpretation (tag 262)
     if let Ok(photometric) = decoder.find_tag_unsigned::<u32>(Tag::PhotometricInterpretation) {
