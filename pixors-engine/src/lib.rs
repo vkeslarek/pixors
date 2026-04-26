@@ -15,9 +15,8 @@ pub mod server;
 pub mod storage;
 
 pub use color::ColorSpace;
-pub use image::{AlphaMode, RawImage, TypedImage};
-pub use pixel::{Component, Pixel, Rgba, Rgb, Gray, GrayAlpha};
-pub use convert::{premultiply, unpremultiply};
+pub use image::{AlphaMode, RawImage};
+pub use pixel::{Component, Rgba, Rgb, Gray, GrayAlpha};
 pub use io::ImageReader;
 
 /// Error type for all library operations.

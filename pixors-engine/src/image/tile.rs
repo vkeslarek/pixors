@@ -1,6 +1,6 @@
 use crate::pixel::Rgba;
-use crate::color::ColorConversion;
-use crate::convert::simd::acescg_f16_to_srgb_u8_simd;
+use crate::color::{ColorSpace, ColorConversion};
+use crate::pixel::AlphaPolicy;
 use half::f16;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -71,28 +71,19 @@ impl<P: Clone> Tile<P> {
 }
 
 impl Tile<Rgba<f16>> {
-    /// Converts ACEScg f16 premul pixels to sRGB u8 RGBA using pre-computed converter.
     pub fn to_srgb_u8(&self, conv: &ColorConversion) -> Tile<u8> {
-        let srgb = acescg_f16_to_srgb_u8_simd(&self.data, conv);
-        Tile { coord: self.coord, data: Arc::new(srgb) }
+        let pixels: Vec<[u8; 4]> =
+            conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&self.data, AlphaPolicy::Straight);
+        let bytes: Vec<u8> = bytemuck::cast_slice::<[u8; 4], u8>(pixels.as_slice()).to_vec();
+        Tile {
+            coord: self.coord,
+            data: Arc::new(bytes),
+        }
     }
 
-    /// Converts to f32 straight (unpremultiplied) for operations.
     pub fn to_f32_straight(&self) -> Vec<Rgba<f32>> {
-        self.data.iter().map(|px| {
-            let a = px.a.to_f32();
-            if a < 1e-6 {
-                Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
-            } else {
-                let inv = 1.0 / a;
-                Rgba {
-                    r: px.r.to_f32() * inv,
-                    g: px.g.to_f32() * inv,
-                    b: px.b.to_f32() * inv,
-                    a,
-                }
-            }
-        }).collect()
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap();
+        conv.convert_pixels::<Rgba<f16>, Rgba<f32>>(&self.data, AlphaPolicy::Straight)
     }
 }
 

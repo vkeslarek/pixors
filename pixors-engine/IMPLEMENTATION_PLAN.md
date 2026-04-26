@@ -1,4 +1,4 @@
-# Pixors — Implementation Plan: Phase 7 (UX, Reactive Architecture & Desktop Integration)
+# Pixors — Implementation Plan: Phase 7 (UX, ReaEsqueci,ctive Architecture & Desktop Integration)
 
 > Bem-vindo à **Fase 7**. As fundações do motor assíncrono (tiling, websockets, canvas 2D, e mipmaps) já foram estabelecidas e estão funcionais. O foco agora muda do "fazer funcionar" para **"fazer funcionar direito, ser robusto e preparar para o usuário final"**.
 
@@ -10,7 +10,7 @@ Este plano é um guia **altamente detalhado e passo a passo** para o LLM que far
 
 A Fase 7 ataca as maiores dívidas técnicas e gargalos de UX deixados pelo crescimento orgânico da arquitetura. O plano é dividido em 5 etapas estritamente sequenciais:
 
-1. **UX de Load/Close & Progress Tracking:** Otimizar e dar feedback visual para operações pesadas.
+1. **UX de Loa[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)d/Close & Progress Tracking:** Otimizar e dar feedback visual para operações pesadas.
 2. **Arquitetura Reativa no Frontend:** Sincronia forte 1:1 entre comandos do front e confirmações do backend.
 3. **Fluxos de Exceção (Error Handling):** Exposição clara de erros do motor para a interface de usuário.
 4. **Simplificação e Refatoração do Backend:** Limpeza de "spaghetti code", adoção de traits claras e modelos mentais diretos.

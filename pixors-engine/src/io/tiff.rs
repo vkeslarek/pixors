@@ -32,20 +32,6 @@ impl ImageReader for TiffFormat {
     fn load(&self, path: &Path) -> Result<ImageBuffer, Error> {
         load_tiff(path)
     }
-
-    fn stream_to_tiles_sync(
-        &self,
-        path: &Path,
-        width: u32,
-        height: u32,
-        tile_size: u32,
-        color_space: ColorSpace,
-        alpha_mode: AlphaMode,
-        store: &crate::storage::TileStore,
-        on_progress: Option<&(dyn Fn(u8) + Send)>,
-    ) -> Result<(), Error> {
-        stream_tiff_to_tiles_sync(path, width, height, tile_size, color_space, alpha_mode, store, on_progress)
-    }
 }
 
 /// Read TIFF metadata: dimensions, color space, and alpha mode.
@@ -59,23 +45,6 @@ pub fn read_tiff_metadata(path: &Path) -> Result<(u32, u32, ColorSpace, AlphaMod
     let alpha_mode = AlphaMode::Straight;
 
     Ok((width, height, color_space, alpha_mode))
-}
-
-/// Load a TIFF into an ImageBuffer, then stream tiles to TileStore.
-pub fn stream_tiff_to_tiles_sync(
-    path: &Path,
-    width: u32,
-    height: u32,
-    tile_size: u32,
-    _color_space: ColorSpace,
-    _alpha_mode: AlphaMode,
-    store: &crate::storage::TileStore,
-    on_progress: Option<&(dyn Fn(u8) + Send)>,
-) -> Result<(), Error> {
-    let image = load_tiff(path)?;
-    assert_eq!(image.desc.width, width);
-    assert_eq!(image.desc.height, height);
-    crate::io::stream_image_buffer_to_tiles(&image, tile_size, store, on_progress)
 }
 
 /// Loads a TIFF image from a file path into an ImageBuffer.
@@ -128,10 +97,10 @@ pub fn load_tiff(path: &Path) -> Result<ImageBuffer, Error> {
             ImageBuffer { desc, data }
         }
         DecodingResult::U16(data) => {
-            // Convert native u16 → big-endian bytes (matches ComponentEncoding::read_sample convention)
+            // Convert native u16 → native-endian bytes (matches SampleFormat::U16Le on LE hosts)
             let bytes: Vec<u8> = data
                 .iter()
-                .flat_map(|v| v.to_be_bytes())
+                .flat_map(|v| v.to_ne_bytes())
                 .collect();
 
             let desc = match color_type {

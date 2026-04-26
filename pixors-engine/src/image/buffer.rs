@@ -3,62 +3,75 @@
 //! Describes any image layout via per-channel descriptors (offset, stride, row_stride).
 //! Enables interleaved, planar, padded, and mixed layouts without hardcoding assumptions.
 
-use crate::color::{ColorSpace, ColorConversion};
-use crate::convert::pack_rgba_premul;
-use crate::error::Error;
-use crate::pixel::Rgba;
+use crate::color::{ColorSpace};
+use bytemuck::Pod;
 use half::f16;
 use std::ops::Range;
 
 // ---------------------------------------------------------------------------
-// Component Encoding
+// Sample Format
 // ---------------------------------------------------------------------------
 
-/// How a single component value is encoded in the buffer.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ComponentEncoding {
-    /// Unsigned integer (u8, u16).
-    UnsignedInt { bits: u8 },
-    /// Unsigned normalized to [0.0, 1.0] (u8 → 0/255, u16 → 0/65535).
-    UnsignedNormalized { bits: u8 },
-    /// IEEE floating point (f16 or f32).
-    Float { bits: u8 },
+/// Normalized [0,1] sample format with explicit endianness.
+///
+/// All reads produce a normalized f32 value. Integer types are divided by
+/// their maximum (255 for u8, 65535 for u16). Float types pass through
+/// unclamped (HDR float buffers must not be clamped to [0,1]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SampleFormat {
+    U8,
+    U16Le,
+    U16Be,
+    F16Le,
+    F16Be,
+    F32Le,
+    F32Be,
 }
 
-impl ComponentEncoding {
-    /// Byte size for this encoding.
-    pub fn byte_size(&self) -> usize {
+impl SampleFormat {
+    pub fn byte_size(self) -> usize {
         match self {
-            Self::UnsignedInt { bits } | Self::UnsignedNormalized { bits } => (*bits as usize + 7) / 8,
-            Self::Float { bits } => (*bits as usize + 7) / 8,
+            Self::U8 => 1,
+            Self::U16Le | Self::U16Be | Self::F16Le | Self::F16Be => 2,
+            Self::F32Le | Self::F32Be => 4,
         }
     }
 
-    /// Read one sample from buffer and return as normalized f32.
-    pub fn read_sample(&self, data: &[u8], offset: usize) -> f32 {
+    /// Read one sample and return normalized f32 ([0,1] for integers,
+    /// unclamped for floats).
+    pub fn read_sample(self, data: &[u8], offset: usize) -> f32 {
         match self {
-            Self::UnsignedInt { bits: 8 } => data[offset] as f32,
-            Self::UnsignedInt { bits: 16 } => {
-                let val = u16::from_be_bytes([data[offset], data[offset + 1]]);
-                val as f32
+            Self::U8 => data[offset] as f32 / 255.0,
+            Self::U16Le => {
+                u16::from_le_bytes([data[offset], data[offset + 1]]) as f32 / 65535.0
             }
-            Self::UnsignedNormalized { bits: 8 } => {
-                let val = data[offset] as f32;
-                val / 255.0
+            Self::U16Be => {
+                u16::from_be_bytes([data[offset], data[offset + 1]]) as f32 / 65535.0
             }
-            Self::UnsignedNormalized { bits: 16 } => {
-                let val = u16::from_be_bytes([data[offset], data[offset + 1]]) as f32;
-                val / 65535.0
+            Self::F16Le => {
+                let bits = u16::from_le_bytes([data[offset], data[offset + 1]]);
+                f16::from_bits(bits).to_f32()
             }
-            Self::Float { bits: 16 } => {
+            Self::F16Be => {
                 let bits = u16::from_be_bytes([data[offset], data[offset + 1]]);
                 f16::from_bits(bits).to_f32()
             }
-            Self::Float { bits: 32 } => {
-                let val = f32::from_be_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
-                val.clamp(0.0, 1.0)
+            Self::F32Le => {
+                f32::from_le_bytes([
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ])
             }
-            _ => 0.0, // unsupported
+            Self::F32Be => {
+                f32::from_be_bytes([
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ])
+            }
         }
     }
 }
@@ -80,7 +93,7 @@ pub struct PlaneDesc {
     /// Number of pixels per row (not bytes).
     pub row_length: u32,
     /// How samples are encoded.
-    pub encoding: ComponentEncoding,
+    pub encoding: SampleFormat,
 }
 
 impl PlaneDesc {
@@ -100,6 +113,40 @@ impl PlaneDesc {
         let start = self.offset + (row_start as usize) * self.row_stride;
         let end = self.offset + (row_end as usize) * self.row_stride;
         start..end
+    }
+
+    // -----------------------------------------------------------------------
+    // Typed-row fast paths (skip per-sample dispatch in SIMD hot loops)
+    // -----------------------------------------------------------------------
+
+    /// Planar layout fast path: returns the whole row as `&[T]` when
+    /// `stride == size_of::<T>()`. Returns `None` if the layout is exotic
+    /// (interleaved, misaligned, mismatched stride).
+    pub fn planar_row<'a, T: Pod>(&self, data: &'a [u8], y: u32) -> Option<&'a [T]> {
+        if self.stride != std::mem::size_of::<T>() {
+            return None;
+        }
+        let byte_start = self.offset + y as usize * self.row_stride;
+        let byte_end = byte_start + self.row_length as usize * self.stride;
+        let bytes = data.get(byte_start..byte_end)?;
+        Some(bytemuck::cast_slice(bytes))
+    }
+
+    /// Interleaved layout fast path: returns the whole row as `&[T]` where
+    /// `stride == N * size_of::<T>()`. The caller indexes `chunks_exact(N)`.
+    /// Returns `None` if the stride doesn't match the expected channel count.
+    pub fn interleaved_row<'a, T: Pod, const N: usize>(
+        &self,
+        data: &'a [u8],
+        y: u32,
+    ) -> Option<&'a [T]> {
+        if self.stride != N * std::mem::size_of::<T>() {
+            return None;
+        }
+        let byte_start = self.offset + y as usize * self.row_stride;
+        let byte_end = byte_start + self.row_length as usize * self.stride;
+        let bytes = data.get(byte_start..byte_end)?;
+        Some(bytemuck::cast_slice(bytes))
     }
 }
 
@@ -128,18 +175,44 @@ impl BufferDesc {
             .unwrap_or(0)
     }
 
+    /// Returns true when all planes have `stride == encoding.byte_size()` (planar).
+    pub fn is_planar(&self) -> bool {
+        self.planes.iter().all(|p| p.stride == p.encoding.byte_size())
+    }
+
+    /// Returns true when planes are interleaved-packed: same row_stride,
+    /// consecutive offsets, N channels.
+    pub fn is_interleaved_packed(&self, channels: u8) -> bool {
+        if self.planes.len() != channels as usize {
+            return false;
+        }
+        let byte_size = self.planes[0].encoding.byte_size();
+        let expected_stride = channels as usize * byte_size;
+        for (i, p) in self.planes.iter().enumerate() {
+            if p.offset != i * byte_size {
+                return false;
+            }
+            if p.stride != expected_stride {
+                return false;
+            }
+            if p.row_stride != self.planes[0].row_stride {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Generic helper: interleaved buffer with given parameters.
     fn interleaved(
         width: u32,
         height: u32,
-        bits: u8,
+        format: SampleFormat,
         offsets: &[usize],
         stride: usize,
         color_space: ColorSpace,
         alpha_mode: crate::image::AlphaMode,
     ) -> Self {
         let row_stride = width as usize * stride;
-        let enc = ComponentEncoding::UnsignedNormalized { bits };
         let planes: Vec<_> = offsets
             .iter()
             .map(|&offset| PlaneDesc {
@@ -147,32 +220,78 @@ impl BufferDesc {
                 stride,
                 row_stride,
                 row_length: width,
-                encoding: enc.clone(),
+                encoding: format,
             })
             .collect();
-        Self { width, height, planes, color_space, alpha_mode }
+        Self {
+            width,
+            height,
+            planes,
+            color_space,
+            alpha_mode,
+        }
     }
 
-    pub fn rgba8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 8, &[0, 1, 2, 3], 4, cs, a)
+    pub fn rgba8_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, SampleFormat::U8, &[0, 1, 2, 3], 4, cs, a)
     }
-    pub fn rgb8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 8, &[0, 1, 2], 3, cs, a)
+    pub fn rgb8_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, SampleFormat::U8, &[0, 1, 2], 3, cs, a)
     }
-    pub fn gray8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 8, &[0], 1, cs, a)
+    pub fn gray8_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, SampleFormat::U8, &[0], 1, cs, a)
     }
-    pub fn gray_alpha8_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 8, &[0, 1], 2, cs, a)
+    pub fn gray_alpha8_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, SampleFormat::U8, &[0, 1], 2, cs, a)
     }
-    pub fn rgba16_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 16, &[0, 2, 4, 6], 8, cs, a)
+    #[cfg(target_endian = "little")]
+    const U16_NATIVE: SampleFormat = SampleFormat::U16Le;
+    #[cfg(target_endian = "big")]
+    const U16_NATIVE: SampleFormat = SampleFormat::U16Be;
+
+    pub fn rgba16_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, Self::U16_NATIVE, &[0, 2, 4, 6], 8, cs, a)
     }
-    pub fn rgb16_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 16, &[0, 2, 4], 6, cs, a)
+    pub fn rgb16_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, Self::U16_NATIVE, &[0, 2, 4], 6, cs, a)
     }
-    pub fn gray16_interleaved(w: u32, h: u32, cs: ColorSpace, a: crate::image::AlphaMode) -> Self {
-        Self::interleaved(w, h, 16, &[0], 2, cs, a)
+    pub fn gray16_interleaved(
+        w: u32,
+        h: u32,
+        cs: ColorSpace,
+        a: crate::image::AlphaMode,
+    ) -> Self {
+        Self::interleaved(w, h, Self::U16_NATIVE, &[0], 2, cs, a)
     }
 }
 
@@ -211,91 +330,5 @@ impl ImageBuffer {
             return 0.0;
         }
         self.desc.planes[plane_idx].read_sample(&self.data, x, y)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Image Buffer
-// ---------------------------------------------------------------------------
-// Band Buffer — streaming workhorse
-// ---------------------------------------------------------------------------
-
-/// Preallocated contiguous buffer for one horizontal tile row band.
-/// Full width × tile_size rows. Reused across all bands in a stream.
-pub struct BandBuffer {
-    buffer: ImageBuffer,
-    rows_filled: u32,
-    pub tile_size: u32,
-    pub band_y: u32, // absolute Y coordinate of the first row in this band
-}
-
-impl BandBuffer {
-    /// Allocate a new band buffer for streaming.
-    pub fn new(image_width: u32, tile_size: u32, color_space: ColorSpace, alpha_mode: crate::image::AlphaMode) -> Self {
-        // Band descriptor: full width × tile_size height, RGBA8 interleaved
-        let desc = BufferDesc::rgba8_interleaved(image_width, tile_size, color_space, alpha_mode);
-        let buffer = ImageBuffer::allocate(desc);
-        Self {
-            buffer,
-            rows_filled: 0,
-            tile_size,
-            band_y: 0,
-        }
-    }
-
-    /// Write the next row of decoded pixels into the band buffer.
-    pub fn push_row(&mut self, row_data: &[u8]) {
-        self.buffer.write_row(self.rows_filled, row_data);
-        self.rows_filled += 1;
-    }
-
-    /// Check if the band is full (rows_filled >= tile_size).
-    pub fn is_full(&self) -> bool {
-        self.rows_filled >= self.tile_size
-    }
-
-    /// Get the number of rows currently filled in this band.
-    pub fn rows_filled(&self) -> u32 {
-        self.rows_filled
-    }
-
-    /// Reset for the next band (reuse memory).
-    pub fn reset(&mut self, new_band_y: u32) {
-        self.rows_filled = 0;
-        self.band_y = new_band_y;
-    }
-
-    /// Extract a tile region as Rgba<f16> (ACEScg premultiplied).
-    /// tx = tile column start (in pixels)
-    /// tile_width, tile_height = tile dimensions
-    /// actual_height = actual rows in this band (may be < tile_size for last band)
-    pub fn extract_tile_rgba_f16(
-        &self,
-        tx: u32,
-        tile_width: u32,
-        actual_height: u32,
-        conv: &ColorConversion,
-    ) -> Result<Vec<Rgba<f16>>, Error> {
-        let capacity = (tile_width * actual_height) as usize;
-        let mut out = Vec::with_capacity(capacity);
-
-        for row in 0..actual_height {
-            for col in 0..tile_width {
-                let px = tx + col;
-                if px >= self.buffer.desc.width {
-                    break;
-                }
-
-                let r = self.buffer.read_sample(0, px, row);
-                let g = self.buffer.read_sample(1, px, row);
-                let b = self.buffer.read_sample(2, px, row);
-                let a = self.buffer.read_sample(3, px, row);
-
-                let linear_rgb = conv.decode_to_linear([r, g, b]);
-                out.push(pack_rgba_premul(linear_rgb, a));
-            }
-        }
-
-        Ok(out)
     }
 }

@@ -11,7 +11,7 @@ pub use chromaticity::Chromaticity;
 pub use xyz::{Xyz, Xyy};
 pub use transfer::TransferFn;
 pub use primaries::{RgbPrimaries, WhitePoint};
-pub use conversion::{ColorSpace, ColorConversion};
+pub use conversion::{ColorSpace, ColorConversion, lookup_encode};
 pub use matrix::Matrix3x3;
 
 /// Build a ColorSpace from optional components, falling back to sRGB when unknown.

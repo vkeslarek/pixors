@@ -28,20 +28,6 @@ impl ImageReader for PngFormat {
     fn load(&self, path: &Path) -> Result<ImageBuffer, Error> {
         load_png(path)
     }
-
-    fn stream_to_tiles_sync(
-        &self,
-        path: &Path,
-        width: u32,
-        height: u32,
-        tile_size: u32,
-        color_space: ColorSpace,
-        alpha_mode: AlphaMode,
-        store: &crate::storage::TileStore,
-        on_progress: Option<&(dyn Fn(u8) + Send)>,
-    ) -> Result<(), Error> {
-        stream_png_to_tiles_sync(path, width, height, tile_size, color_space, alpha_mode, store, on_progress)
-    }
 }
 
 /// Read PNG metadata: dimensions, color space, and alpha mode.
@@ -60,23 +46,6 @@ pub fn read_png_metadata(path: &Path) -> Result<(u32, u32, ColorSpace, AlphaMode
     let alpha_mode = AlphaMode::Straight;
 
     Ok((width, height, color_space, alpha_mode))
-}
-
-/// Load a PNG into an ImageBuffer, then stream tiles to TileStore.
-pub fn stream_png_to_tiles_sync(
-    path: &Path,
-    width: u32,
-    height: u32,
-    tile_size: u32,
-    _color_space: ColorSpace,
-    _alpha_mode: AlphaMode,
-    store: &crate::storage::TileStore,
-    on_progress: Option<&(dyn Fn(u8) + Send)>,
-) -> Result<(), Error> {
-    let image = load_png(path)?;
-    assert_eq!(image.desc.width, width);
-    assert_eq!(image.desc.height, height);
-    crate::io::stream_image_buffer_to_tiles(&image, tile_size, store, on_progress)
 }
 
 /// Loads a PNG image from a file path.

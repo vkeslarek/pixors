@@ -1,5 +1,7 @@
 //! Async, tile-level image decoding.
 
+use crate::color::ColorSpace;
+use crate::convert::tile_stream::convert_to_tiles;
 use crate::error::Error;
 use crate::io::ImageReader;
 use crate::storage::TileStore;
@@ -27,6 +29,7 @@ pub struct FormatSource {
     height: u32,
     path: std::path::PathBuf,
     color_space: crate::color::ColorSpace,
+    #[allow(dead_code)]
     alpha_mode: crate::image::AlphaMode,
     reader: &'static dyn ImageReader,
 }
@@ -73,23 +76,17 @@ impl ImageSource for FormatSource {
     async fn stream_to_store(&self, tile_size: u32, store: &TileStore, _tab_id: Uuid, on_progress: Option<Box<dyn Fn(u8) + Send>>) -> Result<(), Error> {
         let reader = self.reader;
         let path = self.path.clone();
-        let color_space = self.color_space;
-        let alpha_mode = self.alpha_mode;
         let width = self.width;
         let height = self.height;
         let tile_size = tile_size.max(1);
+        let color_space = self.color_space;
 
         tokio::task::block_in_place(move || {
-            reader.stream_to_tiles_sync(
-                &path,
-                width,
-                height,
-                tile_size,
-                color_space,
-                alpha_mode,
-                store,
-                on_progress.as_deref(),
-            )
+            let buf = reader.load(&path)?;
+            assert_eq!(buf.desc.width, width);
+            assert_eq!(buf.desc.height, height);
+            let conv = color_space.converter_to(ColorSpace::ACES_CG)?;
+            convert_to_tiles(&conv, &buf, tile_size, store, on_progress.as_deref())
         })
     }
 }
