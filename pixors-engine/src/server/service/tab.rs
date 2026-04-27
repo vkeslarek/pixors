@@ -1001,12 +1001,8 @@ impl TabService {
         let result = state
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| {
-                let Some(tab) = ts.tabs.get_mut(&tab_id) else {
-                    return None;
-                };
-                let Some(layer) = tab.layers.iter_mut().find(|l| l.id == layer_id) else {
-                    return None;
-                };
+                let tab = ts.tabs.get_mut(&tab_id)?;
+                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
                 let (prev_w, prev_h) = (tab.doc_width, tab.doc_height);
                 layer.visible = visible;
                 tab.recompute_doc_bounds();
@@ -1060,12 +1056,8 @@ impl TabService {
         let sig = state
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| {
-                let Some(tab) = ts.tabs.get_mut(&tab_id) else {
-                    return None;
-                };
-                let Some(layer) = tab.layers.iter_mut().find(|l| l.id == layer_id) else {
-                    return None;
-                };
+                let tab = ts.tabs.get_mut(&tab_id)?;
+                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
                 layer.opacity = opacity.clamp(0.0, 1.0);
                 Some(tab.composition_sig())
             })
@@ -1100,12 +1092,8 @@ impl TabService {
         let result = state
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| {
-                let Some(tab) = ts.tabs.get_mut(&tab_id) else {
-                    return None;
-                };
-                let Some(layer) = tab.layers.iter_mut().find(|l| l.id == layer_id) else {
-                    return None;
-                };
+                let tab = ts.tabs.get_mut(&tab_id)?;
+                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
                 let (prev_w, prev_h) = (tab.doc_width, tab.doc_height);
                 layer.offset = (x, y);
                 tab.recompute_doc_bounds();

@@ -15,5 +15,5 @@ pub fn get(path: &str) -> Cow<'static, [u8]> {
     UiAssets::get(path)
         .map(|f| f.data)
         .or_else(|| UiAssets::get("index.html").map(|f| f.data))
-        .unwrap_or_else(|| Cow::Borrowed(b"Not Found"))
+        .unwrap_or(Cow::Borrowed(b"Not Found"))
 }
