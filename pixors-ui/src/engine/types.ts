@@ -86,6 +86,8 @@ export interface UITab {
   hasImage?: boolean;
   width?: number;
   height?: number;
+  layerCount?: number;
+  layers?: { id: string; name: string; visible: boolean; type: string; blendMode: string; opacity: number }[];
 }
 
 export interface UIState {

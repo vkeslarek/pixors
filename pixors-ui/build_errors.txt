@@ -1,0 +1,11 @@
+
+> pixors-ui@0.0.0 build
+> tsc -b && vite build
+
+src/App.tsx(23,17): error TS2724: '"react-resizable-panels"' has no exported member named 'PanelGroup'. Did you mean 'PanelProps'?
+src/App.tsx(23,29): error TS2305: Module '"react-resizable-panels"' has no exported member 'PanelResizeHandle'.
+src/components/MenuBar.tsx(110,16): error TS2304: Cannot find name 'useTabs'.
+src/components/MenuBar.tsx(111,23): error TS2552: Cannot find name 'useActiveTabId'. Did you mean 'activeTabId'?
+src/components/MenuBar.tsx(115,17): error TS7006: Parameter 'tab' implicitly has an 'any' type.
+src/ui/uiStore.ts(20,3): error TS2304: Cannot find name 'persist'.
+src/ui/uiStore.ts(21,6): error TS7006: Parameter 'set' implicitly has an 'any' type.

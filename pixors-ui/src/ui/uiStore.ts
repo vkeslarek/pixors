@@ -1,93 +1,153 @@
 import { create } from 'zustand'
-import type { Layer, Adjustment } from '@/types'
+import { persist } from 'zustand/middleware'
+import type { PanelLayout, PanelId, DockSide, PanelState } from './panelLayout'
+import { DEFAULT_LAYOUT, TOOLBAR_WIDTH } from './panelLayout'
 
-const INIT_LAYERS: Layer[] = [
-  { id: '1', name: 'Background',    type: 'image',      visible: true, locked: false, opacity: 100, blendMode: 'Normal',  color: '#888' },
-  { id: '2', name: 'Portrait',      type: 'image',      visible: true, locked: false, opacity: 100, blendMode: 'Normal',  color: '#6fc' },
-  { id: '3', name: 'Texture',       type: 'image',      visible: true, locked: false, opacity: 50,  blendMode: 'Overlay', color: '#fc6' },
-  { id: '4', name: 'Curves 1',      type: 'adjustment', visible: true, locked: false, opacity: 100, blendMode: 'Normal',  color: '#6cf' },
-  { id: '5', name: 'Color Overlay', type: 'adjustment', visible: true, locked: false, opacity: 100, blendMode: 'Color',   color: '#c6f' },
-]
-
-const INIT_ADJ: Adjustment[] = [
-  { id: 'exposure',  label: 'Exposure',    min: -5,   max: 5,   step: 0.01, value: 0 },
-  { id: 'contrast',  label: 'Contrast',    min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'highlights',label: 'Highlights',  min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'shadows',   label: 'Shadows',     min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'temp',      label: 'Temperature', min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'vibrance',  label: 'Vibrance',    min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'saturation',label: 'Saturation',  min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'clarity',   label: 'Clarity',     min: -100, max: 100, step: 1,    value: 0 },
-  { id: 'sharpening',label: 'Sharpening',  min: 0,    max: 150, step: 1,    value: 40 },
-]
+export type DropTarget =
+  | { kind: 'into-column'; columnId: string; rect: DOMRect }
+  | { kind: 'before-column'; columnId: string; rect: DOMRect }
+  | { kind: 'after-column'; columnId: string; rect: DOMRect }
+  | { kind: 'new-column-in-area'; side: DockSide; rect: DOMRect };
 
 interface UIState {
   workspace: string
   setWorkspace: (w: string) => void
   mousePos: { x: number; y: number }
   setMousePos: (p: { x: number; y: number }) => void
-  layers: Layer[]
-  activeLayerId: string
-  adjustments: Adjustment[]
-  panelsOpen: { hist: boolean; props: boolean; adj: boolean; layers: boolean }
-  toggleVisibility: (id: string) => void
-  toggleLock: (id: string) => void
-  deleteLayer: (id: string) => void
-  addLayer: () => void
-  duplicateLayer: () => void
-  changeBlend: (id: string, mode: string) => void
-  changeOpacity: (id: string, v: number) => void
-  setActiveLayerId: (id: string) => void
-  changeAdj: (id: string, v: number) => void
-  resetAdj: () => void
-  togglePanel: (key: keyof UIState['panelsOpen']) => void
+
+  // Panel layout
+  panelLayout: PanelLayout
+  setLayout: (layout: PanelLayout) => void
+  resizeColumn: (columnId: string, delta: number) => void
+  movePanel: (panelId: PanelId, target: DropTarget) => void
+  togglePanelVisibility: (id: PanelId) => void
+
+  // Drag state
+  draggingPanel: PanelId | null
+  setDraggingPanel: (id: PanelId | null) => void
+  dropTarget: DropTarget | null
+  setDropTarget: (target: DropTarget | null) => void
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  workspace: 'editor',
-  setWorkspace: (w) => set({ workspace: w }),
-  mousePos: { x: 0, y: 0 },
-  setMousePos: (p) => set({ mousePos: p }),
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      workspace: 'editor',
+      setWorkspace: (w) => set({ workspace: w }),
+      mousePos: { x: 0, y: 0 },
+      setMousePos: (p) => set({ mousePos: p }),
 
-  layers: INIT_LAYERS,
-  activeLayerId: '4',
-  adjustments: INIT_ADJ,
-  panelsOpen: { hist: true, props: true, adj: true, layers: true },
+      draggingPanel: null,
+      setDraggingPanel: (id) => set({ draggingPanel: id }),
+      dropTarget: null,
+      setDropTarget: (target) => set({ dropTarget: target }),
 
-  toggleVisibility: (id) => set(s => ({
-    layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l),
-  })),
-  toggleLock: (id) => set(s => ({
-    layers: s.layers.map(l => l.id === id ? { ...l, locked: !l.locked } : l),
-  })),
-  deleteLayer: (id) => set(s => ({
-    layers: s.layers.filter(l => l.id !== id),
-    activeLayerId: s.activeLayerId === id
-      ? (s.layers.filter(l => l.id !== id).find(() => true)?.id ?? '')
-      : s.activeLayerId,
-  })),
-  addLayer: () => set(s => {
-    const nl: Layer = { id: Date.now().toString(), name: 'New Layer', type: 'image', visible: true, locked: false, opacity: 100, blendMode: 'Normal', color: '#ccc' }
-    return { layers: [nl, ...s.layers], activeLayerId: nl.id }
-  }),
-  duplicateLayer: () => set(s => {
-    const src = s.layers.find(l => l.id === s.activeLayerId)
-    if (!src) return {}
-    const dup: Layer = { ...src, id: Date.now().toString(), name: src.name + ' copy' }
-    return { layers: [dup, ...s.layers], activeLayerId: dup.id }
-  }),
-  changeBlend: (id, mode) => set(s => ({
-    layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l),
-  })),
-  changeOpacity: (id, v) => set(s => ({
-    layers: s.layers.map(l => l.id === id ? { ...l, opacity: v } : l),
-  })),
-  setActiveLayerId: (id) => set({ activeLayerId: id }),
-  changeAdj: (id, v) => set(s => ({
-    adjustments: s.adjustments.map(a => a.id === id ? { ...a, value: v } : a),
-  })),
-  resetAdj: () => set({ adjustments: INIT_ADJ }),
-  togglePanel: (key) => set(s => ({
-    panelsOpen: { ...s.panelsOpen, [key]: !s.panelsOpen[key] },
-  })),
-}))
+      panelLayout: DEFAULT_LAYOUT,
+      setLayout: (layout) => set({ panelLayout: layout }),
+
+      resizeColumn: (columnId, newSize) => set((s) => ({
+        panelLayout: {
+          ...s.panelLayout,
+          columns: s.panelLayout.columns.map(c =>
+            c.id === columnId ? { ...c, size: Math.max(78, newSize) } : c
+          ),
+        },
+      })),
+
+      movePanel: (panelId, target) => set((s) => {
+        const layout = s.panelLayout;
+        const panel = layout.panels[panelId];
+        if (!panel) return { panelLayout: layout };
+
+        let newColumnId: string | null = null;
+        let newOrder = 0;
+        let newColumns = [...layout.columns];
+
+        const sizeFor = (side: DockSide) =>
+          panelId === 'toolbar' ? TOOLBAR_WIDTH : (side === 'bottom' ? 200 : 280);
+
+        if (target.kind === 'into-column') {
+          newColumnId = target.columnId;
+          const existing = Object.values(layout.panels).filter(p => p.columnId === target.columnId && p.id !== panelId);
+          newOrder = existing.length;
+        } else if (target.kind === 'before-column' || target.kind === 'after-column') {
+          const col = layout.columns.find(c => c.id === target.columnId);
+          if (!col) return { panelLayout: layout };
+          const newColId = `${col.side}-${Date.now()}`;
+          newColumnId = newColId;
+          const idx = layout.columns.findIndex(c => c.id === target.columnId);
+          const insertIdx = target.kind === 'before-column' ? idx : idx + 1;
+          newColumns.splice(insertIdx, 0, { id: newColId, side: col.side, size: sizeFor(col.side) });
+        } else if (target.kind === 'new-column-in-area') {
+          const newColId = `${target.side}-${Date.now()}`;
+          newColumnId = newColId;
+          newColumns.push({ id: newColId, side: target.side, size: sizeFor(target.side) });
+        }
+
+        if (!newColumnId) return { panelLayout: layout };
+
+        const newPanels: Record<PanelId, PanelState> = {} as Record<PanelId, PanelState>;
+        (Object.entries(layout.panels) as [PanelId, PanelState][]).forEach(([id, p]) => {
+          if (id === panelId) {
+            newPanels[id] = { ...p, columnId: newColumnId!, order: newOrder, lastColumnId: newColumnId! };
+          } else if (target.kind === 'into-column' && p.columnId === target.columnId && p.order >= newOrder) {
+            newPanels[id] = { ...p, order: p.order + 1 };
+          } else {
+            newPanels[id] = p;
+          }
+        });
+
+        // GC empty columns
+        const usedColIds = new Set(
+          Object.values(newPanels).map(p => p.columnId).filter(Boolean)
+        );
+        newColumns = newColumns.filter(c => usedColIds.has(c.id));
+
+        return { panelLayout: { ...layout, columns: newColumns, panels: newPanels } };
+      }),
+
+      togglePanelVisibility: (id) => set((s) => {
+        const p = s.panelLayout.panels[id];
+        if (p.columnId === null) {
+          // SHOW: restore to last column (create one if it was GC'd)
+          const colExists = s.panelLayout.columns.some(c => c.id === p.lastColumnId);
+          const colId = colExists ? p.lastColumnId : `right-${Date.now()}`;
+          const newColumns = colExists
+            ? s.panelLayout.columns
+            : [...s.panelLayout.columns, { id: colId, side: 'right' as DockSide, size: 280 }];
+          return {
+            panelLayout: {
+              ...s.panelLayout,
+              columns: newColumns,
+              panels: { ...s.panelLayout.panels, [id]: { ...p, columnId: colId, lastColumnId: colId } },
+            },
+          };
+        }
+        // HIDE: set columnId to null, GC empty column
+        return {
+          panelLayout: {
+            ...s.panelLayout,
+            panels: { ...s.panelLayout.panels, [id]: { ...p, lastColumnId: p.columnId, columnId: null } },
+            columns: s.panelLayout.columns.filter(c =>
+              c.id !== p.columnId || Object.values(s.panelLayout.panels).some(
+                other => other.id !== id && other.columnId === c.id
+              )
+            ),
+          },
+        };
+      }),
+    }),
+    {
+      name: 'pixors.panelLayout.v6',
+      partialize: (state) => ({ panelLayout: state.panelLayout }),
+      onRehydrateStorage: () => (state) => {
+        if (state && state.panelLayout?.version !== 6) {
+          state.setLayout(DEFAULT_LAYOUT);
+        }
+      },
+    }
+  )
+);
+
+// Re-export type for other files
+type PanelState = import('./panelLayout').PanelState;

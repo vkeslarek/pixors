@@ -62,12 +62,20 @@ export function applyEvent(prev: EngineState, ev: EngineEvent): Partial<EngineSt
       return { activeTabId: ev.tab_id }
     case 'image_loaded': {
       const exists = prev.tabs.find(t => t.id === ev.tab_id)
+      const layers = Array.from({ length: ev.layer_count }, (_, i) => ({
+        id: `${ev.tab_id}-l${i}`,
+        name: ev.layer_count === 1 ? 'Background' : `Layer ${i + 1}`,
+        visible: true,
+        type: 'RGBA',
+        blendMode: 'Normal',
+        opacity: 100,
+      }))
       const tabs = exists
-        ? prev.tabs.map(t => t.id === ev.tab_id ? { ...t, hasImage: true, width: ev.width, height: ev.height } : t)
+        ? prev.tabs.map(t => t.id === ev.tab_id ? { ...t, hasImage: true, width: ev.width, height: ev.height, layerCount: ev.layer_count, layers } : t)
         : [...prev.tabs, {
             id: ev.tab_id, name: `Image ${ev.width}x${ev.height}`,
             color: TAB_COLORS[prev.tabs.length % TAB_COLORS.length],
-            modified: false, hasImage: true, width: ev.width, height: ev.height,
+            modified: false, hasImage: true, width: ev.width, height: ev.height, layerCount: ev.layer_count, layers,
           }]
       return {
         tabs,

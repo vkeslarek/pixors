@@ -149,6 +149,37 @@ export function Viewport() {
     };
   }, [canvasRef, isReady, pan, zoom, fit]);
 
+  // Window menu / shortcut event listeners
+  useEffect(() => {
+    const handleZoomIn = () => { zoom(1.2, 0.5, 0.5); requestDebounced(); };
+    const handleZoomOut = () => { zoom(1/1.2, 0.5, 0.5); requestDebounced(); };
+    const handleFit = () => {
+      const iw = imageWidthRef.current;
+      const ih = imageHeightRef.current;
+      if (iw && ih) fit(iw, ih);
+      requestDebounced();
+    };
+    const handleActualSize = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      // To center exactly, we could figure out current viewport center, but for now just set zoom to 1
+      zoom(1.0 / getCamera().zoom, 0.5, 0.5);
+      requestDebounced();
+    };
+
+    window.addEventListener('viewport:zoomIn', handleZoomIn);
+    window.addEventListener('viewport:zoomOut', handleZoomOut);
+    window.addEventListener('viewport:fit', handleFit);
+    window.addEventListener('viewport:actualSize', handleActualSize);
+
+    return () => {
+      window.removeEventListener('viewport:zoomIn', handleZoomIn);
+      window.removeEventListener('viewport:zoomOut', handleZoomOut);
+      window.removeEventListener('viewport:fit', handleFit);
+      window.removeEventListener('viewport:actualSize', handleActualSize);
+    };
+  }, [zoom, fit, getCamera]);
+
   // Engine event subscriptions — stable, uses refs for latest values
   useEffect(() => {
     const unsubs = [

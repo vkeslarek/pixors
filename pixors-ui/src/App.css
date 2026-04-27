@@ -12,7 +12,7 @@
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 0 0 12px;
   gap: 2px;
   flex-shrink: 0;
   z-index: 100;
@@ -41,17 +41,24 @@
 }
 .menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .menu-item[data-state="open"] { background: var(--bg-active); color: var(--text-primary); }
-.menubar-right {
+/* ── Window controls (min/max/close) ─────────────────── */
+.window-controls {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
 }
-.document-name {
-  font-size: 11px;
+.window-btn {
+  width: 36px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none; background: none;
   color: var(--text-muted);
-  font-family: var(--font-mono);
+  border-radius: 0;
+  transition: background 0.1s;
 }
+.window-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.window-btn-close:hover { background: #e81123; color: #fff; }
+
+/* ── Buttons ─────────────────────────────────────────── */
 .btn {
   padding: 4px 12px;
   font-size: 11px;
@@ -154,7 +161,7 @@
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: var(--activity-bar-w) var(--toolbar-w) 1fr var(--sidebar-w);
+  grid-template-columns: var(--workspace-bar-w) 1fr;
 }
 
 /* Canvas column: TabBar on top, Viewport fills remaining space */
@@ -166,35 +173,35 @@
 }
 
 /* ── Activity Bar (workspace switcher) ─────────────────── */
-.activity-bar {
-  width: var(--activity-bar-w);
+.workspace-bar {
+  width: var(--workspace-bar-w);
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 4px 0;
+  align-items: stretch;
   flex-shrink: 0;
   user-select: none;
   z-index: 10;
 }
-.activity-top {
+.workspace-top {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
   flex: 1;
-  padding-top: 4px;
+  padding: 4px;
 }
-.activity-bottom {
+.workspace-bottom {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
+  padding: 4px;
   padding-bottom: 4px;
 }
-.activity-btn {
-  width: 40px;
+.workspace-btn {
+  width: 100%;
   height: 40px;
   border-radius: 8px;
   display: flex;
@@ -208,18 +215,28 @@
   padding: 0;
   position: relative;
 }
-.activity-btn:hover {
+.workspace-btn:hover {
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
-.activity-btn.active {
-  color: var(--text-primary);
+.workspace-btn.active {
+  color: var(--accent);
 }
-.activity-btn.disabled {
+.workspace-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.workspace-btn.disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
-.activity-btn.disabled:hover {
+.workspace-btn.disabled:hover {
   background: none;
   color: var(--text-muted);
 }
@@ -241,18 +258,21 @@
 /* ── Toolbar ───────────────────────────────────────────── */
 .toolbar {
   background: var(--bg-surface);
-  border-right: 1px solid var(--border-subtle);
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 8px 0;
+  align-content: flex-start;
+  justify-content: center;
+  padding: 4px 4px 8px;
   gap: 2px;
   overflow-y: auto;
+  overflow-x: hidden;
   user-select: none;
+  width: 100%;
 }
-.tool-sep { width: 28px; height: 1px; background: var(--border-subtle); margin: 4px 0; }
+.tool-sep { width: 100%; height: 1px; background: var(--border-subtle); margin: 2px 0; flex-basis: 100%; }
 .tool-btn {
-  width: 36px; height: 36px;
+  width: 40px; height: 40px;
   border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
@@ -397,6 +417,17 @@
   overflow-y: auto;
 }
 
+/* ── Dock Areas (panels container) ─────────────────────── */
+.dock-area {
+  background: var(--bg-surface);
+}
+.dock-area[data-dock-zone="left"] {
+  border-right: 1px solid var(--border-subtle);
+}
+.dock-area[data-dock-zone="right"] {
+  border-left: 1px solid var(--border-subtle);
+}
+
 /* ── Panel ─────────────────────────────────────────────── */
 .panel {
   display: flex;
@@ -423,7 +454,12 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  margin: 0 6px;
 }
 .panel-count {
   font-size: 10px;
@@ -437,72 +473,6 @@
 }
 .panel-chevron.open { transform: rotate(90deg); }
 .panel-body { overflow-y: auto; overflow-x: hidden; }
-
-/* ── Histogram ─────────────────────────────────────────── */
-.histogram-wrap { padding: 6px 12px 8px; }
-.histogram-canvas { width: 100%; height: 60px; display: block; border-radius: 4px; }
-
-/* ── Properties panel ──────────────────────────────────── */
-.prop-row {
-  display: flex;
-  align-items: center;
-  padding: 5px 12px;
-  gap: 8px;
-  font-size: 11px;
-}
-.prop-label { color: var(--text-muted); width: 52px; flex-shrink: 0; letter-spacing: 0.02em; }
-.prop-input {
-  flex: 1;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  padding: 4px 7px;
-  outline: none;
-  text-align: right;
-  transition: border-color 0.12s;
-  min-width: 0;
-}
-.prop-input:focus { border-color: var(--accent); }
-.prop-unit { color: var(--text-muted); font-size: 10px; width: 16px; }
-.prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px 12px; }
-.prop-field { display: flex; flex-direction: column; gap: 2px; }
-.prop-field-label { font-size: 10px; color: var(--text-muted); letter-spacing: 0.04em; }
-
-/* ── Adjustments ───────────────────────────────────────── */
-.adj-row { padding: 5px 12px 4px; display: flex; flex-direction: column; gap: 4px; }
-.adj-header { display: flex; justify-content: space-between; align-items: center; }
-.adj-name { font-size: 10.5px; color: var(--text-secondary); letter-spacing: 0.02em; }
-.adj-value { font-size: 10px; font-family: var(--font-mono); color: var(--accent); min-width: 32px; text-align: right; }
-.adj-slider {
-  -webkit-appearance: none;
-  width: 100%; height: 3px;
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  background: var(--bg-active);
-}
-.adj-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
-  cursor: pointer;
-  transition: transform 0.1s;
-}
-.adj-slider:hover::-webkit-slider-thumb { transform: scale(1.2); }
-.adj-section-title {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  padding: 8px 12px 4px;
-  border-top: 1px solid var(--border-subtle);
-}
-.adj-section-title:first-child { border-top: none; }
 
 /* ── Blend mode ────────────────────────────────────────── */
 .blend-select {
@@ -718,3 +688,132 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* ── Resize Handles (custom, no lib) ──────────────────── */
+.resize-handle {
+  background-color: transparent;
+  transition: background-color 0.2s;
+  position: relative;
+  z-index: 10;
+}
+.resize-x {
+  width: 4px;
+  cursor: col-resize;
+}
+.resize-y {
+  height: 4px;
+  cursor: row-resize;
+}
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  background-color: var(--border-subtle);
+  transition: background-color 0.2s;
+}
+.resize-x::after { top: 0; bottom: 0; left: 1px; right: 1px; }
+.resize-y::after { left: 0; right: 0; top: 1px; bottom: 1px; }
+.resize-handle:hover::after { background-color: var(--accent); }
+
+/* ── Float panel header ───────────────────────────────── */
+.float-header {
+  cursor: move;
+  user-select: none;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Panel drag state ─────────────────────────────────── */
+.panel.dragging {
+  opacity: 0.6;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+
+/* ── Drop zone indicators ─────────────────────────────── */
+.drop-zone {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 30%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.drop-zone.active {
+  opacity: 1;
+  background: rgba(var(--accent-rgb, 102 153 255) / 0.08);
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+}
+.drop-zone-left { left: 0; }
+.drop-zone-right { right: 0; }
+.drop-zone-center { left: 30%; right: 30%; }
+
+/* ── Panel re-dock animation ──────────────────────────── */
+@keyframes panel-dock {
+  0%   { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.panel.animating {
+  animation: panel-dock 0.2s ease-out;
+}
+
+/* ── Float panel appear ───────────────────────────────── */
+@keyframes float-in {
+  0%   { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.float-panel-appear {
+  animation: float-in 0.2s ease-out;
+}
+
+/* ── Drop preview glow (subtle edge indicator) ────────── */
+.drop-preview {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 3px;
+  z-index: 200;
+  pointer-events: none;
+  background: var(--accent);
+  box-shadow: 0 0 12px 3px var(--accent-glow, rgba(102,153,255,0.4));
+  border-radius: 2px;
+  animation: drop-glow-pulse 1s ease-in-out infinite;
+}
+.drop-preview-left { left: 0; }
+.drop-preview-right { right: 0; }
+
+@keyframes drop-glow-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* ── Dock areas (empty drop zones) ─────────────────────── */
+.dock-area-empty {
+  background: var(--accent-dim);
+  border: 2px dashed var(--accent);
+  animation: drop-glow-pulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Drop preview (global overlay, position: fixed) ────── */
+.drop-preview {
+  pointer-events: none;
+  border-radius: 2px;
+  animation: drop-glow-pulse 1s ease-in-out infinite;
+}
+.drop-preview-before-column,
+.drop-preview-after-column {
+  background: var(--accent);
+  box-shadow: 0 0 12px 3px var(--accent-glow, rgba(102,153,255,0.4));
+  width: 3px !important;
+}
+.drop-preview-into-column,
+.drop-preview-new-column-in-area {
+  background: var(--accent-dim);
+  border: 2px dashed var(--accent);
+}
+

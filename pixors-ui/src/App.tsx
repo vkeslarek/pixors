@@ -1,35 +1,58 @@
-import { useEffect } from 'react'
+import { useState, useEffect, CSSProperties } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
+import * as Toast from '@radix-ui/react-toast'
 import { MenuBar, TabBar } from '@/components/MenuBar'
-import { ActivityBar } from '@/components/ActivityBar'
-import { Toolbar } from '@/components/Toolbar'
+import { WorkspaceBar } from '@/components/WorkspaceBar'
 import { Viewport } from '@/components/Viewport'
-import { Sidebar } from '@/components/Sidebar'
+import { DockArea } from '@/components/DockArea'
 import { StatusBar } from '@/components/StatusBar'
 import { ProgressBar } from '@/components/ProgressBar'
-import { engine, useActiveTabId } from '@/engine'
 import '@/App.css'
+
+import { registerShortcuts } from '@/keymap'
+import { useActiveTabId } from '@/engine'
+import { useUIStore } from '@/ui/uiStore'
+import { useEngineStore } from '@/engine/store'
 
 function useKeymap() {
   const activeTabId = useActiveTabId()
+  useEffect(() => { return registerShortcuts(activeTabId) }, [activeTabId])
+}
 
-  useEffect(() => {
-    const toolMap: Record<string, string> = {
-      v:'move', m:'select', l:'lasso', w:'wand', c:'crop', i:'eyedropper',
-      b:'brush', e:'eraser', j:'heal', g:'gradient', t:'text', u:'shape', h:'hand', z:'zoom',
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-      const tool = toolMap[e.key.toLowerCase()];
-      if (tool) { engine.dispatch({ type: 'select_tool', tool }); e.preventDefault(); }
-      if (e.ctrlKey && e.key === 'o') {
-        e.preventDefault();
-        engine.dispatch({ type: 'open_file_dialog', tab_id: activeTabId || undefined });
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [activeTabId]);
+function GlobalToaster() {
+  const lastError = useEngineStore(s => s.lastError)
+  const [open, setOpen] = useState(false)
+  useEffect(() => { if (lastError) setOpen(true) }, [lastError])
+  return (
+    <Toast.Provider swipeDirection="right">
+      <Toast.Root className="toast-root" open={open} onOpenChange={setOpen}>
+        <Toast.Title className="toast-title">Error</Toast.Title>
+        <Toast.Description className="toast-description">{lastError}</Toast.Description>
+        <Toast.Action className="toast-action" asChild altText="Close">
+          <button className="btn btn-outline" onClick={() => setOpen(false)}>Close</button>
+        </Toast.Action>
+      </Toast.Root>
+      <Toast.Viewport className="toast-viewport" />
+    </Toast.Provider>
+  )
+}
+
+function DropPreviewOverlay() {
+  const dropTarget = useUIStore(s => s.dropTarget)
+  if (!dropTarget) return null
+
+  const { rect, kind } = dropTarget
+  const style: CSSProperties = {
+    position: 'fixed',
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    pointerEvents: 'none',
+    zIndex: 9999,
+  }
+
+  return <div className={`drop-preview drop-preview-${kind}`} style={style} />
 }
 
 export default function App() {
@@ -39,17 +62,20 @@ export default function App() {
     <Tooltip.Provider>
       <div className="app-container">
         <MenuBar />
-        <div className="workspace">
-          <ActivityBar />
-          <Toolbar />
-          <div className="canvas-column">
+        <div className="workspace" style={{ display: 'flex', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
+          <WorkspaceBar />
+          <DockArea side="left" />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
             <TabBar />
             <Viewport />
+            <DockArea side="bottom" />
           </div>
-          <Sidebar />
+          <DockArea side="right" />
         </div>
+        <DropPreviewOverlay />
         <ProgressBar />
         <StatusBar />
+        <GlobalToaster />
       </div>
     </Tooltip.Provider>
   )

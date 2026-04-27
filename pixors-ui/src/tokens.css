@@ -58,7 +58,7 @@ p, h1, h2, h3, h4, h5, h6 {
   --font-mono: 'Space Mono', ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
 
   /* Layout dimensions */
-  --activity-bar-w: 48px;
+  --workspace-bar-w: 78px;
   --toolbar-w: 48px;
   --sidebar-w: 260px;
   --menubar-h: 32px;

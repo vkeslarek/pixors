@@ -12,27 +12,26 @@ interface WorkspaceItem {
 }
 
 const WORKSPACES: WorkspaceItem[] = [
-  { id: 'library',  icon: Images,      label: 'Library — Browse & Organize',  available: false },
-  { id: 'darkroom', icon: SunMedium,   label: 'Darkroom — Develop & Adjust',  available: false },
-  { id: 'editor',   icon: Layers,      label: 'Editor — Composite & Retouch', available: true  },
+  { id: 'library',  icon: Images,    label: 'Library — Browse & Organize',  available: false },
+  { id: 'darkroom', icon: SunMedium, label: 'Darkroom — Develop & Adjust',  available: false },
+  { id: 'editor',   icon: Layers,    label: 'Editor — Composite & Retouch', available: true  },
 ]
 
-export function ActivityBar() {
+export function WorkspaceBar() {
   const workspace = useUIStore(s => s.workspace)
   const setWorkspace = useUIStore(s => s.setWorkspace)
 
   return (
-    <div className="activity-bar">
-      {/* Workspace switchers */}
-      <div className="activity-top">
+    <div className="workspace-bar">
+      <div className="workspace-top">
         {WORKSPACES.map(ws => (
           <Tooltip.Root key={ws.id} delayDuration={300}>
             <Tooltip.Trigger asChild>
               <button
-                className={`activity-btn${!ws.available ? ' disabled' : ''}${workspace === ws.id ? ' active' : ''}`}
+                className={`workspace-btn${!ws.available ? ' disabled' : ''}${workspace === ws.id ? ' active' : ''}`}
                 onClick={() => ws.available && setWorkspace(ws.id)}
               >
-                <ws.icon size={14} />
+                <ws.icon size={20} />
               </button>
             </Tooltip.Trigger>
             <Tooltip.Portal>
@@ -44,9 +43,9 @@ export function ActivityBar() {
           </Tooltip.Root>
         ))}
       </div>
-      <div className="activity-bottom">
-        <button className="activity-btn"><Settings size={12} /></button>
-        <button className="activity-btn"><HelpCircle size={12} /></button>
+      <div className="workspace-bottom">
+        <button className="workspace-btn"><Settings size={16} /></button>
+        <button className="workspace-btn"><HelpCircle size={16} /></button>
       </div>
     </div>
   )

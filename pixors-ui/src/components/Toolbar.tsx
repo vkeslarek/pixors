@@ -37,7 +37,7 @@ export function Toolbar() {
                 className={`tool-btn${activeTool === tool.id ? ' active' : ''}`}
                 onClick={() => engine.dispatch({ type: 'select_tool', tool: tool.id })}
               >
-                <tool.icon size={16} />
+                <tool.icon size={20} />
               </button>
             </Tooltip.Trigger>
             <Tooltip.Portal>
@@ -49,11 +49,6 @@ export function Toolbar() {
           </Tooltip.Root>
         )
       )}
-      <div style={{ flex: 1 }} />
-      <div className="color-wells">
-        <div className="color-bg-swatch" style={{ background: '#e8e8ec' }} />
-        <div className="color-fg-swatch" style={{ background: '#1a1a1f' }} />
-      </div>
     </div>
   )
 }

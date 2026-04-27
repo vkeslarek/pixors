@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-winit = "0.30.13"
+tao = "0.35"
 wry = "0.55.0"
-dpi = "0.1.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
-x11-dl = "2.21.0"

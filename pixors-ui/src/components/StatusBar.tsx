@@ -11,7 +11,7 @@ export function StatusBar() {
     return id ? s.viewport[id]?.zoom ?? 1 : 1
   })
   const error = useEngineStore(s => s.lastError)
-  const layerCount = useUIStore(s => s.layers.length)
+  const layerCount = 1 // Mock or get from somewhere else for now since layers was removed from uiStore
   const mousePos = useUIStore(s => s.mousePos)
 
   const toolLabel = TOOLS.find(t => t?.id === activeTool)?.label.split(' ')[0] ?? activeTool

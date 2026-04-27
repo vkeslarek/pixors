@@ -1,52 +1,125 @@
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { FolderOpen, Download, Plus, X } from 'lucide-react'
+import * as Menubar from '@radix-ui/react-menubar'
+import { Check, Minus, Plus, Square, X } from 'lucide-react'
 import { useTabs, useActiveTabId, useActiveTab, engine } from '@/engine'
+import { SHORTCUTS } from '@/keymap'
+import { useUIStore } from '@/ui/uiStore'
+import { DEFAULT_LAYOUT } from '@/ui/panelLayout'
 
 const MENU_ITEMS = [
-  { label: 'File', items: ['New', 'Open...', 'Save', 'Save As...', 'Export...', 'Close'] },
-  { label: 'Edit', items: ['Undo', 'Redo', 'Cut', 'Copy', 'Paste', 'Preferences'] },
-  { label: 'Image', items: ['Adjustments', 'Transform', 'Canvas Size', 'Image Size', 'Crop'] },
-  { label: 'Layer', items: ['New Layer', 'Duplicate Layer', 'Delete Layer', 'Merge Layers'] },
-  { label: 'Select', items: ['All', 'None', 'Inverse', 'Feather...'] },
-  { label: 'Filter', items: ['Blur', 'Sharpen', 'Noise', 'Distort', 'Render'] },
-  { label: 'View', items: ['Zoom In', 'Zoom Out', 'Fit to Screen', 'Actual Size', 'Rulers'] },
-  { label: 'Window', items: ['Layers', 'Properties', 'History', 'Color', 'Tools'] },
-  { label: 'Help', items: ['Documentation', 'About'] },
+  {
+    label: 'File',
+    items: [
+      SHORTCUTS.openFile,
+      SHORTCUTS.closeTab,
+    ],
+  },
+  {
+    label: 'View',
+    items: [
+      SHORTCUTS.zoomIn,
+      SHORTCUTS.zoomOut,
+      SHORTCUTS.fitToScreen,
+      SHORTCUTS.actualSize,
+    ],
+  },
 ]
+
+function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
+
+type WindowAction = 'minimize' | 'maximize' | 'close'
+function windowAction(action: WindowAction) {
+  // Wry/Tauri: dispatch custom event for Rust shell to handle
+  window.dispatchEvent(new CustomEvent('pixors:window', { detail: action }))
+  // Browser fallback: close only
+  if (action === 'close') {
+    try { window.close() } catch {}
+  }
+}
 
 export function MenuBar() {
   const activeTab = useActiveTab()
+  const panelLayout = useUIStore(s => s.panelLayout)
+  const togglePanelVisibility = useUIStore(s => s.togglePanelVisibility)
+  const setLayout = useUIStore(s => s.setLayout)
 
   return (
-    <div className="menubar">
+    <div className="menubar" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
       <div className="menubar-logo">PIXORS</div>
-      {MENU_ITEMS.map(menu => (
-        <DropdownMenu.Root key={menu.label}>
-          <DropdownMenu.Trigger asChild>
-            <button className="menu-item">{menu.label}</button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content className="dropdown-content" sideOffset={4}>
-              {menu.items.map(item => (
-                <DropdownMenu.Item
-                  key={item}
-                  className="dropdown-item"
-                  onSelect={() => {
-                    if (menu.label === 'File' && item === 'Open...') engine.dispatch({ type: 'open_file_dialog' })
-                    if (menu.label === 'File' && item === 'Export...') console.log('export')
-                  }}
-                >
-                  {item}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      ))}
-      <div className="menubar-right">
-        {activeTab?.name && <span className="document-name">{activeTab.name}</span>}
-        <button className="btn btn-outline" onClick={() => engine.dispatch({ type: 'open_file_dialog' })}><FolderOpen size={13} /> Open</button>
-        <button className="btn btn-accent" onClick={() => console.log('export')}><Download size={13} /> Export</button>
+      <Menubar.Root className="menubar-root" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {MENU_ITEMS.map(menu => (
+          <Menubar.Menu key={menu.label}>
+            <Menubar.Trigger className="menu-item">{menu.label}</Menubar.Trigger>
+            <Menubar.Portal>
+              <Menubar.Content className="dropdown-content" sideOffset={4}>
+                {menu.items.map(item => {
+                  const disabled = item.requiresTab && !activeTab;
+                  return (
+                    <Menubar.Item
+                      key={item.label}
+                      className="dropdown-item"
+                      disabled={disabled}
+                      onSelect={() => {
+                        if (disabled) return;
+                        if (item.requiresTab && activeTab) item.action(activeTab.id);
+                        else item.action('' as any);
+                      }}
+                    >
+                      <span>{item.label}</span>
+                      {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
+                    </Menubar.Item>
+                  )
+                })}
+              </Menubar.Content>
+            </Menubar.Portal>
+          </Menubar.Menu>
+        ))}
+
+        <Menubar.Menu>
+          <Menubar.Trigger className="menu-item">Window</Menubar.Trigger>
+          <Menubar.Portal>
+            <Menubar.Content className="dropdown-content" sideOffset={4}>
+              <Menubar.Sub>
+                <Menubar.SubTrigger className="dropdown-item">
+                  Panels <span style={{ marginLeft: 'auto', paddingLeft: 16 }}>▶</span>
+                </Menubar.SubTrigger>
+                <Menubar.Portal>
+                  <Menubar.SubContent className="dropdown-content" sideOffset={2} alignOffset={-4}>
+                    {Object.values(panelLayout?.panels || {}).map(p => (
+                      <Menubar.CheckboxItem
+                        key={p.id}
+                        className="dropdown-item"
+                        checked={p.columnId !== null}
+                        onCheckedChange={() => togglePanelVisibility(p.id)}
+                      >
+                        <Menubar.ItemIndicator className="menu-indicator">
+                          <Check size={14} />
+                        </Menubar.ItemIndicator>
+                        <span>{capitalize(p.id)}</span>
+                      </Menubar.CheckboxItem>
+                    ))}
+                  </Menubar.SubContent>
+                </Menubar.Portal>
+              </Menubar.Sub>
+              <Menubar.Separator className="dropdown-separator" />
+              <Menubar.Item className="dropdown-item" onSelect={() => setLayout(DEFAULT_LAYOUT)}>
+                <span>Reset Layout</span>
+              </Menubar.Item>
+            </Menubar.Content>
+          </Menubar.Portal>
+        </Menubar.Menu>
+      </Menubar.Root>
+
+      {/* Window controls (drag region, but buttons are no-drag) */}
+      <div className="window-controls" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <button className="window-btn" title="Minimize" onClick={() => windowAction('minimize')}>
+          <Minus size={14} />
+        </button>
+        <button className="window-btn" title="Maximize" onClick={() => windowAction('maximize')}>
+          <Square size={12} />
+        </button>
+        <button className="window-btn window-btn-close" title="Close" onClick={() => windowAction('close')}>
+          <X size={14} />
+        </button>
       </div>
     </div>
   )
