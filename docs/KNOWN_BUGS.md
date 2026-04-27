@@ -38,3 +38,13 @@ tile_fetching took 422ms  — slow composite from disk
 generate_from_mip0  (×6 layers, each 9 levels)
 Background MIP 1 ready, notifying client  (only 1 event)
 ```
+
+## macOS: File Open Dialog Fails from Tokio Worker Thread
+
+**Severity:** Medium  
+**Affects:** macOS only  
+**Symptom:** `OpenFileDialog` command does nothing — no dialog appears. Error: `"You are running RFD in NonWindowed environment, it is impossible to spawn dialog from thread different than main in this env"`.
+
+**Root cause:** The `rfd` (Rust File Dialog) crate requires the dialog to be opened from the **main thread** on macOS (Cocoa requirement). When `OpenFileDialog` is dispatched through the tokio worker thread (via `TabService::handle_command`), it runs on a non-main thread and `rfd` refuses to open.
+
+**Proposed fix:** Use `tao::event_loop::EventLoopProxy` to delegate the dialog spawn to the main event loop thread, or use `dispatch_queue` / `Grand Central Dispatch` on macOS to run the dialog on the main queue.
