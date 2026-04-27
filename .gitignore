@@ -57,3 +57,4 @@ pixors-ui/.vite/
 # Rust cache
 **/.rustc/
 **/.cargo/
+engine.pid
