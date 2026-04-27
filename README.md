@@ -1,118 +1,111 @@
 # Pixors
 
-**Image processing engine with web UI** – A modern, high-performance image editor written in Rust with a React frontend.
+**Open Source image editor — Rust engine + React frontend + Native desktop shell**
 
-> **Status**: Active development – Phase 2 (Viewport & Interactivity) complete
+> ⚠️ **Not production ready. Not even testing ready yet.** This entire project is under active development. APIs, architecture, and features change frequently. Use at your own risk.
 
 ## Architecture
 
-Pixors is structured as a multi-crate Rust workspace with a separate web frontend:
-
 ```
 pixors/
-├── pixors-engine/        # Core image processing library (Rust)
-│   ├── src/
-│   │   ├── color/        # Color science & management
-│   │   ├── image/        # Image data structures
-│   │   ├── pixel/        # Pixel types & components
-│   │   ├── convert/      # Conversion pipelines
-│   │   ├── io/          # PNG I/O
-│   │   ├── viewport/     # Viewport, swapchain, pan/zoom
-│   │   └── lib.rs
-│   └── docs/            # Design documents
-├── pixors-viewport/      # WebAssembly viewport (experimental)
-├── pixors-ui/           # React + TypeScript frontend
-└── pixors/              # CLI application (future)
+├── pixors-engine/     # Image processing engine (Rust library + WebSocket server)
+├── pixors-desktop/    # Native desktop shell (tao + wry, borderless window)
+├── pixors-ui/         # React + TypeScript frontend (Vite)
+└── docs/              # Architecture docs, phase plans, known bugs
 ```
 
-### Core Principles
+### `pixors-engine` — The Engine
+Rust library that does all heavy lifting. Runs as a WebSocket server (axum). Communicates with the frontend via a binary protocol (MessagePack commands, raw tile frames).
 
-- **GPU-first**: All operations optimized for parallel execution
-- **Color-managed**: ACEScg linear working space, proper ICC handling
-- **Tile-based**: Gigapixel-scale processing with efficient caching
-- **Asynchronous**: Non-blocking API with priority scheduling
-- **Cross-platform**: Native desktop + web via WebAssembly
+**Key subsystems:**
+- **Stream pipeline** — Tiles flow through pipes (source → color convert → MIP → sinks) in dedicated threads with bounded channels
+- **Color science** — ACEScg linear f16 working space, LUT-based conversion, SIMD 4-wide
+- **Tile storage** — RAM cache (ViewportSink) + disk persistence (WorkingSink, ACEScg f16)
+- **MIP pyramid** — Recursive 2×2 box-filter, generated eagerly in the stream pipeline
+- **Compositor** — Porter-Duff over blend, per-tile, stateless
+- **I/O** — PNG & TIFF readers via `ImageReader` trait
 
-## Current Features
+### `pixors-ui` — The Frontend
+React + TypeScript + Vite. Custom panel docking system (no external library). Zustand state management persisted to localStorage.
 
-### Phase 1 – Image I/O Abstraction (✓ Complete)
-- PNG loading/saving with color space detection
-- ACEScg linear f16 internal representation
-- Premultiplied alpha workflow
-- Color space conversions (sRGB, Rec.709, Rec.2020, ACEScg, etc.)
-- Transfer function decoding/encoding
+### `pixors-desktop` — The Desktop Shell
+Borderless native window via **tao** + **wry**. IPC bridge (JS→Rust) for window controls. Cross-platform: Linux (GTK/WebKit), Windows (WebView2), macOS (WKWebView).
 
-### Phase 2 – Viewport & Interactivity (✓ Complete)
-- `ImageView`: Non‑owning reference to ARGB pixel data
-- `ViewRect`: Camera with pan and anchor‑preserving zoom
-- `Swapchain`: Tear‑free circular buffer pool
-- `Viewport`: Orchestrator with dirty‑flag rendering
-- Bicubic interpolation (Catmull‑Rom kernel)
-- Mouse‑driven navigation (drag to pan, scroll to zoom)
+## Features
 
-### Phase 3 – Operations (In Progress)
-- CPU‑side image operations (brightness, contrast, gamma, etc.)
-- Operation trait design
-- Pipeline composition
+### Implemented
+
+| Feature | Status |
+|---|---|
+| PNG loading with color space detection | ✅ |
+| TIFF loading (single & multi-page) | ✅ |
+| Color space conversion (sRGB, Rec.709, P3, ACEScg, etc.) | ✅ |
+| ACEScg f16 linear working space | ✅ |
+| Stream pipeline (parallel tile processing) | ✅ |
+| MIP pyramid generation (recursive 2×2) | ✅ |
+| Tile compositor (Porter-Duff over blend) | ✅ |
+| WebSocket server (tab/viewport/session services) | ✅ |
+| Custom panel docking (drag, resize, persist) | ✅ |
+| Borderless desktop window (tao + wry) | ✅ |
+| Window controls (min/max/close/drag/resize) | ✅ |
+| Cross-compile Windows support | ✅ |
+
+### Planned / In Progress
+
+| Feature | Status |
+|---|---|
+| Operations (blur, contrast, brightness) | 🚧 Phase 9 |
+| Job system with progress tracking | 🚧 Phase 9 |
+| Preview (MIP-aware, per-zoom-level) | 🚧 Phase 9 |
+| Component-per-service backend refactor | 🚧 Phase 9 |
+| Library workspace (browse & organize) | 📋 |
+| Darkroom workspace (develop & adjust) | 📋 |
+| Error surface (typed errors, toasts) | 📋 Phase 9 |
+| Desktop shell distribution (single binary) | 📋 |
+| MCP integration (LLM-driven editing) | 📋 |
+| Layer adjustments (non-destructive) | 📋 |
+| Selection tools (marquee, lasso, wand) | 📋 |
+| Export (PNG, TIFF, JPEG, WebP) | 📋 |
+| macOS testing & support | 📋 |
 
 ## Getting Started
 
 ### Prerequisites
-
-- Rust (latest stable) – for the engine
-- Node.js 18+ – for the frontend
-- Git
+- Rust (latest stable)
+- Node.js 18+
+- Linux: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`
 
 ### Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/anomalyco/pixors.git
+git clone https://github.com/vkeslarek/pixors.git
 cd pixors
 
-# Build the engine
-cd pixors-engine
-cargo build
+# Engine server
+cd pixors-engine && cargo run
 
-# Run the desktop viewer (test image)
-cargo run -- example1.png
+# Frontend (separate terminal)
+cd pixors-ui && npm install && npm run dev
 
-# Run the web frontend
-cd ../pixors-ui
-npm install
-npm run dev
+# Desktop shell
+cd pixors-desktop && cargo run
 ```
 
 ### Testing
 
 ```bash
-# Run all Rust tests
-cd pixors-engine
-cargo test
-
-# Run specific module tests
-cargo test --lib viewport
+cd pixors-engine && cargo test --lib
 ```
 
-## Design Documents
+## Documentation
 
-Detailed architecture decisions are in `docs/`:
-
-- [OVERVIEW.md](docs/OVERVIEW.md) – Goals & principles
-- [DATA_MODEL.md](docs/DATA_MODEL.md) – Pixel format, color, alpha
-- [DECISIONS.md](docs/DECISIONS.md) – Locked architectural decisions
-- [PHASE_2.md](docs/PHASE_2.md) – Viewport & swapchain specification
-
-## Roadmap
-
-See [ROADMAP.md](docs/ROADMAP.md) and [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for detailed phase breakdown.
-
-**Next up**: Phase 3 (Operations basics) – synchronous CPU‑only ops with CLI.
-
-## Contributing
-
-Contributions are welcome! Please read the design documents first to understand the architecture. Focus on one phase at a time.
+| Doc | Description |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full architecture reference |
+| [PHASE_9.md](docs/PHASE_9.md) | Current phase plan |
+| [KNOWN_BUGS.md](docs/KNOWN_BUGS.md) | Known issues |
+| [ROADMAP.md](docs/ROADMAP.md) | Future ideas |
 
 ## License
 
-MIT – See [LICENSE](LICENSE) file.
+MIT
