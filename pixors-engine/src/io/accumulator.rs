@@ -37,8 +37,7 @@ impl RowAccumulator {
 
         let buf_size = width as usize * effective_tile_h as usize * bpp;
         let row_stride = width as usize * bpp;
-        let mut buf = Vec::with_capacity(buf_size);
-        buf.resize(buf_size, 0u8);
+        let buf = vec![0u8; buf_size];
 
         Self {
             buf: buf.into_boxed_slice(),
@@ -67,7 +66,7 @@ impl RowAccumulator {
     /// Extract tile fragments from the current band. `band_ty` is the band index.
     pub fn extract_tiles(&self) -> Vec<TileFragment<'_>> {
         let band_height = self.rows_filled;
-        let tiles_x = (self.image_width + self.tile_dim - 1) / self.tile_dim;
+        let tiles_x = self.image_width.div_ceil(self.tile_dim);
         let mut fragments = Vec::with_capacity(tiles_x as usize);
 
         for tx in 0..tiles_x {
@@ -76,8 +75,7 @@ impl RowAccumulator {
             let buf_size = actual_w as usize * band_height as usize * self.bpp;
             let tile_stride = actual_w as usize * self.bpp;
 
-            let mut tile_buf = Vec::with_capacity(buf_size);
-            tile_buf.resize(buf_size, 0u8);
+            let mut tile_buf = vec![0u8; buf_size];
 
             for r in 0..band_height as usize {
                 let src_start = r * self.row_stride + tile_px as usize * self.bpp;

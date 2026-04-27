@@ -93,8 +93,8 @@ impl std::fmt::Debug for TileGrid {
 impl TileGrid {
     pub fn new(width: u32, height: u32, tile_size: u32) -> Self {
         assert!(tile_size > 0, "Tile size must be positive");
-        let tiles_x = (width + tile_size - 1) / tile_size;
-        let tiles_y = (height + tile_size - 1) / tile_size;
+        let tiles_x = width.div_ceil(tile_size);
+        let tiles_y = height.div_ceil(tile_size);
         let mut tiles = Vec::with_capacity((tiles_x * tiles_y) as usize);
         for ty in 0..tiles_y {
             for tx in 0..tiles_x {

@@ -60,7 +60,7 @@ pub async fn start_server(cfg: Config) -> Result<(), Error> {
 
     if let Err(e) = axum::serve(listener, app).await {
         tracing::error!("axum::serve failed: {}", e);
-        return Err(Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)));
+        return Err(Error::Io(std::io::Error::other(e)));
     }
 
     tracing::info!("Server stopped");

@@ -3,6 +3,9 @@ name = "pixors-desktop"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 tao = "0.35"
 wry = "0.55.0"

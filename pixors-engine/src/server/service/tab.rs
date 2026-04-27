@@ -518,12 +518,11 @@ impl TabData {
         let visible_count = self.layers.iter().filter(|l| l.visible).count();
 
         // Single layer: per-layer display cache IS the final output
-        if visible_count == 1 {
-            if let Some(layer) = self.layers.iter().find(|l| l.visible) {
-                if let Some(rgba8) = layer.viewport.get(mip, tile) {
-                    return Ok(rgba8);
-                }
-            }
+        if visible_count == 1
+            && let Some(layer) = self.layers.iter().find(|l| l.visible)
+            && let Some(rgba8) = layer.viewport.get(mip, tile)
+        {
+            return Ok(rgba8);
         }
 
         // Multi-layer or cache miss: always composite
@@ -628,7 +627,7 @@ impl TabService {
                 crate::image::MipPyramid::generate_from_mip0(&mip0_view, &mip_base)
             })
             .await
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)));
+            .map_err(|e| Error::Io(std::io::Error::other(e)));
 
             let regenerated = match regenerated_res {
                 Ok(Ok(p)) => p,
@@ -943,46 +942,46 @@ impl TabService {
         .await
         .unwrap_or(None);
 
-        if let Some(path_buf) = path_opt {
-            if let Some(path_str) = path_buf.to_str() {
-                let target_tab_id = match tab_id {
-                    Some(id) => id,
-                    None => {
-                        let name = path_buf
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned();
-                        let tab = self.create_tab_data(name.clone());
-                        let new_id = tab.id;
-                        state
-                            .session_manager
-                            .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
-                            .await;
-                        send_session_event(
-                            &ctx.frame_tx,
-                            &EngineEvent::Tab(TabEvent::TabCreated {
-                                tab_id: new_id,
-                                name,
-                            }),
-                        );
-                        state
-                            .session_manager
-                            .with_tab_session_mut(&ctx.session_id, |ts| ts.set_active(Some(new_id)))
-                            .await;
-                        send_session_event(
-                            &ctx.frame_tx,
-                            &EngineEvent::Tab(TabEvent::TabActivated { tab_id: new_id }),
-                        );
-                        new_id
-                    }
-                };
-                let cmd = TabCommand::OpenFile {
-                    tab_id: target_tab_id,
-                    path: path_str.to_string(),
-                };
-                Box::pin(self.handle_command(cmd, state, ctx)).await;
-            }
+        if let Some(path_buf) = path_opt
+            && let Some(path_str) = path_buf.to_str()
+        {
+            let target_tab_id = match tab_id {
+                Some(id) => id,
+                None => {
+                    let name = path_buf
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    let tab = self.create_tab_data(name.clone());
+                    let new_id = tab.id;
+                    state
+                        .session_manager
+                        .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
+                        .await;
+                    send_session_event(
+                        &ctx.frame_tx,
+                        &EngineEvent::Tab(TabEvent::TabCreated {
+                            tab_id: new_id,
+                            name,
+                        }),
+                    );
+                    state
+                        .session_manager
+                        .with_tab_session_mut(&ctx.session_id, |ts| ts.set_active(Some(new_id)))
+                        .await;
+                    send_session_event(
+                        &ctx.frame_tx,
+                        &EngineEvent::Tab(TabEvent::TabActivated { tab_id: new_id }),
+                    );
+                    new_id
+                }
+            };
+            let cmd = TabCommand::OpenFile {
+                tab_id: target_tab_id,
+                path: path_str.to_string(),
+            };
+            Box::pin(self.handle_command(cmd, state, ctx)).await;
         }
     }
 

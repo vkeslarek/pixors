@@ -5,7 +5,7 @@ use crate::image::{TileCoord, TileGrid};
 use crate::pixel::Rgba;
         use crate::storage::WorkingWriter;
 use half::f16;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// One level in a MIP pyramid with its own tile storage.
 #[derive(Debug)]
@@ -141,7 +141,7 @@ impl MipPyramid {
 
     /// Ensure a specific MIP level is generated.
     pub fn is_level_ready(&self, level: usize) -> bool {
-        self.level(level).map_or(false, |l| l.generated)
+        self.level(level).is_some_and(|l| l.generated)
     }
 
     /// Select the appropriate MIP level for the given zoom.
@@ -152,7 +152,7 @@ impl MipPyramid {
 
     /// Generate all MIP levels from MIP 0 tile store.
     /// Runs box-filter downsampling in parallel via rayon.
-    pub fn generate_from_mip0(mip0: &WorkingWriter, base_dir: &PathBuf) -> Result<Self, Error> {
+    pub fn generate_from_mip0(mip0: &WorkingWriter, base_dir: &Path) -> Result<Self, Error> {
         let _sw = crate::debug_stopwatch!("generate_from_mip0");
         let tile_size = mip0.tile_size();
         let mut width = mip0.image_width();
@@ -168,10 +168,10 @@ impl MipPyramid {
             height = (height + 1).max(1) / 2;
 
             let store = WorkingWriter::new_with_subdir(
-                base_dir.clone(), &format!("mip_{}", level_idx), tile_size, width, height,
+                base_dir.to_path_buf(), &format!("mip_{}", level_idx), tile_size, width, height,
             )?;
             downsample_level_rayon(
-                &levels.last().map(|l: &MipLevel| &l.tile_store).unwrap_or(mip0), &store, level_idx,
+                levels.last().map(|l: &MipLevel| &l.tile_store).unwrap_or(mip0), &store, level_idx,
             )?;
 
             let scale = 0.5_f32.powi(level_idx as i32);
@@ -200,8 +200,8 @@ fn downsample_level_rayon(
     dst_mip: u32,
 ) -> Result<(), Error> {
     let _sw = crate::debug_stopwatch!("downsample_level_rayon");
-    let tiles_x = (dst.image_width() + dst.tile_size() - 1) / dst.tile_size();
-    let tiles_y = (dst.image_height() + dst.tile_size() - 1) / dst.tile_size();
+    let tiles_x = dst.image_width().div_ceil(dst.tile_size());
+    let tiles_y = dst.image_height().div_ceil(dst.tile_size());
     let tile_size = dst.tile_size();
     let src_w = src.image_width();
     let src_h = src.image_height();
@@ -235,10 +235,10 @@ fn downsample_level_rayon(
                 let dx = x % tile_size;
                 let dy = y % tile_size;
                 let t_idx = ((sty - 2 * ty) * 2 + (stx - 2 * tx)) as usize;
-                if let Some(t) = &src_tiles[t_idx] {
-                    if dx < t.coord.width && dy < t.coord.height {
-                        return Ok(t.data[(dy * t.coord.width + dx) as usize]);
-                    }
+                if let Some(t) = &src_tiles[t_idx]
+                    && dx < t.coord.width && dy < t.coord.height
+                {
+                    return Ok(t.data[(dy * t.coord.width + dx) as usize]);
                 }
                 Err(Error::invalid_param(format!("Tile ({},{}) missing during downsample", stx, sty)))
             };

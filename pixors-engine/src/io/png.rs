@@ -96,7 +96,7 @@ impl ImageReader for PngFormat {
         let desc = Self::png_buffer_desc(info, w, h, cs, am, is_16bit);
 
         let mut acc = RowAccumulator::new(w, h, tile_size, desc, 64 * 1024 * 1024);
-        let tiles_y = (h + tile_size - 1) / tile_size;
+        let tiles_y = h.div_ceil(tile_size);
 
         while let Some(row) = reader.next_row().map_err(|e| Error::Png(e.to_string()))? {
             acc.push_row(row.data());
@@ -132,11 +132,11 @@ impl PngFormat {
         let w = buf.desc.width;
         let h = buf.desc.height;
         let bpp = buf.desc.planes.len() * buf.desc.planes[0].encoding.byte_size();
-        let tiles_y = (h + tile_size - 1) / tile_size;
+        let tiles_y = h.div_ceil(tile_size);
         for band_ty in 0..tiles_y {
             let band_start_y = band_ty * tile_size;
             let band_height = (h - band_start_y).min(tile_size);
-            let tiles_x = (w + tile_size - 1) / tile_size;
+            let tiles_x = w.div_ceil(tile_size);
             let row_stride = w as usize * bpp;
             for tx in 0..tiles_x {
                 let tile_px = tx * tile_size;
@@ -187,12 +187,12 @@ impl PngFormat {
         }
 
         // Physical dimensions (pHYs)
-        if let Some(pdim) = info.pixel_dims {
-            if pdim.unit == png::Unit::Meter {
-                let dpi_x = pdim.xppu as f32 * 0.0254;
-                let dpi_y = pdim.yppu as f32 * 0.0254;
-                dpi = Some((dpi_x, dpi_y));
-            }
+        if let Some(pdim) = info.pixel_dims
+            && pdim.unit == png::Unit::Meter
+        {
+            let dpi_x = pdim.xppu as f32 * 0.0254;
+            let dpi_y = pdim.yppu as f32 * 0.0254;
+            dpi = Some((dpi_x, dpi_y));
         }
 
         ImageMetadata { source_format, source_path, dpi, text, raw_icc }
@@ -243,11 +243,11 @@ impl PngFormat {
         let height = info.height;
         let bit_depth = info.bit_depth;
 
-        let color_space = Self::detect_color_space(&info);
+        let color_space = Self::detect_color_space(info);
         let alpha_mode = AlphaMode::Straight;
         let is_16bit = matches!(bit_depth, BitDepth::Sixteen);
 
-        let desc = Self::png_buffer_desc(&info, width, height, color_space, alpha_mode, is_16bit);
+        let desc = Self::png_buffer_desc(info, width, height, color_space, alpha_mode, is_16bit);
 
         let buf_size = reader.output_buffer_size().expect("PNG decoder output buffer size unavailable");
         let mut buf = vec![0; buf_size];
@@ -312,22 +312,22 @@ impl PngFormat {
                 0.002,
             ) {
                 let transfer = gamma
-                    .and_then(|g| TransferFn::from_gamma(g))
+                    .and_then(TransferFn::from_gamma)
                     .unwrap_or(TransferFn::SrgbGamma);
                 return ColorSpace::new(prim, wp, transfer);
             }
-            if let Some(g) = gamma {
-                if let Some(tf) = TransferFn::from_gamma(g) {
-                    return ColorSpace::with_optional_params(None, None, Some(tf));
-                }
+            if let Some(g) = gamma
+                && let Some(tf) = TransferFn::from_gamma(g)
+            {
+                return ColorSpace::with_optional_params(None, None, Some(tf));
             }
         }
 
         // Priority 5: gAMA alone
-        if let Some(g) = gamma {
-            if let Some(tf) = TransferFn::from_gamma(g) {
-                return ColorSpace::with_optional_params(None, None, Some(tf));
-            }
+        if let Some(g) = gamma
+            && let Some(tf) = TransferFn::from_gamma(g)
+        {
+            return ColorSpace::with_optional_params(None, None, Some(tf));
         }
 
         // No color info → assume sRGB

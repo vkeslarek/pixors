@@ -43,8 +43,8 @@ pub trait ImageReader: Send + Sync {
         let buf = &layer_data.buffer;
         let w = buf.desc.width;
         let h = buf.desc.height;
-        let tiles_x = (w + tile_size - 1) / tile_size;
-        let tiles_y = (h + tile_size - 1) / tile_size;
+        let tiles_x = w.div_ceil(tile_size);
+        let tiles_y = h.div_ceil(tile_size);
 
         for band_ty in 0..tiles_y {
             let band_start_y = band_ty * tile_size;

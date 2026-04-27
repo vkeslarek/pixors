@@ -67,8 +67,8 @@ impl Pipe for MipPipe {
                             entry[qi] = Some(frame);
 
                             // Check if 2×2 quadrant is complete
-                            let src_tiles_x = (meta_image_w + tile_size - 1) / tile_size;
-                            let src_tiles_y = (meta_image_h + tile_size - 1) / tile_size;
+                            let src_tiles_x = meta_image_w.div_ceil(tile_size);
+                            let src_tiles_y = meta_image_h.div_ceil(tile_size);
                             let req_w = if dst_tx * 2 + 1 < src_tiles_x { 2 } else { 1 };
                             let req_h = if dst_ty * 2 + 1 < src_tiles_y { 2 } else { 1 };
 

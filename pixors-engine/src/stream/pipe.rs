@@ -15,10 +15,10 @@ pub fn tee(rx: mpsc::Receiver<Frame>, n: usize) -> Vec<mpsc::Receiver<Frame>> {
         let mut txs: Vec<Option<mpsc::SyncSender<Frame>>> = txs.into_iter().map(Some).collect();
         while let Ok(frame) = rx.recv() {
             for slot in &mut txs {
-                if let Some(tx) = slot {
-                    if tx.send(frame.clone()).is_err() {
-                        *slot = None;
-                    }
+                if let Some(tx) = slot
+                    && tx.send(frame.clone()).is_err()
+                {
+                    *slot = None;
                 }
             }
             if txs.iter().all(Option::is_none) { break; }

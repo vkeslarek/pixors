@@ -108,7 +108,7 @@ fn pq_encode(y: f32) -> f32 {
 
 const HLG_A: f32 = 0.17883277;
 const HLG_B: f32 = 0.28466892;
-const HLG_C: f32 = 0.55991073;
+const HLG_C: f32 = 0.559_910_7;
 
 fn hlg_decode(x: f32) -> f32 {
     // HLG EOTF: signal [0,1] → scene-referred linear [0,1]

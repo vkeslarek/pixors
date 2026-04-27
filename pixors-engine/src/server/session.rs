@@ -128,10 +128,10 @@ impl SessionManager {
         let mut result = Vec::new();
         let mut sessions = self.sessions.write().await;
         for id in &expired_ids {
-            if let Some(session) = sessions.get(id) {
-                if !session.read().await.is_expired(timeout) {
-                    continue;
-                }
+            if let Some(session) = sessions.get(id)
+                && !session.read().await.is_expired(timeout)
+            {
+                continue;
             }
             if let Some(session) = sessions.remove(id) {
                 let s = session.read().await;

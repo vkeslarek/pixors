@@ -1,7 +1,7 @@
 //! Tile-level writers — destinations for tile data.
 //!
 //! - `WorkingWriter`: disk-backed tile storage (ACEScg f16) — owns the tiles,
-//!    converts raw bytes → ACEScg f16, reads/writes/caches tiles on disk.
+//!  converts raw bytes → ACEScg f16, reads/writes/caches tiles on disk.
 
 use crate::error::Error;
 use crate::image::{Tile, TileCoord};

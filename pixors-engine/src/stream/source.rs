@@ -65,8 +65,8 @@ impl ImageFileSource {
             let meta = reader.read_layer_metadata(path, layer_idx)?;
             let w = meta.desc.width;
             let h = meta.desc.height;
-            let tiles_x = (w + tile_size - 1) / tile_size;
-            let tiles_y = (h + tile_size - 1) / tile_size;
+            let tiles_x = w.div_ceil(tile_size);
+            let tiles_y = h.div_ceil(tile_size);
             let total_tiles = tiles_x * tiles_y;
 
             // Channel for this layer's tiles
@@ -83,7 +83,7 @@ impl ImageFileSource {
             // Collect tiles from the writer thread and emit Frame::Tile
             let mut emitted = 0u32;
             for raw in layer_rx {
-                let tx_tile = (emitted % tiles_x) as u32;
+                let tx_tile = emitted % tiles_x;
                 let ty_tile = emitted / tiles_x;
                 let coord = TileCoord::new(0, tx_tile, ty_tile, tile_size, w, h);
 
@@ -103,7 +103,7 @@ impl ImageFileSource {
                 emitted += 1;
 
                 // Emit progress every 10 tiles or at end
-                if emitted % 10 == 0 || emitted == total_tiles {
+                if emitted.is_multiple_of(10) || emitted == total_tiles {
                     let _ = tx.send(Frame::new(
                         FrameMeta { layer_id: layer_idx as u32, mip_level: 0, image_w: w, image_h: h, color_space: meta.desc.color_space, total_tiles, generation },
                         FrameKind::Progress { done: emitted, total: total_tiles },

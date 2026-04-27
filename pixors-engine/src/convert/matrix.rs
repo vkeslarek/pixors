@@ -61,9 +61,9 @@ impl Matrix3x3 {
 
     pub fn mul(&self, rhs: &Self) -> Self {
         let mut result = [[0.0; 3]; 3];
-        for c in 0..3 {
-            for r in 0..3 {
-                result[c][r] = self.0[0][r] * rhs.0[c][0]
+        for (c, row) in result.iter_mut().enumerate() {
+            for (r, val) in row.iter_mut().enumerate() {
+                *val = self.0[0][r] * rhs.0[c][0]
                     + self.0[1][r] * rhs.0[c][1]
                     + self.0[2][r] * rhs.0[c][2];
             }

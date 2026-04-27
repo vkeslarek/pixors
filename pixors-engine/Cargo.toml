@@ -3,6 +3,9 @@ name = "pixors-engine"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 half = { version = "2.7.1", features = ["bytemuck"] }
 bytemuck = "1.25.0"

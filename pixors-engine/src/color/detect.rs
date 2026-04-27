@@ -125,7 +125,7 @@ impl IccClassification {
             if tag == desc_tag {
                 let data_off = u32::from_be_bytes([bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7]]) as usize;
                 let data_len = u32::from_be_bytes([bytes[off + 8], bytes[off + 9], bytes[off + 10], bytes[off + 11]]) as usize;
-                if data_off.checked_add(data_len).map_or(true, |end| end > bytes.len()) {
+                if data_off.checked_add(data_len).is_none_or(|end| end > bytes.len()) {
                     break;
                 }
                 let start = data_off + 4;

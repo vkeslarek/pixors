@@ -56,8 +56,8 @@ pub fn composite_tile(req: &CompositeRequest<'_>) -> Result<Vec<Rgba<f16>>, Erro
         // Blend each pixel
         for dy in 0..oh {
             for dx in 0..ow {
-                let layer_x = (lx0 as u32) + dx;
-                let layer_y = (ly0 as u32) + dy;
+                let layer_x = lx0 + dx;
+                let layer_y = ly0 + dy;
 
                 let tx = layer_x / req.tile_size;
                 let ty = layer_y / req.tile_size;

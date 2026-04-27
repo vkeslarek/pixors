@@ -15,11 +15,11 @@ pub async fn run_writer_task(
         tokio::select! {
             biased;
             Some(event) = event_rx.recv() => {
-                if let Some(bytes) = encode_event(event) {
-                    if sender.send(Message::Binary(bytes.into())).await.is_err() {
-                        tracing::warn!("Failed to send event to client");
-                        break;
-                    }
+                if let Some(bytes) = encode_event(event)
+                    && sender.send(Message::Binary(bytes.into())).await.is_err()
+                {
+                    tracing::warn!("Failed to send event to client");
+                    break;
                 }
             }
             Some(frame) = frame_rx.recv() => {
@@ -58,10 +58,10 @@ async fn drain_pending_events(
     loop {
         match event_rx.try_recv() {
             Ok(event) => {
-                if let Some(bytes) = encode_event(event) {
-                    if sender.send(Message::Binary(bytes.into())).await.is_err() {
-                        return;
-                    }
+                if let Some(bytes) = encode_event(event)
+                    && sender.send(Message::Binary(bytes.into())).await.is_err()
+                {
+                    return;
                 }
             }
             Err(_) => return,

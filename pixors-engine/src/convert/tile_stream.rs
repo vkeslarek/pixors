@@ -18,8 +18,8 @@ pub fn convert_to_tiles(
 ) -> Result<(), Error> {
     let w = source.desc.width;
     let h = source.desc.height;
-    let tiles_x = (w + tile_size - 1) / tile_size;
-    let tiles_y = (h + tile_size - 1) / tile_size;
+    let tiles_x = w.div_ceil(tile_size);
+    let tiles_y = h.div_ceil(tile_size);
 
     for band_ty in 0..tiles_y {
         let band_start_y = band_ty * tile_size;
