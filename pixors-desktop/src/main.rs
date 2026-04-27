@@ -1,3 +1,6 @@
+mod embedded_ui;
+
+use std::borrow::Cow;
 use std::sync::Arc;
 use tao::{
     dpi::{LogicalSize, PhysicalSize, Size},
@@ -5,7 +8,10 @@ use tao::{
     event_loop::{ControlFlow, EventLoopBuilder},
     window::{CursorIcon, ResizeDirection, Window, WindowBuilder},
 };
-use wry::{http::Request, WebViewBuilder};
+use wry::{
+    http::{header, Request, Response, StatusCode},
+    WebViewBuilder,
+};
 
 #[derive(Debug)]
 enum HitTestResult {
@@ -78,6 +84,18 @@ enum UserEvent {
     MouseMove(i32, i32),
 }
 
+fn serve_asset(path: &str) -> Response<Cow<'static, [u8]>> {
+    let file = embedded_ui::get(path);
+    let mime = mime_guess::from_path(path).first_or_octet_stream();
+    let mut res = Response::new(file);
+    res.headers_mut()
+        .insert(header::CONTENT_TYPE, mime.as_ref().parse().unwrap());
+    res.headers_mut()
+        .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+    *res.status_mut() = StatusCode::OK;
+    res
+}
+
 fn main() -> wry::Result<()> {
     #[cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
     {
@@ -87,6 +105,15 @@ fn main() -> wry::Result<()> {
             panic!("Wayland not supported yet — use X11");
         }
     }
+
+    // Start engine WebSocket server in background
+    pixors_engine::server::start_server_bg(pixors_engine::config::Config::default());
+
+    let webview_url = if std::env::var("PIXORS_DEV").is_ok() {
+        "http://localhost:5173/".to_string()
+    } else {
+        "pixors://localhost/index.html".to_string()
+    };
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let window = Arc::new(
@@ -101,7 +128,6 @@ fn main() -> wry::Result<()> {
     );
 
     let proxy = event_loop.create_proxy();
-    let w_ref = Arc::clone(&window);
     let handler = move |req: Request<String>| {
         let body = req.body();
         let mut parts = body.split([':', ',']);
@@ -125,9 +151,15 @@ fn main() -> wry::Result<()> {
     };
 
     let builder = WebViewBuilder::new()
-        .with_url("http://localhost:5173/")
+        .with_url(&webview_url)
         .with_devtools(true)
         .with_autoplay(true)
+        .with_custom_protocol("pixors".into(), move |_id, req: Request<Vec<u8>>| {
+            let path = req.uri().path();
+            let path = path.strip_prefix('/').unwrap_or(path);
+            let path = if path.is_empty() { "index.html" } else { path };
+            serve_asset(path)
+        })
         .with_initialization_script(include_str!("./bridge.js"))
         .with_ipc_handler(handler)
         .with_accept_first_mouse(true);

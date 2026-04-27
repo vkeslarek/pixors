@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  push:
+    branches: [release/**]
+
+jobs:
+  # ── Frontend (shared artifact) ──────────────────────
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - working-directory: pixors-ui
+        run: npm ci && npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: pixors-ui/dist/
+
+  # ── Linux ───────────────────────────────────────────
+  build-linux:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libxdo-dev
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: pixors-ui/dist/
+
+      - name: Build engine
+        run: cargo build --release -p pixors-engine
+
+      - name: Build desktop
+        run: cargo build --release -p pixors-desktop
+
+      - name: Package
+        run: |
+          cd target/release
+          tar czf ../../pixors-linux-x86_64.tar.gz pixors-engine pixors-desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixors-linux-x86_64
+          path: pixors-linux-x86_64.tar.gz
+
+  # ── Windows (cross-compile from Linux) ──────────────
+  build-windows:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: pixors-ui/dist/
+
+      - name: Build engine
+        run: cargo build --release -p pixors-engine --target x86_64-pc-windows-gnu
+
+      - name: Build desktop
+        run: cargo build --release -p pixors-desktop --target x86_64-pc-windows-gnu
+
+      - name: Package
+        run: |
+          cd target/x86_64-pc-windows-gnu/release
+          zip ../../../pixors-windows-x86_64.zip pixors-engine.exe pixors-desktop.exe WebView2Loader.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixors-windows-x86_64
+          path: pixors-windows-x86_64.zip
+
+  # ── macOS ───────────────────────────────────────────
+  build-macos:
+    needs: build-frontend
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: pixors-ui/dist/
+
+      - name: Build engine
+        run: cargo build --release -p pixors-engine
+
+      - name: Build desktop
+        run: cargo build --release -p pixors-desktop
+
+      - name: Package
+        run: |
+          cd target/release
+          tar czf ../../pixors-macos-arm64.tar.gz pixors-engine pixors-desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixors-macos-arm64
+          path: pixors-macos-arm64.tar.gz
+
+  # ── GitHub Release ──────────────────────────────────
+  release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pixors-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's|release/||')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Pixors v${{ steps.version.outputs.version }}
+          files: artifacts/*
+          generate_release_notes: true

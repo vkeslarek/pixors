@@ -42,7 +42,7 @@ export class EngineClient {
   public readonly sessionId: string = generateUUID();
 
   private wsUrl(): string {
-    return `ws://127.0.0.1:8080/ws?session_id=${this.sessionId}`;
+    return `ws://127.0.0.1:8399/ws?session_id=${this.sessionId}`;
   }
 
   constructor() {

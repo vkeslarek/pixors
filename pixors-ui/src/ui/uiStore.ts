@@ -148,6 +148,3 @@ export const useUIStore = create<UIState>()(
     }
   )
 );
-
-// Re-export type for other files
-type PanelState = import('./panelLayout').PanelState;

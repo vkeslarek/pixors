@@ -1,7 +1,7 @@
 [package]
 name = "pixors-engine"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 half = { version = "2.7.1", features = ["bytemuck"] }
@@ -24,7 +24,6 @@ rayon = "1.12.0"
 lru = "0.17.0"
 parking_lot = "0.12"
 rfd = "0.17.2"
-config = { version = "0.15.22", features = ["yaml"] }
 clap = { version = "4.6.1", features = ["derive"] }
 
 [dev-dependencies]

@@ -1,30 +1,24 @@
 fn main() {
-    #[cfg(target_os = "windows")]
-    {
-        // Copy WebView2Loader.dll next to the binary
-        let out = std::env::var("OUT_DIR").unwrap();
-        // OUT_DIR is something like target/release/build/webview2-com-sys-HASH/out
-        // Go up from OUT_DIR to find the x64 dll
-        let build_dir = std::path::Path::new(&out)
-            .parent().unwrap()  // out/
-            .parent().unwrap(); // webview2-com-sys-HASH/
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-        // Find the x64 DLL in any webview2-com-sys build directory
-        let target_profile = std::env::var("PROFILE").unwrap();
-        let search_base = build_dir.parent().unwrap(); // build/
-        for entry in std::fs::read_dir(search_base).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_name().to_str().unwrap().starts_with("webview2-com-sys") {
-                let dll = entry.path().join("out").join("x64").join("WebView2Loader.dll");
-                if dll.exists() {
-                    let dest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-                        .parent().unwrap()
-                        .join("target")
-                        .join(&target_profile)
-                        .join("WebView2Loader.dll");
-                    std::fs::copy(&dll, &dest).ok();
-                    println!("cargo:warning=Copied WebView2Loader.dll to {}", dest.display());
-                    break;
+    if target_os == "windows" {
+        let out_dir = std::env::var("OUT_DIR").unwrap();
+        // OUT_DIR: target/<triple>/<profile>/build/<crate>-<hash>/out
+        // Go up 3 levels to reach target/<triple>/<profile>/ (where the .exe lives)
+        let profile_dir = std::path::Path::new(&out_dir)
+            .parent().unwrap()  // <crate>-<hash>/
+            .parent().unwrap()  // build/
+            .parent().unwrap(); // <profile>/
+
+        let build_dir = profile_dir.join("build");
+        if let Ok(entries) = std::fs::read_dir(&build_dir) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_str().unwrap_or("").starts_with("webview2-com-sys") {
+                    let dll = entry.path().join("out").join("x64").join("WebView2Loader.dll");
+                    if dll.exists() {
+                        std::fs::copy(&dll, profile_dir.join("WebView2Loader.dll")).ok();
+                        break;
+                    }
                 }
             }
         }

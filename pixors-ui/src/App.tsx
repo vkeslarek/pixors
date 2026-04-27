@@ -1,4 +1,5 @@
-import { useState, useEffect, CSSProperties } from 'react'
+import { useState, useEffect } from 'react'
+import type { CSSProperties } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import * as Toast from '@radix-ui/react-toast'
 import { MenuBar, TabBar } from '@/components/MenuBar'
