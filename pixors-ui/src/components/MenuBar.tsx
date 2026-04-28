@@ -22,6 +22,8 @@ const MENU_ITEMS = [
     items: [
       SHORTCUTS.openFile,
       SHORTCUTS.closeTab,
+      { type: 'separator' },
+      { label: 'Close Window', shortcut: 'Alt+F4', action: () => windowAction('close'), requiresTab: false },
     ],
   },
   {
@@ -60,7 +62,10 @@ export function MenuBar() {
             <Menubar.Trigger className="menu-item">{menu.label}</Menubar.Trigger>
             <Menubar.Portal>
               <Menubar.Content className="dropdown-content" sideOffset={4}>
-                {menu.items.map(item => {
+                {menu.items.map((item: any) => {
+                  if (item.type === 'separator') {
+                    return <Menubar.Separator key={`sep-${Math.random()}`} className="dropdown-separator" />;
+                  }
                   const disabled = item.requiresTab && !activeTab;
                   return (
                     <Menubar.Item

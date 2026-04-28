@@ -86,7 +86,6 @@ impl LoaderService {
         use crate::debug_stopwatch;
         use crate::server::event_bus::EngineEvent;
         use crate::server::service::loader::LoaderEvent;
-        use crate::server::service::system::SystemEvent;
         use crate::server::ws::types::send_session_event;
 
         let tab = state
@@ -145,9 +144,9 @@ impl LoaderService {
                         .await;
                     send_session_event(
                         &ctx.frame_tx,
-                        &EngineEvent::System(SystemEvent::Error {
+                        &EngineEvent::Error {
                             message: format!("Failed to load image: {}", e),
-                        }),
+                        },
                     );
                     return;
                 }

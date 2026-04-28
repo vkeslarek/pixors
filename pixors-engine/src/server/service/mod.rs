@@ -5,8 +5,6 @@ pub mod loader;
 pub mod tool;
 pub mod viewport;
 
-pub(crate) mod system;
-
 use async_trait::async_trait;
 use serde::Serialize;
 use std::fmt::Debug;

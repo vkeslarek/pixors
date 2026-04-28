@@ -5,7 +5,6 @@ use crate::server::service::Service;
 use crate::server::service::layer::LayerService;
 use crate::server::service::loader::LoaderService;
 use crate::server::service::session::SessionService;
-use crate::server::service::system::SystemService;
 use crate::server::service::tab::TabService;
 use crate::server::service::tool::ToolService;
 use crate::server::service::viewport::ViewportService;
@@ -26,7 +25,6 @@ pub struct AppState {
     pub loader_service: Arc<LoaderService>,
     pub tool_service: Arc<ToolService>,
     pub viewport_service: Arc<ViewportService>,
-    pub system_service: Arc<SystemService>,
     pub session_service: Arc<SessionService>,
     pub event_bus: Arc<EventBus>,
     pub session_manager: Arc<SessionManager>,
@@ -41,7 +39,6 @@ impl AppState {
             loader_service: Arc::new(LoaderService::new()),
             tool_service: Arc::new(ToolService::new()),
             viewport_service: Arc::new(ViewportService::new()),
-            system_service: Arc::new(SystemService::new()),
             session_service: Arc::new(SessionService::new()),
             session_manager: Arc::new(SessionManager::new()),
         }
@@ -69,9 +66,6 @@ impl AppState {
             }
             EngineCommand::Tool(c) => {
                 self.tool_service.handle_command(c, &state, ctx).await;
-            }
-            EngineCommand::System(c) => {
-                self.system_service.handle_command(c, &state, ctx).await;
             }
         }
     }

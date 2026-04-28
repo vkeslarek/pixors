@@ -76,5 +76,4 @@ export type EngineCommand =
   | { type: 'get_tool_state' }
   | { type: 'select_tool'; tool: string }
   | { type: 'heartbeat' }
-  | { type: 'screenshot' }
   | { type: 'close' };

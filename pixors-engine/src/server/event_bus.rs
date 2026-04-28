@@ -11,8 +11,6 @@ use tokio::sync::{mpsc, RwLock};
 use crate::server::service::layer::{LayerCommand, LayerEvent};
 use crate::server::service::loader::{LoaderCommand, LoaderEvent};
 use crate::server::service::session::{SessionCommand, SessionEvent};
-use crate::server::service::system::SystemCommand;
-use crate::server::service::system::SystemEvent;
 use crate::server::service::tab::{TabCommand, TabEvent};
 use crate::server::service::tool::{ToolCommand, ToolEvent};
 use crate::server::service::viewport::{ViewportCommand, ViewportEvent};
@@ -32,7 +30,7 @@ pub enum EngineEvent {
     Loader(LoaderEvent),
     Viewport(ViewportEvent),
     Tool(ToolEvent),
-    System(SystemEvent),
+    Error { message: String },
 }
 
 /// Commands sent from client to engine.
@@ -49,7 +47,6 @@ pub enum EngineCommand {
     Loader(LoaderCommand),
     Viewport(ViewportCommand),
     Tool(ToolCommand),
-    System(SystemCommand),
 }
 
 // -----------------------------------------------------------------------------
