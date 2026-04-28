@@ -1,9 +1,20 @@
+import { useState } from 'react'
 import * as Menubar from '@radix-ui/react-menubar'
 import { Check, Minus, Plus, Square, X } from 'lucide-react'
-import { useTabs, useActiveTabId, useActiveTab, engine } from '@/engine'
+import { useEvent, useCommand } from '@/engine/events'
 import { SHORTCUTS } from '@/keymap'
 import { useUIStore } from '@/ui/uiStore'
 import { DEFAULT_LAYOUT } from '@/ui/panelLayout'
+
+interface LayerInfo {
+  id: string; name: string; visible: boolean; opacity: number; blend_mode: string; width: number; height: number; offset_x: number; offset_y: number;
+}
+
+interface UITab {
+  id: string; name: string; color: string; modified: boolean; hasImage: boolean; width: number; height: number; layerCount?: number; layers?: LayerInfo[];
+}
+
+const TAB_COLORS = ['#ff4d4d', '#4dff4d', '#4d4dff', '#ffff4d', '#ff4dff', '#6ffff']
 
 const MENU_ITEMS = [
   {
@@ -28,19 +39,17 @@ function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
 
 type WindowAction = 'minimize' | 'maximize' | 'close'
 function windowAction(action: WindowAction) {
-  // Wry/Tauri: dispatch custom event for Rust shell to handle
   window.dispatchEvent(new CustomEvent('pixors:window', { detail: action }))
-  // Browser fallback: close only
-  if (action === 'close') {
-    try { window.close() } catch {}
-  }
+  if (action === 'close') { try { window.close() } catch {} }
 }
 
 export function MenuBar() {
-  const activeTab = useActiveTab()
+  const activeTabId = useTabBarState()
   const panelLayout = useUIStore(s => s.panelLayout)
   const togglePanelVisibility = useUIStore(s => s.togglePanelVisibility)
   const setLayout = useUIStore(s => s.setLayout)
+
+  const activeTab = activeTabId ?? null
 
   return (
     <div className="menubar" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
@@ -60,7 +69,7 @@ export function MenuBar() {
                       disabled={disabled}
                       onSelect={() => {
                         if (disabled) return;
-                        if (item.requiresTab && activeTab) item.action(activeTab.id);
+                        if (item.requiresTab && activeTab) item.action(activeTab);
                         else item.action('' as any);
                       }}
                     >
@@ -109,7 +118,6 @@ export function MenuBar() {
         </Menubar.Menu>
       </Menubar.Root>
 
-      {/* Window controls (drag region, but buttons are no-drag) */}
       <div className="window-controls" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <button className="window-btn" title="Minimize" onClick={() => windowAction('minimize')}>
           <Minus size={14} />
@@ -125,9 +133,36 @@ export function MenuBar() {
   )
 }
 
+// ── TabBar — local state via useEvent ───────────────────
+
 export function TabBar() {
-  const tabs = useTabs()
-  const activeTabId = useActiveTabId()
+  const [tabs, setTabs] = useState<UITab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+
+  useEvent('tab_state', (ev) => {
+    setTabs(ev.tabs.map((td, i) => ({
+      id: td.id, name: td.name, color: TAB_COLORS[i % TAB_COLORS.length], modified: false,
+      hasImage: td.has_image, width: td.width, height: td.height,
+    })))
+    setActiveTabId(ev.active_tab_id)
+  })
+  useEvent('tab_created', (ev) => {
+    setTabs(prev => prev.find(t => t.id === ev.tab_id) ? prev : [...prev, {
+      id: ev.tab_id, name: ev.name, color: TAB_COLORS[prev.length % TAB_COLORS.length], modified: false,
+      hasImage: false, width: 0, height: 0,
+    }])
+  })
+  useEvent('tab_closed', (ev) => {
+    setTabs(prev => prev.filter(t => t.id !== ev.tab_id))
+  })
+  useEvent('tab_activated', (ev) => setActiveTabId(ev.tab_id))
+  useEvent('image_loaded', (ev) => {
+    setTabs(prev => prev.map(t => t.id === ev.tab_id ? { ...t, hasImage: true, width: ev.width, height: ev.height } : t))
+  })
+
+  const createTab = useCommand('create_tab')
+  const closeTab = useCommand('close_tab')
+  const activateTab = useCommand('activate_tab')
 
   return (
     <div className="tabbar">
@@ -135,16 +170,25 @@ export function TabBar() {
         <div
           key={tab.id}
           className={`doc-tab${tab.id === activeTabId ? ' active' : ''}`}
-          onClick={() => engine.dispatch({ type: 'activate_tab', tab_id: tab.id })}
+          onClick={() => activateTab({ tab_id: tab.id })}
         >
           <div className="doc-tab-dot" style={{ background: tab.color }} />
           <span>{tab.modified && tab.id === activeTabId ? '● ' : ''}{tab.name}</span>
-          <button className="doc-tab-close" onClick={e => { e.stopPropagation(); engine.dispatch({ type: 'close_tab', tab_id: tab.id }) }}>
+          <button className="doc-tab-close" onClick={e => { e.stopPropagation(); closeTab({ tab_id: tab.id }) }}>
             <X size={8} />
           </button>
         </div>
       ))}
-      <button className="tab-add-btn" onClick={() => engine.dispatch({ type: 'create_tab' })}><Plus size={10} /></button>
+      <button className="tab-add-btn" onClick={() => createTab()}><Plus size={10} /></button>
     </div>
   )
+}
+
+// ── Hook for MenuBar to read activeTabId ───────────────
+
+function useTabBarState(): string | null {
+  const [id, setId] = useState<string | null>(null)
+  useEvent('tab_state', (ev) => setId(ev.active_tab_id))
+  useEvent('tab_activated', (ev) => setId(ev.tab_id))
+  return id
 }

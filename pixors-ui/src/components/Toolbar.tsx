@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { Move, Square, Circle, Wand, Crop, Droplet, Brush, Eraser, Heart, Palette, FileText, Shapes, Hand, ZoomIn } from 'lucide-react'
-import { useTool, engine } from '@/engine'
+import { useEvent, useCommand } from '@/engine/events'
 
 export const TOOLS = [
   { id: 'move', icon: Move, label: 'Move (V)' },
@@ -24,7 +25,13 @@ export const TOOLS = [
 ] as const
 
 export function Toolbar() {
-  const activeTool = useTool()
+  const [activeTool, setActiveTool] = useState('pan')
+
+  useEvent('tool_state', (ev) => setActiveTool(ev.tool))
+  useEvent('tool_changed', (ev) => setActiveTool(ev.tool))
+
+  const selectTool = useCommand('select_tool')
+
   return (
     <div className="toolbar">
       {TOOLS.map((tool, i) =>
@@ -35,7 +42,7 @@ export function Toolbar() {
             <Tooltip.Trigger asChild>
               <button
                 className={`tool-btn${activeTool === tool.id ? ' active' : ''}`}
-                onClick={() => engine.dispatch({ type: 'select_tool', tool: tool.id })}
+                onClick={() => selectTool({ tool: tool.id })}
               >
                 <tool.icon size={20} />
               </button>

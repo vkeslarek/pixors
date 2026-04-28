@@ -1,22 +1,31 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCanvas2DViewport } from '@/components/viewport/ViewportCanvas2D';
-import { useActiveTabId, useActiveTab, useTool, useConnected, engine } from '@/engine';
+import { useEvent, useCommand, useConnected } from '@/engine/events';
 import { useUIStore } from '@/ui/uiStore';
 
 export function Viewport() {
-  const tabId = useActiveTabId();
-  const activeTab = useActiveTab();
-  const activeTool = useTool();
+  const [tabId, setTabId] = useState<string | null>(null);
+  const [imageW, setImageW] = useState(0);
+  const [imageH, setImageH] = useState(0);
+  const [activeTool, setActiveTool] = useState('pan');
   const connected = useConnected();
+
+  useEvent('tab_state', (ev) => setTabId(ev.active_tab_id));
+  useEvent('tab_activated', (ev) => setTabId(ev.tab_id));
+  useEvent('image_loaded', (ev) => {
+    if (ev.tab_id === tabId) { setImageW(ev.width); setImageH(ev.height); }
+  });
+  useEvent('tool_state', (ev) => setActiveTool(ev.tool));
+  useEvent('tool_changed', (ev) => setActiveTool(ev.tool));
 
   const { canvasRef, isReady, fit, pan, zoom, getCamera, hasAllTiles } = useCanvas2DViewport(tabId);
 
   const tabIdRef = useRef(tabId);
   tabIdRef.current = tabId;
-  const imageWidthRef = useRef(activeTab?.width);
-  imageWidthRef.current = activeTab?.width;
-  const imageHeightRef = useRef(activeTab?.height);
-  imageHeightRef.current = activeTab?.height;
+  const imageWRef = useRef(imageW);
+  imageWRef.current = imageW;
+  const imageHRef = useRef(imageH);
+  imageHRef.current = imageH;
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef(false);
@@ -48,10 +57,12 @@ export function Viewport() {
     return keys;
   };
 
+  const requestTilesCmd = useCommand('request_tiles');
+
   const requestTiles = (force = false) => {
     const id = tabIdRef.current;
-    const iw = imageWidthRef.current;
-    const ih = imageHeightRef.current;
+    const iw = imageWRef.current;
+    const ih = imageHRef.current;
     const canvas = canvasRef.current;
     if (!id || !canvas || !iw || !ih) return;
 
@@ -67,7 +78,7 @@ export function Viewport() {
 
     const mx = w * TILE_MARGIN;
     const my = h * TILE_MARGIN;
-    engine.dispatch({ type: 'request_tiles', tab_id: id, x: panX - mx, y: panY - my, w: w + 2 * mx, h: h + 2 * my, zoom: z });
+    requestTilesCmd({ tab_id: id, x: panX - mx, y: panY - my, w: w + 2 * mx, h: h + 2 * my, zoom: z });
     pendingRef.current = true;
   };
 
@@ -120,16 +131,14 @@ export function Viewport() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') spaceDown = true;
       if (e.key === 'Home') {
-        const iw = imageWidthRef.current;
-        const ih = imageHeightRef.current;
+        const iw = imageWRef.current;
+        const ih = imageHRef.current;
         if (iw && ih) fit(iw, ih);
         requestDebounced();
         e.preventDefault();
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') spaceDown = false;
-    };
+    const onKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') spaceDown = false; };
 
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMoveHandler);
@@ -154,15 +163,12 @@ export function Viewport() {
     const handleZoomIn = () => { zoom(1.2, 0.5, 0.5); requestDebounced(); };
     const handleZoomOut = () => { zoom(1/1.2, 0.5, 0.5); requestDebounced(); };
     const handleFit = () => {
-      const iw = imageWidthRef.current;
-      const ih = imageHeightRef.current;
+      const iw = imageWRef.current;
+      const ih = imageHRef.current;
       if (iw && ih) fit(iw, ih);
       requestDebounced();
     };
     const handleActualSize = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      // To center exactly, we could figure out current viewport center, but for now just set zoom to 1
       zoom(1.0 / getCamera().zoom, 0.5, 0.5);
       requestDebounced();
     };
@@ -180,49 +186,27 @@ export function Viewport() {
     };
   }, [zoom, fit, getCamera]);
 
-  // Engine event subscriptions — stable, uses refs for latest values
-  useEffect(() => {
-    const unsubs = [
-      engine.subscribe('image_loaded', (msg) => {
-        if (msg.tab_id !== tabIdRef.current) return;
-        console.log(`[ImageLoaded] tab=${msg.tab_id} ${msg.width}x${msg.height} layers=${msg.layer_count}`);
-        fit(msg.width, msg.height);
-        requestTiles();
-      }),
-      engine.subscribe('layer_changed', (msg) => {
-        if (msg.tab_id !== tabIdRef.current) return;
-        console.log(`[LayerChanged] tab=${msg.tab_id} layer=${msg.layer_id} field=${msg.field} sig=${msg.composition_sig}`);
-        requestTiles();
-      }),
-      engine.subscribe('doc_size_changed', (msg) => {
-        if (msg.tab_id !== tabIdRef.current) return;
-        console.log(`[DocSizeChanged] tab=${msg.tab_id} ${msg.width}x${msg.height}`);
-        requestTiles();
-      }),
-      engine.subscribe('mip_level_ready', (msg) => {
-        if (msg.tab_id === tabIdRef.current && !pendingRef.current) {
-          pendingRef.current = true;
-          requestTiles();
-        }
-      }),
-      engine.subscribe('tiles_complete', () => {
-        pendingRef.current = false;
-      }),
-      engine.subscribe('tiles_dirty', (msg) => {
-        if (msg.tab_id === tabIdRef.current) { pendingRef.current = false; requestTiles(true); }
-      }),
-    ];
-    return () => unsubs.forEach(fn => fn());
-  }, []);
+  // Engine event subscriptions
+  useEvent('image_loaded', (msg) => {
+    fit(msg.width, msg.height);
+    requestTiles();
+  });
+  useEvent('layer_changed', () => requestTiles());
+  useEvent('doc_size_changed', () => requestTiles());
+  useEvent('mip_level_ready', () => {
+    if (!pendingRef.current) { pendingRef.current = true; requestTiles(); }
+  });
+  useEvent('tiles_complete', () => { pendingRef.current = false; });
+  useEvent('tiles_dirty', () => { pendingRef.current = false; requestTiles(true); });
 
   // Initial tile request when image props arrive
   useEffect(() => {
-    const iw = imageWidthRef.current;
-    const ih = imageHeightRef.current;
+    const iw = imageWRef.current;
+    const ih = imageHRef.current;
     if (!isReady || !iw || !ih) return;
     fit(iw, ih);
     requestTiles();
-  }, [isReady, activeTab?.width, activeTab?.height]);
+  }, [isReady, imageW, imageH]);
 
   return (
     <div className={`canvas-area tool-${activeTool}`} style={{ position: 'relative', width: '100%', height: '100%' }}>

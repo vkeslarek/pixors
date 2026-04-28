@@ -1,6 +1,5 @@
 import { engineClient, type EngineClient } from '@/engine/client'
 import type { EngineCommand, EngineEvent } from '@/engine/types'
-import { useEngineStore, applyEvent } from '@/engine/store'
 
 type EventType = EngineEvent['type']
 type EventOf<T extends EventType> = Extract<EngineEvent, { type: T }>
@@ -14,27 +13,21 @@ class Engine {
     this.onBinary = this.client.onBinary.bind(this.client)
   }
 
+  get connected() { return this.client.connected }
+
+  onConnection = (cb: (connected: boolean) => void) => this.client.onConnection(cb)
+
   boot() {
     if (this.booted) return
     this.booted = true
 
-    this.client.onAnyEvent(this.onAny)
-
-    this.client.onConnection(connected => {
-      useEngineStore.setState({ connected })
+    this.client.onAnyEvent(ev => {
+      if (ev.type === 'heartbeat') {
+        this.client.sendCommand({ type: 'heartbeat' })
+      }
     })
 
-    useEngineStore.setState({ sessionId: this.client.sessionId })
-
     this.client.connect()
-  }
-
-  private onAny = (ev: EngineEvent) => {
-    if (ev.type === 'heartbeat') {
-      this.client.sendCommand({ type: 'heartbeat' })
-      return
-    }
-    useEngineStore.setState(prev => applyEvent(prev, ev))
   }
 
   dispatch = (cmd: EngineCommand) => this.client.sendCommand(cmd)
@@ -88,7 +81,6 @@ class Engine {
     return p
   }
 
-  getState = () => useEngineStore.getState()
   onBinary: (cb: (type: number, payload: Uint8Array, len: number) => void) => () => void
 
   async createTabAndOpen(path: string) {

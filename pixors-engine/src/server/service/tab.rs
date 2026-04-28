@@ -77,6 +77,7 @@ pub enum TabCommand {
     ActivateTab {
         tab_id: Uuid,
     },
+    GetTabState,
     MarkTilesDirty {
         tab_id: Uuid,
         regions: Vec<Rect>,
@@ -97,6 +98,10 @@ pub enum TabEvent {
     TabActivated {
         tab_id: Uuid,
     },
+    TabState {
+        tabs: Vec<TabInfo>,
+        active_tab_id: Option<Uuid>,
+    },
     ImageClosed {
         tab_id: Uuid,
     },
@@ -104,6 +109,17 @@ pub enum TabEvent {
         tab_id: Uuid,
         regions: Vec<Rect>,
     },
+}
+
+/// Serializable tab info returned by GetTabState.
+#[derive(Debug, Clone, Serialize)]
+pub struct TabInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub created_at: u64,
+    pub has_image: bool,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Per-layer tile storage and state bundle.
@@ -654,6 +670,7 @@ impl TabService {
             TabCommand::ActivateTab { tab_id } => {
                 self.handle_activate_tab(tab_id, state, ctx).await
             }
+            TabCommand::GetTabState => self.handle_get_tab_state(state, ctx).await,
             TabCommand::MarkTilesDirty { tab_id, regions } => {
                 self.handle_mark_tiles_dirty(tab_id, &regions, state, ctx)
                     .await
@@ -662,6 +679,30 @@ impl TabService {
     }
 
     // ── Command handlers ──────────────────────────────────────────────
+
+    async fn handle_get_tab_state(
+        &self,
+        state: &Arc<crate::server::app::AppState>,
+        ctx: &crate::server::ws::types::ConnectionContext,
+    ) {
+        use crate::server::event_bus::EngineEvent;
+        use crate::server::ws::types::send_session_event;
+
+        state.session_manager.with_tab_session(&ctx.session_id, |ts| {
+            let tabs: Vec<TabInfo> = ts.tabs.values().map(|t| TabInfo {
+                id: t.id,
+                name: t.name.clone(),
+                created_at: t.created_at,
+                has_image: t.has_image,
+                width: t.doc_width,
+                height: t.doc_height,
+            }).collect();
+            send_session_event(
+                &ctx.frame_tx,
+                &EngineEvent::Tab(TabEvent::TabState { tabs, active_tab_id: ts.active_tab_id }),
+            );
+        }).await;
+    }
 
     async fn handle_create_tab(
         &self,

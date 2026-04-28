@@ -11,19 +11,25 @@ import { ProgressBar } from '@/components/ProgressBar'
 import '@/App.css'
 
 import { registerShortcuts } from '@/keymap'
-import { useActiveTabId } from '@/engine'
+import { useEvent } from '@/engine/events'
 import { useUIStore } from '@/ui/uiStore'
-import { useEngineStore } from '@/engine/store'
 
 function useKeymap() {
-  const activeTabId = useActiveTabId()
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  useEvent('tab_state', (ev) => setActiveTabId(ev.active_tab_id))
+  useEvent('tab_activated', (ev) => setActiveTabId(ev.tab_id))
   useEffect(() => { return registerShortcuts(activeTabId) }, [activeTabId])
 }
 
 function GlobalToaster() {
-  const lastError = useEngineStore(s => s.lastError)
+  const [lastError, setLastError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  useEffect(() => { if (lastError) setOpen(true) }, [lastError])
+
+  useEvent('error', (ev) => {
+    setLastError(ev.message)
+    setOpen(true)
+  })
+
   return (
     <Toast.Provider swipeDirection="right">
       <Toast.Root className="toast-root" open={open} onOpenChange={setOpen}>

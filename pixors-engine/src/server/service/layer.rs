@@ -16,6 +16,9 @@ use crate::server::ws::types::ConnectionContext;
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
 pub enum LayerCommand {
+    GetLayerState {
+        tab_id: Uuid,
+    },
     SetVisible {
         tab_id: Uuid,
         layer_id: Uuid,
@@ -38,6 +41,10 @@ pub enum LayerCommand {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LayerEvent {
+    LayerState {
+        tab_id: Uuid,
+        layers: Vec<LayerInfo>,
+    },
     LayerChanged {
         tab_id: Uuid,
         layer_id: Uuid,
@@ -49,6 +56,20 @@ pub enum LayerEvent {
         width: u32,
         height: u32,
     },
+}
+
+/// Serializable layer info returned by GetLayerState.
+#[derive(Debug, Clone, Serialize)]
+pub struct LayerInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub visible: bool,
+    pub opacity: f32,
+    pub blend_mode: String,
+    pub width: u32,
+    pub height: u32,
+    pub offset_x: i32,
+    pub offset_y: i32,
 }
 
 /// Manages layer-level mutations within a tab.
@@ -73,6 +94,9 @@ impl Service for LayerService {
         ctx: &mut ConnectionContext,
     ) {
         match cmd {
+            LayerCommand::GetLayerState { tab_id } => {
+                self.handle_get_layer_state(tab_id, state, ctx).await;
+            }
             LayerCommand::SetVisible { tab_id, layer_id, visible } => {
                 self.handle_layer_set_visible(tab_id, layer_id, visible, state, ctx).await;
             }
@@ -87,6 +111,37 @@ impl Service for LayerService {
 }
 
 impl LayerService {
+    async fn handle_get_layer_state(
+        &self,
+        tab_id: Uuid,
+        state: &Arc<AppState>,
+        ctx: &ConnectionContext,
+    ) {
+        use crate::server::event_bus::EngineEvent;
+        use crate::server::service::layer::LayerEvent;
+        use crate::server::ws::types::send_session_event;
+
+        state.session_manager.with_tab_session(&ctx.session_id, |ts| {
+            let layers = ts.get(&tab_id).map(|tab| {
+                tab.layers.iter().enumerate().map(|(idx, l)| LayerInfo {
+                    id: l.id,
+                    name: if tab.layers.len() == 1 { "Background".into() } else { format!("Layer {}", idx + 1) },
+                    visible: l.visible,
+                    opacity: l.opacity,
+                    blend_mode: format!("{:?}", l.blend_mode),
+                    width: l.width,
+                    height: l.height,
+                    offset_x: l.offset.0,
+                    offset_y: l.offset.1,
+                }).collect()
+            }).unwrap_or_default();
+            send_session_event(
+                &ctx.frame_tx,
+                &EngineEvent::Layer(LayerEvent::LayerState { tab_id, layers }),
+            );
+        }).await;
+    }
+
     async fn handle_layer_set_visible(
         &self,
         tab_id: Uuid,

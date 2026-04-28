@@ -18,6 +18,9 @@ use crate::image::TileCoord;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewportCommand {
+    GetViewportState {
+        tab_id: Uuid,
+    },
     ViewportUpdate {
         x: f32,
         y: f32,
@@ -39,6 +42,12 @@ pub enum ViewportCommand {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewportEvent {
+    ViewportState {
+        tab_id: Uuid,
+        zoom: f32,
+        pan_x: f32,
+        pan_y: f32,
+    },
     ViewportUpdated {
         tab_id: Uuid,
         zoom: f32,
@@ -138,8 +147,24 @@ impl ViewportService {
         ctx: &mut ConnectionContext,
     ) {
         match cmd {
+            ViewportCommand::GetViewportState { tab_id } => self.handle_get_viewport_state(tab_id, ctx).await,
             ViewportCommand::ViewportUpdate { x, y, w, h, zoom } => self.handle_viewport_update(x, y, w, h, zoom, state, ctx).await,
             ViewportCommand::RequestTiles { tab_id, x, y, w, h, zoom } => self.handle_request_tiles(tab_id, x, y, w, h, zoom, state, ctx).await,
+        }
+    }
+
+    async fn handle_get_viewport_state(&self, tab_id: Uuid, ctx: &ConnectionContext) {
+        use crate::server::ws::types::send_session_event;
+        if let Some(vp) = self.get_viewport(&tab_id).await {
+            send_session_event(
+                &ctx.frame_tx,
+                &EngineEvent::Viewport(ViewportEvent::ViewportState {
+                    tab_id,
+                    zoom: vp.zoom,
+                    pan_x: vp.pan_x,
+                    pan_y: vp.pan_y,
+                }),
+            );
         }
     }
 

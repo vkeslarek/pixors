@@ -1,4 +1,4 @@
-import { engine } from '@/engine';
+import { engine } from '@/engine/engine';
 
 export type ShortcutAction = (activeTabId: string | null) => void;
 

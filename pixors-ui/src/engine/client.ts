@@ -62,8 +62,8 @@ export class EngineClient {
       if (DEBUG) console.log('[Engine] WebSocket OPEN');
       this.connected = true;
       this.notifyConnection(true);
-      this.sendCommand({ type: 'get_state' });
-      this.sendCommand({ type: 'get_session_state' });
+      this.sendCommand({ type: 'get_tab_state' });
+      this.sendCommand({ type: 'get_tool_state' });
     };
 
     this.ws.onclose = (e) => {

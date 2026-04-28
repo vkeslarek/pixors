@@ -1,11 +1,29 @@
+import { useState } from 'react'
 import { Eye, EyeOff, Lock, Trash2, Plus, Copy, Filter } from 'lucide-react'
-import { useActiveTab } from '@/engine'
+import { useEvent } from '@/engine/events'
 
 const BLEND_MODES = ['Normal','Dissolve','Multiply','Screen','Overlay','Soft Light','Hard Light','Color Dodge','Color Burn','Darken','Lighten','Difference','Exclusion','Hue','Saturation','Color','Luminosity']
 
+interface LayerInfo {
+  id: string; name: string; visible: boolean; opacity: number; blend_mode: string; width: number; height: number; offset_x: number; offset_y: number;
+}
+
 export function LayersPanel() {
-  const activeTab = useActiveTab()
-  const layers = (activeTab as any)?.layers || []
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [layers, setLayers] = useState<LayerInfo[]>([])
+
+  useEvent('tab_state', (ev) => setActiveTabId(ev.active_tab_id))
+  useEvent('tab_activated', (ev) => setActiveTabId(ev.tab_id))
+  useEvent('layer_state', (ev) => { if (ev.tab_id === activeTabId) setLayers(ev.layers) })
+  useEvent('layer_changed', (ev) => {
+    if (ev.tab_id !== activeTabId) return
+    setLayers(prev => prev.map(l => {
+      if (l.id !== ev.layer_id) return l
+      if (ev.field === 'visible') return { ...l, visible: (ev as any).visible ?? l.visible }
+      if (ev.field === 'opacity') return { ...l, opacity: (ev as any).opacity ?? l.opacity }
+      return l
+    }))
+  })
 
   if (layers.length === 0) {
     return (
@@ -25,17 +43,17 @@ export function LayersPanel() {
         <span className="pct">%</span>
       </div>
       <div className="panel-body" style={{ flex: 1 }}>
-        {layers.map((layer: any) => (
+        {layers.map((layer) => (
           <div key={layer.id || layer.name}
             className="layer-item"
             style={{ opacity: layer.visible !== false ? 1 : 0.4 }}>
             <div className="layer-thumb">
               <div className="layer-thumb-checker" />
-              <div className="layer-thumb-color" style={{ background: layer.color || '#ccc', opacity: .7 }} />
+              <div className="layer-thumb-color" style={{ background: '#ccc', opacity: .7 }} />
             </div>
             <div className="layer-info">
-              <div className="layer-name">{layer.name || `Layer ${layer.id}`}</div>
-              <div className="layer-type">{layer.type || 'RGBA'} · {layer.blendMode || 'Normal'}</div>
+              <div className="layer-name">{layer.name}</div>
+              <div className="layer-type">RGBA · {layer.blend_mode}</div>
             </div>
             <div className="layer-actions">
               <button className="icon-btn" title="Visibility (read-only)" disabled>
