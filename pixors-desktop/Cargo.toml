@@ -9,9 +9,14 @@ workspace = true
 [dependencies]
 tao = "0.35"
 wry = "0.55.0"
-rust-embed = "8"
-mime_guess = "2"
-pixors-engine = { path = "../pixors-engine" }
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", optional = true }
+pixors-engine = { path = "../pixors-engine", optional = true }
+
+[features]
+default = ["engine", "embedded"]
+engine = ["pixors-engine"]
+embedded = ["rust-embed", "mime_guess"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"

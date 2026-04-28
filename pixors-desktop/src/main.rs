@@ -1,6 +1,6 @@
+#[cfg(feature = "embedded")]
 mod embedded_ui;
 
-use std::borrow::Cow;
 use std::sync::Arc;
 use tao::{
     dpi::{LogicalSize, PhysicalSize, Size},
@@ -9,8 +9,14 @@ use tao::{
     window::{CursorIcon, ResizeDirection, Window, WindowBuilder},
 };
 use wry::{
-    http::{header, Request, Response, StatusCode},
+    http::Request,
     WebViewBuilder,
+};
+
+#[cfg(feature = "embedded")]
+use {
+    std::borrow::Cow,
+    wry::http::{header, Response, StatusCode},
 };
 
 #[derive(Debug)]
@@ -84,6 +90,7 @@ enum UserEvent {
     MouseMove(i32, i32),
 }
 
+#[cfg(feature = "embedded")]
 fn serve_asset(path: &str) -> Response<Cow<'static, [u8]>> {
     let file = embedded_ui::get(path);
     let mime = mime_guess::from_path(path).first_or_octet_stream();
@@ -106,13 +113,17 @@ fn main() -> wry::Result<()> {
         }
     }
 
-    // Start engine WebSocket server in background
+    #[cfg(feature = "engine")]
     pixors_engine::server::start_server_bg(pixors_engine::config::Config::default());
 
+    // URL selection: PIXORS_DEV > embedded > localhost fallback
     let webview_url = if std::env::var("PIXORS_DEV").is_ok() {
         "http://localhost:5173/".to_string()
     } else {
-        "pixors://localhost/index.html".to_string()
+        #[cfg(feature = "embedded")]
+        { "pixors://localhost/index.html".to_string() }
+        #[cfg(not(feature = "embedded"))]
+        { "http://localhost:5173/".to_string() }
     };
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -150,19 +161,33 @@ fn main() -> wry::Result<()> {
         };
     };
 
+    #[cfg(feature = "embedded")]
+    let mut builder = WebViewBuilder::new()
+        .with_url(&webview_url)
+        .with_devtools(true)
+        .with_autoplay(true)
+        .with_initialization_script(include_str!("./bridge.js"))
+        .with_ipc_handler(handler)
+        .with_accept_first_mouse(true);
+
+    #[cfg(not(feature = "embedded"))]
     let builder = WebViewBuilder::new()
         .with_url(&webview_url)
         .with_devtools(true)
         .with_autoplay(true)
-        .with_custom_protocol("pixors".into(), move |_id, req: Request<Vec<u8>>| {
+        .with_initialization_script(include_str!("./bridge.js"))
+        .with_ipc_handler(handler)
+        .with_accept_first_mouse(true);
+
+    #[cfg(feature = "embedded")]
+    {
+        builder = builder.with_custom_protocol("pixors".into(), move |_id, req: Request<Vec<u8>>| {
             let path = req.uri().path();
             let path = path.strip_prefix('/').unwrap_or(path);
             let path = if path.is_empty() { "index.html" } else { path };
             serve_asset(path)
-        })
-        .with_initialization_script(include_str!("./bridge.js"))
-        .with_ipc_handler(handler)
-        .with_accept_first_mouse(true);
+        });
+    }
 
     #[cfg(target_os = "linux")]
     let _webview = {

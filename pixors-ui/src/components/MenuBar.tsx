@@ -21,9 +21,8 @@ const MENU_ITEMS = [
     label: 'File',
     items: [
       SHORTCUTS.openFile,
-      SHORTCUTS.closeTab,
       { type: 'separator' },
-      { label: 'Close Window', shortcut: 'Alt+F4', action: () => windowAction('close'), requiresTab: false },
+      { label: 'Exit', shortcut: 'Alt+F4', action: () => windowAction('close'), requiresTab: false },
     ],
   },
   {
