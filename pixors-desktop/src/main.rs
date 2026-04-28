@@ -116,15 +116,10 @@ fn main() -> wry::Result<()> {
     #[cfg(feature = "engine")]
     pixors_engine::server::start_server_bg(pixors_engine::config::Config::default());
 
-    // URL selection: PIXORS_DEV > embedded > localhost fallback
-    let webview_url = if std::env::var("PIXORS_DEV").is_ok() {
-        "http://localhost:5173/".to_string()
-    } else {
-        #[cfg(feature = "embedded")]
-        { "pixors://localhost/index.html".to_string() }
-        #[cfg(not(feature = "embedded"))]
-        { "http://localhost:5173/".to_string() }
-    };
+    #[cfg(feature = "embedded")]
+    let webview_url = "pixors://localhost/index.html";
+    #[cfg(not(feature = "embedded"))]
+    let webview_url = "http://localhost:5173/";
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let window = Arc::new(
@@ -163,7 +158,7 @@ fn main() -> wry::Result<()> {
 
     #[cfg(feature = "embedded")]
     let mut builder = WebViewBuilder::new()
-        .with_url(&webview_url)
+        .with_url(webview_url)
         .with_devtools(true)
         .with_autoplay(true)
         .with_initialization_script(include_str!("./bridge.js"))
@@ -172,7 +167,7 @@ fn main() -> wry::Result<()> {
 
     #[cfg(not(feature = "embedded"))]
     let builder = WebViewBuilder::new()
-        .with_url(&webview_url)
+        .with_url(webview_url)
         .with_devtools(true)
         .with_autoplay(true)
         .with_initialization_script(include_str!("./bridge.js"))
