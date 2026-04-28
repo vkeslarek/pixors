@@ -48,3 +48,19 @@ Background MIP 1 ready, notifying client  (only 1 event)
 **Root cause:** The `rfd` (Rust File Dialog) crate requires the dialog to be opened from the **main thread** on macOS (Cocoa requirement). When `OpenFileDialog` is dispatched through the tokio worker thread (via `TabService::handle_command`), it runs on a non-main thread and `rfd` refuses to open.
 
 **Proposed fix:** Use `tao::event_loop::EventLoopProxy` to delegate the dialog spawn to the main event loop thread, or use `dispatch_queue` / `Grand Central Dispatch` on macOS to run the dialog on the main queue.
+
+## ParPipe: StreamDone sent before workers flush (race on MIP generation)
+
+**Severity:** High  
+**Affects:** Images loaded via pipeline with `ParPipe` enabled (`ColorConv#1` or `ColorConv#2`)  
+**Symptom:** `generate_from_mip0` fails with `"Tile (X,Y) missing during downsample"`. The MIP generation (called after the stream finishes) reads tiles from disk written by `WorkingSink`, but some tiles never arrive because the downstream consumer (tee → WorkingSink) receives `StreamDone` before all parallel workers flush their last tiles.
+
+**Root cause:** `ParPipe` has a dispatcher thread that sends **non-tile frames** (including `StreamDone`) directly to the shared output `tx`, bypassing workers. If workers are still processing tiles when `StreamDone` arrives, the downstream consumer breaks out of its recv loop (terminal frame), drops the receiver, and the workers' `tx.send(...)` fails silently. Those tiles are lost.
+
+**Why it's 1.73× faster despite this:** The source emits tiles at ~58 tiles/s (vs ~33 tiles/s single-threaded) because ColorConvert processing is parallelized. The MIP disk generation is the only victim — the live viewport display works fine because the `ViewportSink` branch also breaks early but the Viewport already has the tiles that made it through.
+
+**Proposed fix (Phase 2 — JOB architecture):**
+- Dispatcher should NOT forward `StreamDone` until all workers are idle AND their output queues are drained.
+- Workers should signal completion (e.g., via a `Barrier` or a done-count atomic + condition variable).
+- The JOB system (future) will naturally handle this by tracking in-flight tile counts.
+- **Short-term workaround**: fall back to single-threaded `ColorConvertPipe` for the working branch (disk writes), keep `ParPipe` only for the viewport branch (display).

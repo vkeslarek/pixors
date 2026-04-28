@@ -428,7 +428,6 @@ impl TabData {
             let vp_rx = rx_vec.pop().unwrap();
 
             // Working branch: convert sRGB u8 → f16 ACEScg premul, then write to disk
-            // Data is already RGBA u8 from the first ColorConvertPipe
             let wk_rx = ColorConvertPipe::new(
                 ColorSpace::SRGB, ColorSpace::ACES_CG, crate::pixel::AlphaPolicy::PremultiplyOnPack, true,
                 crate::image::buffer::BufferDesc::rgba8_interleaved(1, 1, ColorSpace::SRGB, crate::image::AlphaMode::Straight),
