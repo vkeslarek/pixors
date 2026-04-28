@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
+use crate::server::service::layer::{LayerCommand, LayerEvent};
+use crate::server::service::loader::{LoaderCommand, LoaderEvent};
 use crate::server::service::session::{SessionCommand, SessionEvent};
 use crate::server::service::system::SystemCommand;
 use crate::server::service::system::SystemEvent;
@@ -26,6 +28,8 @@ use crate::server::service::viewport::{ViewportCommand, ViewportEvent};
 pub enum EngineEvent {
     Session(SessionEvent),
     Tab(TabEvent),
+    Layer(LayerEvent),
+    Loader(LoaderEvent),
     Viewport(ViewportEvent),
     Tool(ToolEvent),
     System(SystemEvent),
@@ -41,6 +45,8 @@ pub enum EngineEvent {
 pub enum EngineCommand {
     Session(SessionCommand),
     Tab(TabCommand),
+    Layer(LayerCommand),
+    Loader(LoaderCommand),
     Viewport(ViewportCommand),
     Tool(ToolCommand),
     System(SystemCommand),

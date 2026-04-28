@@ -50,6 +50,9 @@ export type EngineCommand =
   | { type: 'activate_tab'; tab_id: string }
   | { type: 'open_file'; tab_id: string; path: string }
   | { type: 'open_file_dialog'; tab_id?: string }
+  | { type: 'set_layer_visible'; tab_id: string; layer_id: string; visible: boolean }
+  | { type: 'set_layer_opacity'; tab_id: string; layer_id: string; opacity: number }
+  | { type: 'set_layer_offset'; tab_id: string; layer_id: string; x: number; y: number }
   | { type: 'viewport_update'; x: number; y: number; w: number; h: number; zoom: number }
   | { type: 'request_tiles'; tab_id: string; x: number; y: number; w: number; h: number; zoom: number }
   | { type: 'select_tool'; tool: string }

@@ -1,5 +1,7 @@
 pub mod session;
 pub mod tab;
+pub mod layer;
+pub mod loader;
 pub mod tool;
 pub mod viewport;
 

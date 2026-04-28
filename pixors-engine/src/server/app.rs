@@ -2,6 +2,8 @@
 
 use crate::server::event_bus::{EngineCommand, EventBus};
 use crate::server::service::Service;
+use crate::server::service::layer::LayerService;
+use crate::server::service::loader::LoaderService;
 use crate::server::service::session::SessionService;
 use crate::server::service::system::SystemService;
 use crate::server::service::tab::TabService;
@@ -20,6 +22,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub tab_service: Arc<TabService>,
+    pub layer_service: Arc<LayerService>,
+    pub loader_service: Arc<LoaderService>,
     pub tool_service: Arc<ToolService>,
     pub viewport_service: Arc<ViewportService>,
     pub system_service: Arc<SystemService>,
@@ -33,6 +37,8 @@ impl AppState {
         Self {
             event_bus: EventBus::new(),
             tab_service: Arc::new(TabService::new(256)),
+            layer_service: Arc::new(LayerService::new()),
+            loader_service: Arc::new(LoaderService::new()),
             tool_service: Arc::new(ToolService::new()),
             viewport_service: Arc::new(ViewportService::new()),
             system_service: Arc::new(SystemService::new()),
@@ -51,6 +57,12 @@ impl AppState {
             }
             EngineCommand::Tab(c) => {
                 self.tab_service.handle_command(c, &state, ctx).await;
+            }
+            EngineCommand::Layer(c) => {
+                self.layer_service.handle_command(c, &state, ctx).await;
+            }
+            EngineCommand::Loader(c) => {
+                self.loader_service.handle_command(c, &state, ctx).await;
             }
             EngineCommand::Viewport(c) => {
                 self.viewport_service.handle_command(c, &state, ctx).await;

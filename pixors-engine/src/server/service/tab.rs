@@ -5,7 +5,7 @@ use crate::composite::{self, CompositeRequest, LayerView};
 use crate::convert::ColorConversion;
 use crate::error::Error;
 use crate::image::{BlendMode, MipPyramid, TileCoord, TileGrid};
-use crate::pixel::{PixelFormat, Rgba};
+use crate::pixel::Rgba;
 use crate::storage::writer::WorkingWriter;
 use async_trait::async_trait;
 use half::f16;
@@ -77,33 +77,9 @@ pub enum TabCommand {
     ActivateTab {
         tab_id: Uuid,
     },
-    OpenFile {
-        tab_id: Uuid,
-        path: String,
-    },
-    OpenFileDialog {
-        #[serde(default)]
-        tab_id: Option<Uuid>,
-    },
     MarkTilesDirty {
         tab_id: Uuid,
         regions: Vec<Rect>,
-    },
-    LayerSetVisible {
-        tab_id: Uuid,
-        layer_id: Uuid,
-        visible: bool,
-    },
-    LayerSetOpacity {
-        tab_id: Uuid,
-        layer_id: Uuid,
-        opacity: f32,
-    },
-    LayerSetOffset {
-        tab_id: Uuid,
-        layer_id: Uuid,
-        x: i32,
-        y: i32,
     },
 }
 
@@ -121,34 +97,12 @@ pub enum TabEvent {
     TabActivated {
         tab_id: Uuid,
     },
-    ImageLoaded {
-        tab_id: Uuid,
-        width: u32,
-        height: u32,
-        format: PixelFormat,
-        layer_count: usize,
-    },
     ImageClosed {
         tab_id: Uuid,
-    },
-    ImageLoadProgress {
-        tab_id: Uuid,
-        percent: u8,
     },
     TilesDirty {
         tab_id: Uuid,
         regions: Vec<Rect>,
-    },
-    LayerChanged {
-        tab_id: Uuid,
-        layer_id: Uuid,
-        field: String,
-        composition_sig: u64,
-    },
-    DocSizeChanged {
-        tab_id: Uuid,
-        width: u32,
-        height: u32,
     },
 }
 
@@ -441,7 +395,7 @@ impl TabData {
             let frame_tx_progress = frame_tx.clone();
             let tab_id_progress = tab_id;
             let pr_sink = ProgressSink::new(move |percent| {
-                let event = crate::server::event_bus::EngineEvent::Tab(crate::server::service::tab::TabEvent::ImageLoadProgress {
+                let event = crate::server::event_bus::EngineEvent::Loader(crate::server::service::loader::LoaderEvent::ImageLoadProgress {
                     tab_id: tab_id_progress,
                     percent,
                 });
@@ -700,39 +654,8 @@ impl TabService {
             TabCommand::ActivateTab { tab_id } => {
                 self.handle_activate_tab(tab_id, state, ctx).await
             }
-            TabCommand::OpenFile { tab_id, path } => {
-                self.handle_open_file(tab_id, &path, state, ctx).await
-            }
-            TabCommand::OpenFileDialog { tab_id } => {
-                self.handle_open_file_dialog(tab_id, state, ctx).await
-            }
             TabCommand::MarkTilesDirty { tab_id, regions } => {
                 self.handle_mark_tiles_dirty(tab_id, &regions, state, ctx)
-                    .await
-            }
-            TabCommand::LayerSetVisible {
-                tab_id,
-                layer_id,
-                visible,
-            } => {
-                self.handle_layer_set_visible(tab_id, layer_id, visible, state, ctx)
-                    .await
-            }
-            TabCommand::LayerSetOpacity {
-                tab_id,
-                layer_id,
-                opacity,
-            } => {
-                self.handle_layer_set_opacity(tab_id, layer_id, opacity, state, ctx)
-                    .await
-            }
-            TabCommand::LayerSetOffset {
-                tab_id,
-                layer_id,
-                x,
-                y,
-            } => {
-                self.handle_layer_set_offset(tab_id, layer_id, x, y, state, ctx)
                     .await
             }
         }
@@ -821,315 +744,6 @@ impl TabService {
             )
             .await;
         });
-    }
-
-    async fn handle_open_file(
-        &self,
-        tab_id: Uuid,
-        path: &str,
-        state: &Arc<crate::server::app::AppState>,
-        ctx: &mut crate::server::ws::types::ConnectionContext,
-    ) {
-        use crate::debug_stopwatch;
-        use crate::pixel::PixelFormat;
-        use crate::server::event_bus::EngineEvent;
-        use crate::server::service::system::SystemEvent;
-        use crate::server::ws::types::send_session_event;
-
-        let tab = state
-            .session_manager
-            .with_tab_session_mut(&ctx.session_id, |ts| ts.tabs.remove(&tab_id))
-            .await
-            .flatten();
-        let Some(mut tab) = tab else {
-            tracing::error!("Tab {} not found in session", tab_id);
-            return;
-        };
-
-        let vp_svc = state.viewport_service.clone();
-        let frame_tx_cb = ctx.frame_tx.clone();
-        let tid = tab_id;
-        let rt = tokio::runtime::Handle::current();
-        let cb: Arc<dyn Fn(u32, crate::image::TileCoord, std::sync::Arc<Vec<u8>>) + Send + Sync> = Arc::new(move |mip, coord, data| {
-            let vp_svc = vp_svc.clone();
-            let frame_tx_cb = frame_tx_cb.clone();
-            rt.spawn(async move {
-                let vp_state = match vp_svc.get_viewport(&tid).await {
-                    Some(s) => s,
-                    None => return,
-                };
-                let zoom = vp_state.zoom.max(0.0001);
-                let desired_mip = crate::image::MipPyramid::level_for_zoom(zoom) as u32;
-                if mip != desired_mip { return; }
-                
-                let mip_scale = 0.5_f32.powi(mip as i32);
-                let tx = coord.px as f32 * mip_scale;
-                let ty = coord.py as f32 * mip_scale;
-                let tw = coord.width as f32 * mip_scale;
-                let th = coord.height as f32 * mip_scale;
-                
-                let vx = vp_state.pan_x * mip_scale;
-                let vy = vp_state.pan_y * mip_scale;
-                let vw = vp_state.width as f32 * mip_scale;
-                let vh = vp_state.height as f32 * mip_scale;
-                
-                if tx < vx + vw && tx + tw > vx && ty < vy + vh && ty + th > vy {
-                    let payload = crate::server::service::viewport::encode_tile_payload(tid, &coord, mip, &data);
-                    let _ = frame_tx_cb.send(crate::server::ws::types::ClientFrame::new(crate::server::ws::types::MSG_TILE, payload));
-                }
-            });
-        });
-
-        {
-            let _sw = debug_stopwatch!("OpenFile:open_image");
-            match tab.open_image(path, tab_id, &ctx.frame_tx, Some(cb)).await {
-                Ok(()) => tracing::debug!("open_image: done tab={}", tab_id),
-                Err(e) => {
-                    tracing::error!("Failed to load image: {}", e);
-                    state
-                        .session_manager
-                        .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
-                        .await;
-                    send_session_event(
-                        &ctx.frame_tx,
-                        &EngineEvent::System(SystemEvent::Error {
-                            message: format!("Failed to load image: {}", e),
-                        }),
-                    );
-                    return;
-                }
-            }
-        }
-
-        tracing::debug!("open_image: done tab={}", tab_id);
-        let (width, height) = tab.image_info().unwrap_or((0, 0));
-        let layer_count = tab.layers.len();
-        state
-            .session_manager
-            .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
-            .await;
-
-        send_session_event(
-            &ctx.frame_tx,
-            &EngineEvent::Tab(TabEvent::ImageLoaded {
-                tab_id,
-                width,
-                height,
-                format: PixelFormat::Rgba8,
-                layer_count,
-            }),
-        );
-    }
-
-    async fn handle_open_file_dialog(
-        &self,
-        tab_id: Option<Uuid>,
-        state: &Arc<crate::server::app::AppState>,
-        ctx: &mut crate::server::ws::types::ConnectionContext,
-    ) {
-        use crate::server::event_bus::EngineEvent;
-        use crate::server::ws::types::send_session_event;
-
-        let path_opt = tokio::task::spawn_blocking(|| {
-            rfd::FileDialog::new()
-                .add_filter(
-                    "Image",
-                    &["png", "tiff", "tif", "jpg", "jpeg", "exr", "hdr"],
-                )
-                .pick_file()
-        })
-        .await
-        .unwrap_or(None);
-
-        if let Some(path_buf) = path_opt
-            && let Some(path_str) = path_buf.to_str()
-        {
-            let target_tab_id = match tab_id {
-                Some(id) => id,
-                None => {
-                    let name = path_buf
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned();
-                    let tab = self.create_tab_data(name.clone());
-                    let new_id = tab.id;
-                    state
-                        .session_manager
-                        .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
-                        .await;
-                    send_session_event(
-                        &ctx.frame_tx,
-                        &EngineEvent::Tab(TabEvent::TabCreated {
-                            tab_id: new_id,
-                            name,
-                        }),
-                    );
-                    state
-                        .session_manager
-                        .with_tab_session_mut(&ctx.session_id, |ts| ts.set_active(Some(new_id)))
-                        .await;
-                    send_session_event(
-                        &ctx.frame_tx,
-                        &EngineEvent::Tab(TabEvent::TabActivated { tab_id: new_id }),
-                    );
-                    new_id
-                }
-            };
-            let cmd = TabCommand::OpenFile {
-                tab_id: target_tab_id,
-                path: path_str.to_string(),
-            };
-            Box::pin(self.handle_command(cmd, state, ctx)).await;
-        }
-    }
-
-    // ── Layer mutation handlers ─────────────────────────────────────
-
-    async fn handle_layer_set_visible(
-        &self,
-        tab_id: Uuid,
-        layer_id: Uuid,
-        visible: bool,
-        state: &Arc<crate::server::app::AppState>,
-        ctx: &mut crate::server::ws::types::ConnectionContext,
-    ) {
-        use crate::server::event_bus::EngineEvent;
-        use crate::server::ws::types::send_session_event;
-
-        let result = state
-            .session_manager
-            .with_tab_session_mut(&ctx.session_id, |ts| {
-                let tab = ts.tabs.get_mut(&tab_id)?;
-                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
-                let (prev_w, prev_h) = (tab.doc_width, tab.doc_height);
-                layer.visible = visible;
-                tab.recompute_doc_bounds();
-                let changed = tab.doc_width != prev_w || tab.doc_height != prev_h;
-                Some((
-                    tab.composition_sig(),
-                    prev_w,
-                    prev_h,
-                    tab.doc_width,
-                    tab.doc_height,
-                    changed,
-                ))
-            })
-            .await
-            .flatten();
-
-        if let Some((sig, _pw, _ph, w, h, changed)) = result {
-            send_session_event(
-                &ctx.frame_tx,
-                &EngineEvent::Tab(TabEvent::LayerChanged {
-                    tab_id,
-                    layer_id,
-                    field: "visible".into(),
-                    composition_sig: sig,
-                }),
-            );
-            if changed {
-                send_session_event(
-                    &ctx.frame_tx,
-                    &EngineEvent::Tab(TabEvent::DocSizeChanged {
-                        tab_id,
-                        width: w,
-                        height: h,
-                    }),
-                );
-            }
-        }
-    }
-
-    async fn handle_layer_set_opacity(
-        &self,
-        tab_id: Uuid,
-        layer_id: Uuid,
-        opacity: f32,
-        state: &Arc<crate::server::app::AppState>,
-        ctx: &mut crate::server::ws::types::ConnectionContext,
-    ) {
-        use crate::server::event_bus::EngineEvent;
-        use crate::server::ws::types::send_session_event;
-
-        let sig = state
-            .session_manager
-            .with_tab_session_mut(&ctx.session_id, |ts| {
-                let tab = ts.tabs.get_mut(&tab_id)?;
-                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
-                layer.opacity = opacity.clamp(0.0, 1.0);
-                Some(tab.composition_sig())
-            })
-            .await
-            .flatten();
-
-        if let Some(s) = sig {
-            send_session_event(
-                &ctx.frame_tx,
-                &EngineEvent::Tab(TabEvent::LayerChanged {
-                    tab_id,
-                    layer_id,
-                    field: "opacity".into(),
-                    composition_sig: s,
-                }),
-            );
-        }
-    }
-
-    async fn handle_layer_set_offset(
-        &self,
-        tab_id: Uuid,
-        layer_id: Uuid,
-        x: i32,
-        y: i32,
-        state: &Arc<crate::server::app::AppState>,
-        ctx: &mut crate::server::ws::types::ConnectionContext,
-    ) {
-        use crate::server::event_bus::EngineEvent;
-        use crate::server::ws::types::send_session_event;
-
-        let result = state
-            .session_manager
-            .with_tab_session_mut(&ctx.session_id, |ts| {
-                let tab = ts.tabs.get_mut(&tab_id)?;
-                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
-                let (prev_w, prev_h) = (tab.doc_width, tab.doc_height);
-                layer.offset = (x, y);
-                tab.recompute_doc_bounds();
-                let changed = tab.doc_width != prev_w || tab.doc_height != prev_h;
-                Some((
-                    tab.composition_sig(),
-                    prev_w,
-                    prev_h,
-                    tab.doc_width,
-                    tab.doc_height,
-                    changed,
-                ))
-            })
-            .await
-            .flatten();
-
-        if let Some((sig, _pw, _ph, w, h, changed)) = result {
-            send_session_event(
-                &ctx.frame_tx,
-                &EngineEvent::Tab(TabEvent::LayerChanged {
-                    tab_id,
-                    layer_id,
-                    field: "offset".into(),
-                    composition_sig: sig,
-                }),
-            );
-            if changed {
-                send_session_event(
-                    &ctx.frame_tx,
-                    &EngineEvent::Tab(TabEvent::DocSizeChanged {
-                        tab_id,
-                        width: w,
-                        height: h,
-                    }),
-                );
-            }
-        }
     }
 
     async fn handle_mark_tiles_dirty(
