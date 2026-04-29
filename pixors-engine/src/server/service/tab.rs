@@ -5,6 +5,8 @@ use crate::composite::{self, CompositeRequest, LayerView};
 use crate::convert::ColorConversion;
 use crate::error::Error;
 use crate::image::{BlendMode, MipPyramid, TileCoord, TileGrid};
+use crate::pipeline::operation::color::ColorConvertOperation;
+use crate::pipeline::sink::viewport::{Viewport, ViewportSink};
 use crate::pixel::Rgba;
 use crate::storage::writer::WorkingWriter;
 use async_trait::async_trait;
@@ -14,6 +16,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
+use crate::pipeline::sink::working::WorkingSink;
+use crate::stream::ImageFileSource;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rect {
@@ -71,17 +75,10 @@ impl TabSessionData {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TabCommand {
     CreateTab,
-    CloseTab {
-        tab_id: Uuid,
-    },
-    ActivateTab {
-        tab_id: Uuid,
-    },
+    CloseTab { tab_id: Uuid },
+    ActivateTab { tab_id: Uuid },
     GetTabState,
-    MarkTilesDirty {
-        tab_id: Uuid,
-        regions: Vec<Rect>,
-    },
+    MarkTilesDirty { tab_id: Uuid, regions: Vec<Rect> },
 }
 
 /// Events emitted by the TabService.
@@ -138,7 +135,7 @@ pub struct LayerSlot {
     pub opacity: f32,
     pub visible: bool,
     pub blend_mode: BlendMode,
-    pub viewport: Arc<crate::stream::Viewport>,
+    pub viewport: Arc<Viewport>,
     pub disk_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -284,7 +281,19 @@ impl TabData {
     /// Check if display MIPs (RAM) have any tile at the given level.
     pub fn is_display_mip_ready(&self, mip_level: usize) -> bool {
         self.layers.iter().any(|l| {
-            l.viewport.get(mip_level as u32, crate::image::TileCoord::new(mip_level as u32, 0, 0, self.tile_size, self.doc_width, self.doc_height)).is_some()
+            l.viewport
+                .get(
+                    mip_level as u32,
+                    crate::image::TileCoord::new(
+                        mip_level as u32,
+                        0,
+                        0,
+                        self.tile_size,
+                        self.doc_width,
+                        self.doc_height,
+                    ),
+                )
+                .is_some()
         })
     }
 
@@ -346,12 +355,14 @@ impl TabData {
         let base = self.base_dir();
         self.has_image = true;
 
-        use crate::stream::{TileSource, ImageFileSource, ColorConvertPipe, MipPipe, Pipe, TileSink, Viewport, ViewportSink, WorkingSink};
         use crate::stream::tee;
+        use crate::stream::{ MipPipe, Pipe, TileSink, TileSource};
 
         // Read metadata first to know source color space + dimensions
         let reader = crate::io::all_readers()
-            .iter().find(|r| r.can_handle(path)).copied()
+            .iter()
+            .find(|r| r.can_handle(path))
+            .copied()
             .ok_or_else(|| Error::unsupported_sample_type("No reader for file"))?;
         let info = reader.read_document_info(path)?;
 
@@ -366,9 +377,7 @@ impl TabData {
 
             // Create disk storage (shared Arc for WorkingSink + later MIP gen reads)
             let store_path = base.join(format!("layer_{}", self.layers.len()));
-            let store = Arc::new(WorkingWriter::new(
-                store_path, self.tile_size, w, h,
-            )?);
+            let store = Arc::new(WorkingWriter::new(store_path, self.tile_size, w, h)?);
 
             // Create viewport (RAM tile cache, shared with server)
             let mut viewport = Viewport::new();
@@ -382,12 +391,23 @@ impl TabData {
             };
 
             // Color convert to sRGB u8 (display), then MIP
-            let mut rx = ColorConvertPipe::new(
-                src_cs, ColorSpace::SRGB, crate::pixel::AlphaPolicy::Straight, false, meta.desc.clone(),
-            )?.pipe(rx);
+            let mut rx = ColorConvertOperation::new(
+                src_cs,
+                ColorSpace::SRGB,
+                crate::pixel::AlphaPolicy::Straight,
+                false,
+                meta.desc.clone(),
+            )?
+            .pipe(rx);
             let num_levels = {
-                let mut lw = w; let mut lh = h; let mut n = 0u32;
-                while lw > 1 || lh > 1 { lw = (lw/2).max(1); lh = (lh/2).max(1); n += 1; }
+                let mut lw = w;
+                let mut lh = h;
+                let mut n = 0u32;
+                while lw > 1 || lh > 1 {
+                    lw = (lw / 2).max(1);
+                    lh = (lh / 2).max(1);
+                    n += 1;
+                }
                 n.min(6)
             };
             rx = MipPipe::new(self.tile_size, num_levels).pipe(rx);
@@ -398,23 +418,40 @@ impl TabData {
             let vp_rx = rx_vec.pop().unwrap();
 
             // Working branch: convert sRGB u8 → f16 ACEScg premul, then write to disk
-            let wk_rx = ColorConvertPipe::new(
-                ColorSpace::SRGB, ColorSpace::ACES_CG, crate::pixel::AlphaPolicy::PremultiplyOnPack, true,
-                crate::image::buffer::BufferDesc::rgba8_interleaved(1, 1, ColorSpace::SRGB, crate::image::AlphaMode::Straight),
-            )?.pipe(wk_rx);
+            let wk_rx = ColorConvertOperation::new(
+                ColorSpace::SRGB,
+                ColorSpace::ACES_CG,
+                crate::pixel::AlphaPolicy::PremultiplyOnPack,
+                true,
+                crate::image::buffer::BufferDesc::rgba8_interleaved(
+                    1,
+                    1,
+                    ColorSpace::SRGB,
+                    crate::image::AlphaMode::Straight,
+                ),
+            )?
+            .pipe(wk_rx);
 
-            let vp_sink = ViewportSink::new(Arc::clone(&viewport));
-            let wk_sink = WorkingSink::new(Arc::clone(&store));
+            let vp_sink = ViewportSink::new(
+                Arc::clone(&viewport),
+                ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
+            );
+            let wk_sink = WorkingSink::new(
+                Arc::clone(&store),
+                ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap(),
+            );
 
             // Progress branch: emit ImageLoadProgress events
             use crate::stream::ProgressSink;
             let frame_tx_progress = frame_tx.clone();
             let tab_id_progress = tab_id;
             let pr_sink = ProgressSink::new(move |percent| {
-                let event = crate::server::event_bus::EngineEvent::Loader(crate::server::service::loader::LoaderEvent::ImageLoadProgress {
-                    tab_id: tab_id_progress,
-                    percent,
-                });
+                let event = crate::server::event_bus::EngineEvent::Loader(
+                    crate::server::service::loader::LoaderEvent::ImageLoadProgress {
+                        tab_id: tab_id_progress,
+                        percent,
+                    },
+                );
                 use crate::server::ws::types::send_session_event;
                 send_session_event(&frame_tx_progress, &event);
             });
@@ -439,6 +476,143 @@ impl TabData {
                 blend_mode: crate::image::BlendMode::Normal,
                 viewport,
                 disk_handle: Some(wk_handle),
+            });
+        }
+
+        self.recompute_doc_bounds();
+        Ok(())
+    }
+
+    /// Open an image using the new pipeline (Job/Source/Sink).
+    pub async fn open_image_v2(
+        &mut self,
+        path: impl AsRef<Path>,
+        tab_id: Uuid,
+        frame_tx: &tokio::sync::mpsc::UnboundedSender<crate::server::ws::types::ClientFrame>,
+        vp_cb: Option<Arc<dyn Fn(u32, crate::image::TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
+    ) -> Result<(), Error> {
+        self.close_image().await;
+        let path = path.as_ref();
+        self.color_conversion = Some(ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB)?);
+        let base = self.base_dir();
+        self.has_image = true;
+
+        let reader = crate::io::all_readers()
+            .iter()
+            .find(|r| r.can_handle(path))
+            .copied()
+            .ok_or_else(|| Error::unsupported_sample_type("No reader for file"))?;
+        let info = reader.read_document_info(path)?;
+
+        for layer_idx in 0..info.layer_count {
+            let meta = reader.read_layer_metadata(path, layer_idx)?;
+            let w = meta.desc.width;
+            let h = meta.desc.height;
+            let src_cs = meta.desc.color_space;
+
+            let mip_base = base.join(format!("layer_{}_mips", self.layers.len()));
+            std::fs::create_dir_all(&mip_base)?;
+            let mip = MipPyramid::new(w, h, self.tile_size, mip_base.clone())?;
+
+            let store_path = base.join(format!("layer_{}", self.layers.len()));
+            let store = Arc::new(WorkingWriter::new(store_path, self.tile_size, w, h)?);
+
+            let mut viewport = Viewport::new();
+            viewport.on_tile_added = vp_cb.clone();
+            let viewport = Arc::new(viewport);
+
+            // ── New pipeline ────────────────────────────────────────────
+
+            use crate::pipeline::job::Job;
+            use crate::pipeline::source::file::FileImageSource;
+            use crate::pipeline::operation::color::ColorConvertOperation;
+            use crate::pipeline::operation::mip::MipOp;
+
+            let max_mip = (w.max(h) as f32).log2().ceil() as u32;
+
+            let mut branches = Job::from_source(FileImageSource::new(path, self.tile_size))
+                .then(ColorConvertOperation::with_conv(
+                    src_cs.converter_to(ColorSpace::ACES_CG)?,
+                    crate::pixel::AlphaPolicy::PremultiplyOnPack,
+                ))
+                .then(MipOp::new(self.tile_size, max_mip, w, h))
+                .split(3);
+
+            let br1 = branches.remove(0);
+            let br2 = branches.remove(0);
+            let br3 = branches.remove(0);
+
+            let wk_job = br1.sink(WorkingSink::new(
+                Arc::clone(&store),
+                ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap(),
+            ));
+            let vp_job = br2.sink(ViewportSink::new(
+                Arc::clone(&viewport),
+                ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
+            ));
+            let debug_png_path = base.join(format!("debug_layer_{}.png", self.layers.len()));
+            let png_job = br3.sink(crate::pipeline::sink::debug_png::DebugPngSink::new(
+                &debug_png_path,
+                ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
+                w,
+                h,
+            ));
+
+            // Run all sinks and join — wait for all tiles to be stored
+            let wk_handle = std::thread::spawn(move || {
+                tracing::debug!("[Pipeline] WorkingSink started");
+                wk_job.join();
+                tracing::debug!("[Pipeline] WorkingSink finished");
+            });
+            let vp_handle = {
+                let vp = Arc::clone(&viewport);
+                std::thread::spawn(move || {
+                    tracing::debug!("[Pipeline] ViewportSink started");
+                    vp_job.join();
+                    tracing::debug!("[Pipeline] ViewportSink finished — {} tiles cached",
+                        vp.tile_count());
+                })
+            };
+            let png_handle = std::thread::spawn(move || {
+                tracing::debug!("[Pipeline] DebugPngSink started → {}", debug_png_path.display());
+                png_job.join();
+                tracing::debug!("[Pipeline] DebugPngSink finished");
+            });
+
+            wk_handle.join().unwrap();
+            vp_handle.join().unwrap();
+            png_handle.join().unwrap();
+
+            // DEBUG — dump all MIP levels from Viewport cache
+            for mip in 0..=12 {
+                let mip_w = (w >> mip).max(1);
+                let mip_h = (h >> mip).max(1);
+                viewport.dump_to_png(mip, mip_w, mip_h, &base.join(format!("vp_dump_layer_{}_mip{}.png", self.layers.len(), mip)));
+                // Individual tile dumps for mips 0..3
+                if mip <= 3 {
+                    viewport.dump_tiles_individual(mip, mip_w, mip_h, &base.join(format!("vp_tiles_mip{}", mip)));
+                }
+            }
+
+            tracing::info!(
+                "[Pipeline] Both sinks finished for layer {} — {} tiles in Viewport",
+                self.layers.len(),
+                viewport.tile_count()
+            );
+
+            self.layers.push(LayerSlot {
+                id: Uuid::new_v4(),
+                tile_store: store,
+                mip_pyramid: mip,
+                mip_base_dir: mip_base,
+                width: w,
+                height: h,
+                offset: meta.offset,
+                opacity: 1.0,
+                visible: true,
+                blend_mode: crate::image::BlendMode::Normal,
+                viewport,
+                disk_handle: None,
             });
         }
 
@@ -506,7 +680,9 @@ impl TabData {
             .color_conversion
             .as_ref()
             .ok_or_else(|| Error::invalid_param("Color conversion not initialized"))?;
-        let rgba8 = crate::image::Tile::new(tile, composed).to_srgb_u8(conv).data;
+        let rgba8 = crate::image::Tile::new(tile, composed)
+            .to_srgb_u8(conv)
+            .data;
         Ok(rgba8)
     }
 }
@@ -688,20 +864,30 @@ impl TabService {
         use crate::server::event_bus::EngineEvent;
         use crate::server::ws::types::send_session_event;
 
-        state.session_manager.with_tab_session(&ctx.session_id, |ts| {
-            let tabs: Vec<TabInfo> = ts.tabs.values().map(|t| TabInfo {
-                id: t.id,
-                name: t.name.clone(),
-                created_at: t.created_at,
-                has_image: t.has_image,
-                width: t.doc_width,
-                height: t.doc_height,
-            }).collect();
-            send_session_event(
-                &ctx.frame_tx,
-                &EngineEvent::Tab(TabEvent::TabState { tabs, active_tab_id: ts.active_tab_id }),
-            );
-        }).await;
+        state
+            .session_manager
+            .with_tab_session(&ctx.session_id, |ts| {
+                let tabs: Vec<TabInfo> = ts
+                    .tabs
+                    .values()
+                    .map(|t| TabInfo {
+                        id: t.id,
+                        name: t.name.clone(),
+                        created_at: t.created_at,
+                        has_image: t.has_image,
+                        width: t.doc_width,
+                        height: t.doc_height,
+                    })
+                    .collect();
+                send_session_event(
+                    &ctx.frame_tx,
+                    &EngineEvent::Tab(TabEvent::TabState {
+                        tabs,
+                        active_tab_id: ts.active_tab_id,
+                    }),
+                );
+            })
+            .await;
     }
 
     async fn handle_create_tab(

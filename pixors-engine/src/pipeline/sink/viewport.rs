@@ -1,0 +1,312 @@
+use crate::convert::ColorConversion;
+use crate::image::{Tile, TileCoord};
+use crate::pixel::{AlphaPolicy, Rgba};
+use crate::pipeline::sink::Sink;
+use crate::stream::{Frame, FrameKind, TileSink};
+use half::f16;
+use parking_lot::RwLock;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::thread::JoinHandle;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Viewport — persistent tile cache in RAM. The server queries this for tiles.
+// ═══════════════════════════════════════════════════════════════════════════
+
+pub struct Viewport {
+    tiles: RwLock<HashMap<(u32, TileCoord), Arc<Vec<u8>>>>,
+    ready: AtomicBool,
+    pub on_tile_added: Option<Arc<dyn Fn(u32, TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
+}
+
+impl Viewport {
+    pub fn new() -> Self {
+        Self { tiles: RwLock::new(HashMap::new()), ready: AtomicBool::new(false), on_tile_added: None }
+    }
+
+    pub fn put(&self, mip: u32, coord: TileCoord, data: Arc<Vec<u8>>) {
+        self.tiles.write().insert((mip, coord), data.clone());
+        if let Some(cb) = &self.on_tile_added { cb(mip, coord, data); }
+    }
+
+    pub fn get(&self, mip: u32, coord: TileCoord) -> Option<Arc<Vec<u8>>> {
+        self.tiles.read().get(&(mip, coord)).cloned()
+    }
+
+    pub fn clear(&self) { self.tiles.write().clear(); }
+    pub fn mark_ready(&self) { self.ready.store(true, Ordering::Release); }
+    pub fn mark_stale(&self) { self.ready.store(false, Ordering::Release); }
+    pub fn is_ready(&self) -> bool { self.ready.load(Ordering::Acquire) }
+    pub fn tile_count(&self) -> usize { self.tiles.read().len() }
+
+    /// DEBUG: dump all cached tiles at a MIP level to a PNG file.
+    pub fn dump_to_png(&self, mip: u32, img_w: u32, img_h: u32, path: &std::path::Path) {
+        let tiles = self.tiles.read();
+        let mip_tiles: Vec<_> = tiles
+            .iter()
+            .filter(|((m, _), _)| *m == mip)
+            .map(|((_, coord), data)| (*coord, data.clone()))
+            .collect();
+
+        if mip_tiles.is_empty() {
+            tracing::warn!("[Viewport::dump] No tiles at mip {mip} to dump");
+            return;
+        }
+
+        let iw = img_w as usize;
+        let ih = img_h as usize;
+        let mut image = vec![0u8; iw * ih * 4];
+
+        for (coord, data) in &mip_tiles {
+            let px = coord.px as usize;
+            let py = coord.py as usize;
+            let tw = coord.width as usize;
+            let th = coord.height as usize;
+            let row_bytes = tw * 4;
+            for row in 0..th {
+                let src_off = row * row_bytes;
+                let dst_off = ((py + row) * iw + px) * 4;
+                if src_off + row_bytes <= data.len() && dst_off + row_bytes <= image.len() {
+                    image[dst_off..dst_off + row_bytes]
+                        .copy_from_slice(&data[src_off..src_off + row_bytes]);
+                }
+            }
+        }
+        drop(tiles);
+
+        match std::fs::File::create(path) {
+            Ok(file) => {
+                let mut enc = png::Encoder::new(file, img_w, img_h);
+                enc.set_color(png::ColorType::Rgba);
+                enc.set_depth(png::BitDepth::Eight);
+                if let Ok(mut w) = enc.write_header() {
+                    let _ = w.write_image_data(&image);
+                }
+            }
+            Err(e) => tracing::error!("[Viewport::dump] Cannot create {}: {e}", path.display()),
+        }
+        tracing::info!(
+            "[Viewport::dump] {} tiles (mip={mip}) → {} ({}x{})",
+            mip_tiles.len(),
+            path.display(),
+            img_w,
+            img_h,
+        );
+    }
+
+    /// DEBUG: dump cached tiles at a MIP level, one PNG per tile.
+    pub fn dump_tiles_individual(&self, mip: u32, img_w: u32, img_h: u32, dir: &std::path::Path) {
+        let tiles = self.tiles.read();
+        let mip_tiles: Vec<_> = tiles
+            .iter()
+            .filter(|((m, _), _)| *m == mip)
+            .map(|((_, coord), data)| (*coord, data.clone()))
+            .collect();
+        drop(tiles);
+
+        if mip_tiles.is_empty() {
+            return;
+        }
+
+        let _ = std::fs::create_dir_all(dir);
+        let tile_size = 256u32;
+
+        for (coord, data) in &mip_tiles {
+            let tw = coord.width as usize;
+            let th = coord.height as usize;
+            let path = dir.join(format!(
+                "tile_mip{}_tx{}_ty{}_px{}_py{}_w{}_h{}.png",
+                mip, coord.tx, coord.ty, coord.px, coord.py, coord.width, coord.height
+            ));
+
+            // First pixel sample for log
+            let r0 = if data.len() >= 4 { data[0] } else { 0 };
+            let g0 = if data.len() >= 4 { data[1] } else { 0 };
+            let b0 = if data.len() >= 4 { data[2] } else { 0 };
+            let a0 = if data.len() >= 4 { data[3] } else { 0 };
+
+            tracing::info!(
+                "[Viewport::dump] mip={mip} tx={} ty={} px={} py={} w={} h={} first_px=({r0},{g0},{b0},{a0})",
+                coord.tx, coord.ty, coord.px, coord.py, coord.width, coord.height
+            );
+
+            match std::fs::File::create(&path) {
+                Ok(file) => {
+                    let mut enc = png::Encoder::new(file, coord.width, coord.height);
+                    enc.set_color(png::ColorType::Rgba);
+                    enc.set_depth(png::BitDepth::Eight);
+                    if let Ok(mut w) = enc.write_header() {
+                        let _ = w.write_image_data(data);
+                    }
+                }
+                Err(e) => tracing::error!("[Viewport::dump] Cannot create {}: {e}", path.display()),
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ViewportSink — TileSink (old Frame API) + Sink (new Tile API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+pub struct ViewportSink {
+    viewport: Arc<Viewport>,
+    color_conv: ColorConversion,
+}
+
+impl ViewportSink {
+    pub fn new(viewport: Arc<Viewport>, color_conv: ColorConversion) -> Self {
+        Self { viewport, color_conv }
+    }
+}
+
+impl TileSink for ViewportSink {
+    fn run(&self, rx: mpsc::Receiver<Frame>) -> JoinHandle<()> {
+        let vp = Arc::clone(&self.viewport);
+        std::thread::spawn(move || {
+            let mut tile_count = 0u32;
+            while let Ok(frame) = rx.recv() {
+                match frame.kind {
+                    FrameKind::Tile { coord } => {
+                        vp.put(frame.meta.mip_level, coord, Arc::new(frame.data.into_owned()));
+                        tile_count += 1;
+                    }
+                    FrameKind::StreamDone => {
+                        tracing::debug!("viewport_sink: stored {} tiles, marking ready", tile_count);
+                        vp.mark_ready();
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        })
+    }
+}
+
+impl Sink for ViewportSink {
+    type Item = Tile<Rgba<f16>>;
+
+    fn consume(&self, item: Self::Item) -> Result<(), crate::error::Error> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNT: AtomicU32 = AtomicU32::new(0);
+        let c = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if c <= 5 || c % 100 == 0 {
+            tracing::debug!(
+                "[ViewportSink] consume #{} mip={} tx={} ty={}",
+                c, item.coord.mip_level, item.coord.tx, item.coord.ty
+            );
+        }
+
+        let pixels: Vec<[u8; 4]> = self.color_conv.convert_pixels(&item.data, AlphaPolicy::Straight);
+        let bytes: Vec<u8> = bytemuck::cast_slice::<[u8; 4], u8>(&pixels).to_vec();
+        let mip = item.coord.mip_level;
+        self.viewport.put(mip, item.coord, Arc::new(bytes));
+        Ok(())
+    }
+
+    fn finish(&self) {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNT: AtomicU32 = AtomicU32::new(0);
+        let total = COUNT.swap(0, Ordering::Relaxed);
+        tracing::debug!("[ViewportSink] finish — total tiles consumed: {}", total);
+        self.viewport.mark_ready();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color::ColorSpace;
+    use crate::image::TileCoord;
+
+    fn make_tile(r: f32, g: f32, b: f32, a: f32, w: u32, h: u32) -> Tile<Rgba<f16>> {
+        let coord = TileCoord::from_xywh(0, 0, 0, w, h);
+        let pixels = vec![Rgba {
+            r: f16::from_f32(r),
+            g: f16::from_f32(g),
+            b: f16::from_f32(b),
+            a: f16::from_f32(a),
+        }; (w * h) as usize];
+        Tile::new(coord, pixels)
+    }
+
+    fn round(v: f32) -> u8 {
+        (v.clamp(0.0, 1.0) * 255.0).round() as u8
+    }
+
+    #[test]
+    fn viewportsink_consume_stores_in_viewport() {
+        let vp = Arc::new(Viewport::new());
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+        let sink = ViewportSink::new(Arc::clone(&vp), conv);
+
+        let tile = make_tile(0.5, 0.3, 0.2, 1.0, 2, 2);
+        let coord = tile.coord;
+        sink.consume(tile).unwrap();
+
+        let stored = vp.get(0, coord).expect("tile should be in viewport");
+        assert!(!stored.is_empty(), "stored data should not be empty");
+        assert_eq!(stored.len(), (coord.width * coord.height * 4) as usize);
+    }
+
+    #[test]
+    fn viewportsink_finish_marks_ready() {
+        let vp = Arc::new(Viewport::new());
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+        let sink = ViewportSink::new(Arc::clone(&vp), conv);
+
+        assert!(!vp.is_ready());
+        sink.finish();
+        assert!(vp.is_ready());
+    }
+
+    #[test]
+    fn viewportsink_clear_resets_ready() {
+        let vp = Arc::new(Viewport::new());
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+        let sink = ViewportSink::new(Arc::clone(&vp), conv);
+        sink.finish();
+        assert!(vp.is_ready());
+        vp.mark_stale();
+        assert!(!vp.is_ready());
+    }
+
+    #[test]
+    fn viewportsink_opaque_tile_alpha_is_255() {
+        let vp = Arc::new(Viewport::new());
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+        let sink = ViewportSink::new(Arc::clone(&vp), conv);
+
+        let tile = make_tile(0.5, 0.5, 0.5, 1.0, 1, 1);
+        let coord = tile.coord;
+        sink.consume(tile).unwrap();
+
+        let stored = vp.get(0, coord).unwrap();
+        assert_eq!(stored[3], 255, "alpha should be 255 for opaque tile");
+    }
+
+    #[test]
+    fn viewportsink_linear_acecsg_preserves_values() {
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+
+        let white = Rgba {
+            r: f16::from_f32(1.0),
+            g: f16::from_f32(1.0),
+            b: f16::from_f32(1.0),
+            a: f16::ONE,
+        };
+        let coord = TileCoord::from_xywh(0, 0, 0, 1, 1);
+        let tile = Tile::new(coord, vec![white]);
+
+        let pixels: Vec<[u8; 4]> = conv.convert_pixels::<Rgba<f16>, [u8; 4]>(
+            &tile.data,
+            AlphaPolicy::Straight,
+        );
+        let out = &pixels[0];
+        assert!(out[0] > 200, "white r should be bright: {}", out[0]);
+        assert!(out[1] > 200, "white g should be bright: {}", out[1]);
+        assert!(out[2] > 200, "white b should be bright: {}", out[2]);
+        assert_eq!(out[3], 255, "white a should be 255");
+    }
+}

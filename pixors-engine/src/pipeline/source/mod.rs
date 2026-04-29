@@ -1,3 +1,6 @@
+pub mod file;
+pub mod working;
+
 use crate::pipeline::emitter::Emitter;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;

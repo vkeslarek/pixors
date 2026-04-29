@@ -1,3 +1,7 @@
+pub mod debug_png;
+pub mod viewport;
+pub mod working;
+
 use crate::error::Error;
 
 /// Consumes items one at a time. The framework handles channels and threads.

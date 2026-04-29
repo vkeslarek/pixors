@@ -89,6 +89,32 @@ impl ColorConversion {
 
     pub fn convert_pixels<S: Pixel, D: Pixel>(&self, src: &[S], mode: AlphaPolicy) -> Vec<D> {
         let n = src.len();
+
+        // Same color space + same pixel type: no conversion needed.
+        if self.src == self.dst
+            && std::any::TypeId::of::<S>() == std::any::TypeId::of::<D>()
+        {
+            return bytemuck::cast_slice(src).to_vec();
+        }
+
+        // Same color space: skip matrix/transfer, just do pixel format conversion.
+        if self.src == self.dst {
+            let mut out = Vec::with_capacity(n);
+            let full = n / 4;
+            let rem = n % 4;
+            for chunk in 0..full {
+                let (r_lin, g_lin, b_lin, a_vals) = S::unpack_x4(&src[chunk * 4..]);
+                let mut tmp = [D::pack_one([0.0; 4], mode); 4];
+                D::pack_x4(r_lin, g_lin, b_lin, a_vals, mode, &mut tmp);
+                out.extend_from_slice(&tmp);
+            }
+            for i in 0..rem {
+                let [rl, gl, bl, a] = src[full * 4 + i].unpack();
+                out.push(D::pack_one([rl, gl, bl, a], mode));
+            }
+            return out;
+        }
+
         let mat = &self.matrix;
         let tf = self.src.transfer();
         let encode_lut = &self.encode;
@@ -249,5 +275,189 @@ mod tests {
         let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
         let val = conv.decode_sample(2.0, SampleFormat::F32Le);
         assert!(val > 1.0, "HDR float must not be clamped to [0,1]");
+    }
+
+    #[test]
+    fn convert_pixels_srgb_roundtrip_preserves_values() {
+        let srgb_to_acescg = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
+        let acescg_to_srgb = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+
+        let colors_f16: Vec<Rgba<f16>> = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+            (0.5, 0.5, 0.5),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.2, 0.8),
+        ]
+        .into_iter()
+        .map(|(r, g, b)| Rgba { r: f16::from_f32(r), g: f16::from_f32(g), b: f16::from_f32(b), a: f16::ONE })
+        .collect();
+
+        let acescg: Vec<Rgba<f16>> =
+            srgb_to_acescg.convert_pixels::<Rgba<f16>, Rgba<f16>>(
+                &colors_f16,
+                AlphaPolicy::PremultiplyOnPack,
+            );
+
+        let result: Vec<[u8; 4]> =
+            acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(
+                &acescg,
+                AlphaPolicy::Straight,
+            );
+
+        for (i, (orig, out)) in colors_f16.iter().zip(result.iter()).enumerate() {
+            let expected_r = (orig.r.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
+            let expected_g = (orig.g.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
+            let expected_b = (orig.b.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
+            let expected_a = (orig.a.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
+
+            let dr = (out[0] as i32 - expected_r as i32).unsigned_abs();
+            let dg = (out[1] as i32 - expected_g as i32).unsigned_abs();
+            let db = (out[2] as i32 - expected_b as i32).unsigned_abs();
+            let da = (out[3] as i32 - expected_a as i32).unsigned_abs();
+
+            assert!(
+                dr <= 2 && dg <= 2 && db <= 2,
+                "Color #{i}: expected ({expected_r},{expected_g},{expected_b}) got ({},{},{}) — diff ({dr},{dg},{db})",
+                out[0], out[1], out[2]
+            );
+            assert_eq!(da, 0, "Alpha #{i}: expected {expected_a} got {}", out[3]);
+        }
+    }
+
+    #[test]
+    fn convert_pixels_same_space_same_type_is_copy() {
+        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap();
+
+        let src: Vec<Rgba<f16>> = (0..20)
+            .map(|i| Rgba {
+                r: f16::from_f32(i as f32 / 20.0),
+                g: f16::from_f32(0.3),
+                b: f16::from_f32(0.7),
+                a: f16::ONE,
+            })
+            .collect();
+
+        let dst: Vec<Rgba<f16>> =
+            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::PremultiplyOnPack);
+
+        assert_eq!(dst.len(), src.len());
+        for (i, (s, d)) in src.iter().zip(dst.iter()).enumerate() {
+            assert_eq!(s.r.to_bits(), d.r.to_bits(), "r bit mismatch at {i}");
+            assert_eq!(s.g.to_bits(), d.g.to_bits(), "g bit mismatch at {i}");
+            assert_eq!(s.b.to_bits(), d.b.to_bits(), "b bit mismatch at {i}");
+            assert_eq!(s.a.to_bits(), d.a.to_bits(), "a bit mismatch at {i}");
+        }
+    }
+
+    #[test]
+    fn convert_pixels_apply_mode_premultiplies_vs_straight() {
+        let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
+
+        let src: Vec<Rgba<f16>> = vec![
+            Rgba {
+                r: f16::from_f32(0.25),
+                g: f16::from_f32(0.15),
+                b: f16::from_f32(0.0),
+                a: f16::from_f32(0.5),
+            },
+        ];
+
+        let premul: Vec<Rgba<f16>> =
+            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::PremultiplyOnPack);
+        let straight: Vec<Rgba<f16>> =
+            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::Straight);
+
+        let p = &premul[0];
+        let s = &straight[0];
+
+        assert!((p.a.to_f32() - 0.5).abs() < 0.01, "alpha preserved in premul: {}", p.a.to_f32());
+        assert!((s.a.to_f32() - 0.5).abs() < 0.01, "alpha preserved in straight: {}", s.a.to_f32());
+
+        // With Straight, Rgba<f16>::unpack div-by-alpha is NOT reversed by pack.
+        // RGB values should be lower in premul (multiplied by alpha)
+        assert!(
+            p.r.to_f32() < s.r.to_f32(),
+            "premultiplied r ({:.3}) should be < straight r ({:.3})",
+            p.r.to_f32(), s.r.to_f32()
+        );
+    }
+
+    #[test]
+    fn convert_pixels_rgb_to_rgba_f16_preserves_values() {
+        use crate::pixel::Rgb;
+        let conv = ColorSpace::SRGB.converter_to(ColorSpace::SRGB).unwrap();
+
+        // sRGB green in Rgb<f16>: (0, 1, 0)
+        let src: Vec<Rgb<f16>> = vec![
+            Rgb { r: f16::from_f32(0.0), g: f16::from_f32(1.0), b: f16::from_f32(0.0) },
+            Rgb { r: f16::from_f32(0.5), g: f16::from_f32(0.5), b: f16::from_f32(0.5) },
+        ];
+
+        let dst: Vec<Rgba<f16>> =
+            conv.convert_pixels::<Rgb<f16>, Rgba<f16>>(&src, AlphaPolicy::Straight);
+
+        assert_eq!(dst.len(), 2);
+        let first = &dst[0];
+        assert!((first.r.to_f32() - 0.0).abs() < 0.02, "r: {:.3}", first.r.to_f32());
+        assert!((first.g.to_f32() - 1.0).abs() < 0.02, "g: {:.3}", first.g.to_f32());
+        assert!((first.b.to_f32() - 0.0).abs() < 0.02, "b: {:.3}", first.b.to_f32());
+        assert!((first.a.to_f32() - 1.0).abs() < 0.01, "a should be 1.0 from Rgb unpack: {:.3}", first.a.to_f32());
+
+        let second = &dst[1];
+        assert!((second.a.to_f32() - 1.0).abs() < 0.01, "a should be 1.0: {:.3}", second.a.to_f32());
+    }
+
+    #[test]
+    fn convert_pixels_u8_to_f16_rt_alpha_straight() {
+        let conv = ColorSpace::SRGB.converter_to(ColorSpace::SRGB).unwrap();
+
+        let src: Vec<[u8; 4]> = vec![
+            [255, 0, 0, 128],
+            [0, 255, 0, 255],
+            [128, 128, 128, 64],
+        ];
+
+        let f16: Vec<Rgba<f16>> =
+            conv.convert_pixels::<[u8; 4], Rgba<f16>>(&src, AlphaPolicy::Straight);
+
+        assert_eq!(f16.len(), 3);
+        // u8→f16 Straight: values scaled to [0,1], alpha preserved as-is
+        assert!((f16[0].r.to_f32() - 1.0).abs() < 0.02, "r: {:.3}", f16[0].r.to_f32());
+        assert!((f16[0].a.to_f32() - 128.0 / 255.0).abs() < 0.02, "a: {:.3}", f16[0].a.to_f32());
+        assert!((f16[1].a.to_f32() - 1.0).abs() < 0.01, "a: {:.3}", f16[1].a.to_f32());
+        assert!((f16[2].a.to_f32() - 64.0 / 255.0).abs() < 0.02, "a: {:.3}", f16[2].a.to_f32());
+    }
+
+    #[test]
+    fn convert_pixels_u8_to_f16_roundtrip_with_premul() {
+        let to_acescg = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
+        let to_srgb = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
+
+        let src: Vec<[u8; 4]> = vec![
+            [200, 100, 50, 255],
+            [0, 128, 255, 128],
+        ];
+
+        let acescg: Vec<Rgba<f16>> =
+            to_acescg.convert_pixels::<[u8; 4], Rgba<f16>>(&src, AlphaPolicy::PremultiplyOnPack);
+
+        let back: Vec<[u8; 4]> =
+            to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, AlphaPolicy::Straight);
+
+        assert_eq!(back.len(), 2);
+        // u8 roundtrip through ACEScg should approximately preserve values
+        for i in 0..2 {
+            let dr = (back[i][0] as i32 - src[i][0] as i32).unsigned_abs();
+            let dg = (back[i][1] as i32 - src[i][1] as i32).unsigned_abs();
+            let db = (back[i][2] as i32 - src[i][2] as i32).unsigned_abs();
+            let da = (back[i][3] as i32 - src[i][3] as i32).unsigned_abs();
+            assert!(dr <= 2, "pixel {i} r diff {dr}: {} vs {}", back[i][0], src[i][0]);
+            assert!(dg <= 2, "pixel {i} g diff {dg}");
+            assert!(db <= 2, "pixel {i} b diff {db}");
+            assert_eq!(da, 0, "pixel {i} alpha should be exact");
+        }
     }
 }

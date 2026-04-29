@@ -134,7 +134,7 @@ impl LoaderService {
 
         {
             let _sw = debug_stopwatch!("OpenFile:open_image");
-            match tab.open_image(path, tab_id, &ctx.frame_tx, Some(cb)).await {
+            match tab.open_image_v2(path, tab_id, &ctx.frame_tx, Some(cb)).await {
                 Ok(()) => tracing::debug!("open_image: done tab={}", tab_id),
                 Err(e) => {
                     tracing::error!("Failed to load image: {}", e);
@@ -161,6 +161,8 @@ impl LoaderService {
             .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
             .await;
 
+        // Pipeline has completed — all tiles are cached in Viewport.
+        // Emit ImageLoaded so the frontend can request tiles.
         send_session_event(
             &ctx.frame_tx,
             &EngineEvent::Loader(LoaderEvent::ImageLoaded {
@@ -171,6 +173,7 @@ impl LoaderService {
                 layer_count,
             }),
         );
+        tracing::info!("[LoaderService] ImageLoaded emitted tab={} {}x{} (pipeline complete)", tab_id, width, height);
     }
 
     async fn handle_open_file_dialog(

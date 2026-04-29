@@ -1,3 +1,4 @@
+use crate::color::ColorSpace;
 use crate::pixel::Rgba;
 use crate::convert::ColorConversion;
 use crate::pixel::AlphaPolicy;
@@ -53,11 +54,16 @@ impl TileCoord {
 pub struct Tile<P: Clone> {
     pub coord: TileCoord,
     pub data: Arc<Vec<P>>,
+    pub color_space: ColorSpace,
 }
 
 impl<P: Clone> Tile<P> {
     pub fn new(coord: TileCoord, data: Vec<P>) -> Self {
-        Self { coord, data: Arc::new(data) }
+        Self { coord, data: Arc::new(data), color_space: ColorSpace::ACES_CG }
+    }
+
+    pub fn with_color_space(coord: TileCoord, data: Vec<P>, color_space: ColorSpace) -> Self {
+        Self { coord, data: Arc::new(data), color_space }
     }
 }
 
@@ -66,7 +72,7 @@ impl Tile<Rgba<f16>> {
         let pixels: Vec<[u8; 4]> =
             conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&self.data, AlphaPolicy::Straight);
         let bytes: Vec<u8> = bytemuck::cast_slice::<[u8; 4], u8>(pixels.as_slice()).to_vec();
-        Tile { coord: self.coord, data: Arc::new(bytes) }
+        Tile::with_color_space(self.coord, bytes, ColorSpace::SRGB)
     }
 }
 

@@ -149,7 +149,10 @@ impl ViewportService {
         match cmd {
             ViewportCommand::GetViewportState { tab_id } => self.handle_get_viewport_state(tab_id, ctx).await,
             ViewportCommand::ViewportUpdate { x, y, w, h, zoom } => self.handle_viewport_update(x, y, w, h, zoom, state, ctx).await,
-            ViewportCommand::RequestTiles { tab_id, x, y, w, h, zoom } => self.handle_request_tiles(tab_id, x, y, w, h, zoom, state, ctx).await,
+            ViewportCommand::RequestTiles { tab_id, x, y, w, h, zoom } => {
+                tracing::debug!("[ViewportService] RequestTiles tab={} zoom={:.3}", tab_id, zoom);
+                self.handle_request_tiles(tab_id, x, y, w, h, zoom, state, ctx).await;
+            }
         }
     }
 
@@ -276,8 +279,12 @@ pub(crate) async fn stream_tiles_for_tab(
                 tab.is_mip_ready(desired_mip as usize),
             )
         };
+        tracing::debug!(
+            "[stream_tiles] display_ready={} sot_ready={} desired_mip={}",
+            display_ready, sot_ready, desired_mip
+        );
 
-        if display_ready {
+        if display_ready || sot_ready {
             mip_level = desired_mip;
         } else {
             // Fallback: find highest display MIP level available

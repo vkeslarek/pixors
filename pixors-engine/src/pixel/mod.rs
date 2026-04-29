@@ -60,11 +60,13 @@ mod rgb;
 mod gray;
 mod pack;
 mod format;
+mod accumulator;
 pub mod xyz;
 
 pub use rgba::Rgba;
 pub use rgb::Rgb;
 pub use gray::{Gray, GrayAlpha};
+pub use accumulator::PixelAccumulator;
 pub use format::PixelFormat;
 pub use xyz::{Xyz, Xyy};
 

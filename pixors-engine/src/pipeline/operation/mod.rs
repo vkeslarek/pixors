@@ -4,6 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 
+pub mod blur;
+pub mod color;
+pub mod mip;
+pub mod neighborhood;
+
 pub trait Operation: Send + 'static {
     type In: Send + 'static;
     type Out: Send + 'static;

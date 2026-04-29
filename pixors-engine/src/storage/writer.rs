@@ -3,6 +3,7 @@
 //! - `WorkingWriter`: disk-backed tile storage (ACEScg f16) — owns the tiles,
 //!   converts raw bytes → ACEScg f16, reads/writes/caches tiles on disk.
 
+use crate::color::ColorSpace;
 use crate::error::Error;
 use crate::image::{Tile, TileCoord};
 use crate::pixel::Rgba;
@@ -113,7 +114,7 @@ impl WorkingWriter {
             return Err(Error::invalid_param("Tile file size mismatch"));
         }
         let pixels = Self::deserialize_le(&bytes);
-        Ok(Some(Tile { coord, data: Arc::new(pixels) }))
+        Ok(Some(Tile { coord, data: Arc::new(pixels), color_space: ColorSpace::ACES_CG }))
     }
 
     pub fn write_tile_f16(&self, tile: &Tile<Rgba<f16>>) -> Result<(), Error> {

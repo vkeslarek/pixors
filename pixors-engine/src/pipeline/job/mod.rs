@@ -193,9 +193,12 @@ impl<Item: Clone + Send + 'static> JobBuilder<Item> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::{Tile, TileCoord};
     use crate::pipeline::operation::Operation;
     use crate::pipeline::sink::Sink;
     use crate::pipeline::source::Source;
+    use crate::pixel::{AlphaPolicy, Rgba};
+    use half::f16;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
 
@@ -417,5 +420,247 @@ mod tests {
 
         assert_eq!(a.lock().unwrap().as_slice(), &[0, 2, 4, 6, 8]);
         assert_eq!(b.lock().unwrap().as_slice(), &[0, 1, 2, 3, 4]);
+    }
+
+    // ── Tile-pipeline helpers ────────────────────────────────────────────
+
+    struct TestTileSource {
+        tiles: Vec<Tile<Rgba<f16>>>,
+    }
+
+    impl Source for TestTileSource {
+        type Item = Tile<Rgba<f16>>;
+
+        fn run(self, emit: &mut Emitter<Tile<Rgba<f16>>>, cancel: Arc<AtomicBool>) {
+            for tile in self.tiles {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                emit.emit(tile);
+            }
+        }
+
+        fn total(&self) -> Option<u32> {
+            Some(self.tiles.len() as u32)
+        }
+    }
+
+    struct TileCollectSink {
+        collected: Arc<Mutex<Vec<Tile<Rgba<f16>>>>>,
+    }
+
+    impl Sink for TileCollectSink {
+        type Item = Tile<Rgba<f16>>;
+
+        fn consume(&self, item: Tile<Rgba<f16>>) -> Result<(), crate::error::Error> {
+            self.collected.lock().unwrap().push(item);
+            Ok(())
+        }
+    }
+
+    struct U8CollectSink {
+        collected: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl Sink for U8CollectSink {
+        type Item = Tile<Rgba<f16>>;
+
+        fn consume(&self, item: Tile<Rgba<f16>>) -> Result<(), crate::error::Error> {
+            let raw = bytemuck::cast_slice::<Rgba<f16>, u8>(&item.data).to_vec();
+            self.collected.lock().unwrap().extend(raw);
+            Ok(())
+        }
+
+        fn finish(&self) {
+            // signal done
+        }
+    }
+
+    fn make_test_tile(r: f32, g: f32, b: f32, a: f32, w: u32, h: u32) -> Tile<Rgba<f16>> {
+        let coord = TileCoord::from_xywh(0, 0, 0, w, h);
+        let pixels = vec![Rgba {
+            r: f16::from_f32(r),
+            g: f16::from_f32(g),
+            b: f16::from_f32(b),
+            a: f16::from_f32(a),
+        }; (w * h) as usize];
+        Tile::new(coord, pixels)
+    }
+
+    fn make_test_tiles(
+        count: u32,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    ) -> Vec<Tile<Rgba<f16>>> {
+        (0..count)
+            .map(|i| make_test_tile(r * (i as f32 + 1.0) / count as f32, g, b, a, 4, 4))
+            .collect()
+    }
+
+    // ── Split tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn split_tile_branches_receive_same_data() {
+        let a = Arc::new(Mutex::new(Vec::new()));
+        let b = Arc::new(Mutex::new(Vec::new()));
+
+        let mut branches = Job::from_source(TestTileSource {
+            tiles: make_test_tiles(5, 1.0, 0.5, 0.2, 1.0),
+        })
+        .split(2);
+
+        let br1 = branches.remove(0);
+        let br2 = branches.remove(0);
+
+        let job_a = br1.sink(TileCollectSink {
+            collected: Arc::clone(&a),
+        });
+        let job_b = br2.sink(TileCollectSink {
+            collected: Arc::clone(&b),
+        });
+
+        job_a.join();
+        job_b.join();
+
+        let a_data = a.lock().unwrap();
+        let b_data = b.lock().unwrap();
+        assert_eq!(a_data.len(), 5);
+        assert_eq!(b_data.len(), 5);
+
+        for i in 0..5 {
+            let pa = &a_data[i].data[0];
+            let pb = &b_data[i].data[0];
+            assert_eq!(pa.r.to_bits(), pb.r.to_bits(), "tile {i} r mismatch");
+            assert_eq!(pa.g.to_bits(), pb.g.to_bits(), "tile {i} g mismatch");
+            assert_eq!(pa.b.to_bits(), pb.b.to_bits(), "tile {i} b mismatch");
+            assert_eq!(pa.a.to_bits(), pb.a.to_bits(), "tile {i} a mismatch");
+        }
+    }
+
+    #[test]
+    fn split_three_branches_each_gets_all_tiles() {
+        let a = Arc::new(Mutex::new(Vec::new()));
+        let b = Arc::new(Mutex::new(Vec::new()));
+        let c = Arc::new(Mutex::new(Vec::new()));
+
+        let mut branches = Job::from_source(TestTileSource {
+            tiles: make_test_tiles(3, 0.8, 0.2, 0.5, 1.0),
+        })
+        .split(3);
+
+        let j_a = branches.remove(0).sink(TileCollectSink { collected: Arc::clone(&a) });
+        let j_b = branches.remove(0).sink(TileCollectSink { collected: Arc::clone(&b) });
+        let j_c = branches.remove(0).sink(TileCollectSink { collected: Arc::clone(&c) });
+
+        j_a.join();
+        j_b.join();
+        j_c.join();
+
+        assert_eq!(a.lock().unwrap().len(), 3);
+        assert_eq!(b.lock().unwrap().len(), 3);
+        assert_eq!(c.lock().unwrap().len(), 3);
+    }
+
+    // ── Full pipeline: ColorConvertOp + ViewportSink ──────────────────────
+
+    #[test]
+    fn full_pipeline_viewport_path() {
+        use crate::pipeline::operation::color::ColorConvertOperation;
+        use crate::pipeline::sink::viewport::{Viewport, ViewportSink};
+
+        let vp = Arc::new(Viewport::new());
+        let conv = crate::color::ColorSpace::SRGB
+            .converter_to(crate::color::ColorSpace::ACES_CG)
+            .unwrap();
+        let srgb_conv = crate::color::ColorSpace::ACES_CG
+            .converter_to(crate::color::ColorSpace::SRGB)
+            .unwrap();
+
+        let mut branches = Job::from_source(TestTileSource {
+            tiles: make_test_tiles(2, 0.5, 0.3, 0.7, 1.0),
+        })
+        .then(ColorConvertOperation::with_conv(conv, AlphaPolicy::PremultiplyOnPack))
+        .split(2);
+
+        let vp_sink = ViewportSink::new(Arc::clone(&vp), srgb_conv);
+        let vp_job = branches.remove(0).sink(vp_sink);
+
+        let wk_data = Arc::new(Mutex::new(Vec::new()));
+        let wk_job = branches.remove(0).sink(U8CollectSink {
+            collected: Arc::clone(&wk_data),
+        });
+
+        vp_job.join();
+        wk_job.join();
+
+        assert!(vp.is_ready(), "viewport should be marked ready by finish()");
+
+        let coord = TileCoord::from_xywh(0, 0, 0, 4, 4);
+        let stored = vp.get(0, coord).expect("tile should be in viewport");
+        assert_eq!(stored.len(), 64, "4x4 tile = 64 bytes RGBA8");
+    }
+
+    // ── Full pipeline: ColorConvertOp + WorkingSink ───────────────────────
+
+    #[test]
+    fn full_pipeline_working_path() {
+        use crate::pipeline::operation::color::ColorConvertOperation;
+        use crate::pipeline::sink::working::WorkingSink;
+        use crate::storage::WorkingWriter;
+
+        let dir = std::env::temp_dir().join("pixors_test_full_wk");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let writer = Arc::new(WorkingWriter::new(dir.clone(), 4, 8, 8).unwrap());
+        let wk_conv = crate::color::ColorSpace::ACES_CG
+            .converter_to(crate::color::ColorSpace::ACES_CG)
+            .unwrap();
+
+        let conv = crate::color::ColorSpace::SRGB
+            .converter_to(crate::color::ColorSpace::ACES_CG)
+            .unwrap();
+
+        Job::from_source(TestTileSource {
+            tiles: make_test_tiles(2, 0.5, 0.5, 0.5, 1.0),
+        })
+        .then(ColorConvertOperation::with_conv(conv, AlphaPolicy::PremultiplyOnPack))
+        .sink(WorkingSink::new(Arc::clone(&writer), wk_conv))
+        .join();
+
+        let read = writer.read_tile(TileCoord::from_xywh(0, 0, 0, 4, 4)).unwrap().unwrap();
+        assert_eq!(read.data.len(), 16, "4x4 tile should have 16 pixels");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Cancel tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn job_cancel_stops_pipeline() {
+        let collected = Arc::new(Mutex::new(Vec::new()));
+
+        let job = Job::from_source(CounterSource { count: 1000 })
+            .then(DoubleOp)
+            .sink(CollectSink {
+                data: Arc::clone(&collected),
+            });
+
+        job.cancel();
+        job.join();
+
+        let results = collected.lock().unwrap();
+        assert!(results.len() < 1000, "cancel should stop the pipeline early: got {}", results.len());
+    }
+
+    #[test]
+    fn emitter_does_not_panic_on_closed_rx() {
+        let (tx, rx) = mpsc::sync_channel::<u32>(1);
+        let mut emit = Emitter::new(tx);
+        drop(rx);
+        for i in 0..50 {
+            emit.emit(i);
+        }
     }
 }
