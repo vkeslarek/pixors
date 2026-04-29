@@ -4,6 +4,7 @@ import type { PanelId } from '@/ui/panelLayout'
 import { useUIStore } from '@/ui/uiStore'
 import { useDockDnd } from '@/ui/useDockDnd'
 import { LayersPanel } from './panels/LayersPanel'
+import { FilterPanel } from './panels/FilterPanel'
 import { Toolbar } from './Toolbar'
 
 interface PanelFrameProps {
@@ -83,6 +84,7 @@ export function PanelFrame({ panelId, showTitle = true }: PanelFrameProps) {
       </div>
 
       {panelId === 'layers' && <LayersPanel />}
+      {panelId === 'filters' && <FilterPanel />}
       {panelId === 'toolbar' && <Toolbar />}
     </div>
   )

@@ -53,6 +53,9 @@ export type EngineEvent =
   | { type: 'viewport_updated'; tab_id: string; zoom: number; pan_x: number; pan_y: number }
   | { type: 'tool_state'; tool: string }
   | { type: 'tool_changed'; tool: string }
+  | { type: 'filter_progress'; job_id: string; percent: number }
+  | { type: 'filter_done'; job_id: string }
+  | { type: 'filter_failed'; job_id: string; error: string }
   | { type: 'error'; message: string };
 
 // -----------------------------------------------------------------------------
@@ -76,4 +79,5 @@ export type EngineCommand =
   | { type: 'get_tool_state' }
   | { type: 'select_tool'; tool: string }
   | { type: 'heartbeat' }
+  | { type: 'apply_gaussian_blur'; tab_id: string; radius: number }
   | { type: 'close' };

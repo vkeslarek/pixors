@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use rust_embed::RustEmbed;
+use std::borrow::Cow;
 
 #[derive(RustEmbed)]
 #[folder = "../pixors-ui/dist/"]

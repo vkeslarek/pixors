@@ -6,30 +6,39 @@
 //! To regenerate golden files: `GOLDEN_WRITE=1 cargo test --test golden_conversion`
 //! To verify: `cargo test --test golden_conversion`
 
-use pixors_engine::color::ColorSpace;
-use pixors_engine::pixel::AlphaPolicy;
-use pixors_engine::image::{
-    buffer::BufferDesc, AlphaMode, ImageBuffer,
-};
-use pixors_engine::pixel::Rgba;
 use half::f16;
-use std::path::PathBuf;
+use pixors_engine::color::ColorSpace;
+use pixors_engine::image::{AlphaMode, ImageBuffer, buffer::BufferDesc};
+use pixors_engine::pixel::AlphaPolicy;
+use pixors_engine::pixel::Rgba;
 use std::io::Write;
+use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
 // Deterministic input generation
 // ---------------------------------------------------------------------------
 
-struct DeterministicRng { state: u64 }
+struct DeterministicRng {
+    state: u64,
+}
 
 impl DeterministicRng {
-    fn new(seed: u64) -> Self { Self { state: seed } }
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
     fn next(&mut self) -> u64 {
-        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.state = self
+            .state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.state
     }
-    fn u8(&mut self) -> u8 { (self.next() >> 32) as u8 }
-    fn u16(&mut self) -> u16 { (self.next() >> 32) as u16 }
+    fn u8(&mut self) -> u8 {
+        (self.next() >> 32) as u8
+    }
+    fn u16(&mut self) -> u16 {
+        (self.next() >> 32) as u16
+    }
 }
 
 fn make_srgb_u8_image() -> ImageBuffer {
@@ -114,14 +123,17 @@ fn make_gray8_image() -> ImageBuffer {
 // ---------------------------------------------------------------------------
 
 fn serialize_f16_pixels(pixels: &[Rgba<f16>]) -> Vec<u8> {
-    pixels.iter().flat_map(|p| {
-        let mut bytes = [0u8; 8];
-        bytes[0..2].copy_from_slice(&p.r.to_le_bytes());
-        bytes[2..4].copy_from_slice(&p.g.to_le_bytes());
-        bytes[4..6].copy_from_slice(&p.b.to_le_bytes());
-        bytes[6..8].copy_from_slice(&p.a.to_le_bytes());
-        bytes.into_iter().collect::<Vec<_>>()
-    }).collect()
+    pixels
+        .iter()
+        .flat_map(|p| {
+            let mut bytes = [0u8; 8];
+            bytes[0..2].copy_from_slice(&p.r.to_le_bytes());
+            bytes[2..4].copy_from_slice(&p.g.to_le_bytes());
+            bytes[4..6].copy_from_slice(&p.b.to_le_bytes());
+            bytes[6..8].copy_from_slice(&p.a.to_le_bytes());
+            bytes.into_iter().collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +141,9 @@ fn serialize_f16_pixels(pixels: &[Rgba<f16>]) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("golden")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("golden")
 }
 
 fn is_write_mode() -> bool {
@@ -160,18 +174,21 @@ fn write_golden(name: &str, data: &[u8]) {
 fn srgb_u8_to_acescg_f16_bitexact() {
     let buf = make_srgb_u8_image();
     let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
+    let pixels: Vec<Rgba<f16>> =
+        conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
     let output = serialize_f16_pixels(&pixels);
 
     let golden_name = "srgb_u8_to_acescg.bin";
     if is_write_mode() {
         write_golden(golden_name, &output);
     }
-    let expected = read_golden(golden_name).expect(
-        "Golden file not found. Run with GOLDEN_WRITE=1 first."
-    );
+    let expected =
+        read_golden(golden_name).expect("Golden file not found. Run with GOLDEN_WRITE=1 first.");
     assert_eq!(output.len(), expected.len(), "output length mismatch");
-    assert!(output == expected, "byte-for-byte mismatch in sRGB u8 → ACEScg f16");
+    assert!(
+        output == expected,
+        "byte-for-byte mismatch in sRGB u8 → ACEScg f16"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -182,20 +199,21 @@ fn srgb_u8_to_acescg_f16_bitexact() {
 fn acescg_f16_to_srgb_u8_bitexact() {
     let pixels = make_acescg_f16_pixels();
     let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
-    let result: Vec<[u8; 4]> = conv.convert_pixels::<Rgba<f16>, [u8; 4]>(
-        &pixels, AlphaPolicy::Straight,
-    );
+    let result: Vec<[u8; 4]> =
+        conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&pixels, AlphaPolicy::Straight);
     let output: Vec<u8> = bytemuck::cast_slice::<[u8; 4], u8>(&result).to_vec();
 
     let golden_name = "acescg_f16_to_srgb_u8.bin";
     if is_write_mode() {
         write_golden(golden_name, &output);
     }
-    let expected = read_golden(golden_name).expect(
-        "Golden file not found. Run with GOLDEN_WRITE=1 first."
-    );
+    let expected =
+        read_golden(golden_name).expect("Golden file not found. Run with GOLDEN_WRITE=1 first.");
     assert_eq!(output.len(), expected.len(), "output length mismatch");
-    assert!(output == expected, "byte-for-byte mismatch in ACEScg f16 → sRGB u8");
+    assert!(
+        output == expected,
+        "byte-for-byte mismatch in ACEScg f16 → sRGB u8"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -206,18 +224,21 @@ fn acescg_f16_to_srgb_u8_bitexact() {
 fn rgba16_to_acescg_f16_bitexact() {
     let buf = make_rgba16_image();
     let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
+    let pixels: Vec<Rgba<f16>> =
+        conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
     let output = serialize_f16_pixels(&pixels);
 
     let golden_name = "rgba16_to_acescg.bin";
     if is_write_mode() {
         write_golden(golden_name, &output);
     }
-    let expected = read_golden(golden_name).expect(
-        "Golden file not found. Run with GOLDEN_WRITE=1 first."
-    );
+    let expected =
+        read_golden(golden_name).expect("Golden file not found. Run with GOLDEN_WRITE=1 first.");
     assert_eq!(output.len(), expected.len(), "output length mismatch");
-    assert!(output == expected, "byte-for-byte mismatch in RGBA16 → ACEScg f16");
+    assert!(
+        output == expected,
+        "byte-for-byte mismatch in RGBA16 → ACEScg f16"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -228,16 +249,19 @@ fn rgba16_to_acescg_f16_bitexact() {
 fn gray8_to_acescg_f16_bitexact() {
     let buf = make_gray8_image();
     let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-    let pixels: Vec<Rgba<f16>> = conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
+    let pixels: Vec<Rgba<f16>> =
+        conv.convert_buffer(&buf.data, &buf.desc, AlphaPolicy::PremultiplyOnPack);
     let output = serialize_f16_pixels(&pixels);
 
     let golden_name = "gray8_to_acescg.bin";
     if is_write_mode() {
         write_golden(golden_name, &output);
     }
-    let expected = read_golden(golden_name).expect(
-        "Golden file not found. Run with GOLDEN_WRITE=1 first."
-    );
+    let expected =
+        read_golden(golden_name).expect("Golden file not found. Run with GOLDEN_WRITE=1 first.");
     assert_eq!(output.len(), expected.len(), "output length mismatch");
-    assert!(output == expected, "byte-for-byte mismatch in Gray8 → ACEScg f16");
+    assert!(
+        output == expected,
+        "byte-for-byte mismatch in Gray8 → ACEScg f16"
+    );
 }

@@ -8,21 +8,26 @@ use tao::{
     event_loop::{ControlFlow, EventLoopBuilder},
     window::{CursorIcon, ResizeDirection, Window, WindowBuilder},
 };
-use wry::{
-    http::Request,
-    WebViewBuilder,
-};
+use wry::{WebViewBuilder, http::Request};
 
 #[cfg(feature = "embedded")]
 use {
     std::borrow::Cow,
-    wry::http::{header, Response, StatusCode},
+    wry::http::{Response, StatusCode, header},
 };
 
 #[derive(Debug)]
 enum HitTestResult {
-    Client, Left, Right, Top, Bottom,
-    TopLeft, TopRight, BottomLeft, BottomRight, NoWhere,
+    Client,
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    NoWhere,
 }
 
 impl HitTestResult {
@@ -104,7 +109,13 @@ fn serve_asset(path: &str) -> Response<Cow<'static, [u8]>> {
 }
 
 fn main() -> wry::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
     {
         use gtk::prelude::DisplayExtManual;
         gtk::init().unwrap();
@@ -130,7 +141,7 @@ fn main() -> wry::Result<()> {
             .with_min_inner_size(Size::Logical(LogicalSize::new(640.0, 480.0)))
             .with_resizable(true)
             .build(&event_loop)
-            .unwrap()
+            .unwrap(),
     );
 
     let proxy = event_loop.create_proxy();
@@ -138,10 +149,10 @@ fn main() -> wry::Result<()> {
         let body = req.body();
         let mut parts = body.split([':', ',']);
         let _ = match parts.next().unwrap() {
-            "minimize"     => proxy.send_event(UserEvent::Minimize),
-            "maximize"     => proxy.send_event(UserEvent::Maximize),
-            "drag_window"  => proxy.send_event(UserEvent::DragWindow),
-            "close"        => proxy.send_event(UserEvent::CloseWindow),
+            "minimize" => proxy.send_event(UserEvent::Minimize),
+            "maximize" => proxy.send_event(UserEvent::Maximize),
+            "drag_window" => proxy.send_event(UserEvent::DragWindow),
+            "close" => proxy.send_event(UserEvent::CloseWindow),
             "mousedown" => {
                 let x = parts.next().unwrap_or("0").parse().unwrap_or(0);
                 let y = parts.next().unwrap_or("0").parse().unwrap_or(0);
@@ -176,12 +187,13 @@ fn main() -> wry::Result<()> {
 
     #[cfg(feature = "embedded")]
     {
-        builder = builder.with_custom_protocol("pixors".into(), move |_id, req: Request<Vec<u8>>| {
-            let path = req.uri().path();
-            let path = path.strip_prefix('/').unwrap_or(path);
-            let path = if path.is_empty() { "index.html" } else { path };
-            serve_asset(path)
-        });
+        builder =
+            builder.with_custom_protocol("pixors".into(), move |_id, req: Request<Vec<u8>>| {
+                let path = req.uri().path();
+                let path = path.strip_prefix('/').unwrap_or(path);
+                let path = if path.is_empty() { "index.html" } else { path };
+                serve_asset(path)
+            });
     }
 
     #[cfg(target_os = "linux")]
@@ -202,14 +214,14 @@ fn main() -> wry::Result<()> {
                 event: WindowEvent::CloseRequested,
                 ..
             }
-            | Event::UserEvent(UserEvent::CloseWindow) => {
-                *control_flow = ControlFlow::Exit
-            }
+            | Event::UserEvent(UserEvent::CloseWindow) => *control_flow = ControlFlow::Exit,
 
             Event::UserEvent(e) => match e {
                 UserEvent::Minimize => window.set_minimized(true),
                 UserEvent::Maximize => window.set_maximized(!window.is_maximized()),
-                UserEvent::DragWindow => { let _ = window.drag_window(); }
+                UserEvent::DragWindow => {
+                    let _ = window.drag_window();
+                }
                 UserEvent::MouseDown(x, y) => {
                     let res = hit_test(window.inner_size(), x, y, window.scale_factor());
                     match res {
@@ -218,7 +230,8 @@ fn main() -> wry::Result<()> {
                     }
                 }
                 UserEvent::MouseMove(x, y) => {
-                    hit_test(window.inner_size(), x, y, window.scale_factor()).change_cursor(&window);
+                    hit_test(window.inner_size(), x, y, window.scale_factor())
+                        .change_cursor(&window);
                 }
                 UserEvent::CloseWindow => {}
             },

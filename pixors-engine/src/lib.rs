@@ -3,7 +3,6 @@
 //! This library provides color-managed image loading and saving with support for PNG.
 //! All internal processing uses ACEScg linear premultiplied RGBA f16 format.
 
-pub mod operation;
 pub mod composite;
 pub mod config;
 pub mod approx;
@@ -17,6 +16,7 @@ pub mod utils;
 pub mod server;
 pub mod storage;
 pub mod error;
+pub mod pipeline;
 
 pub use color::ColorSpace;
 pub use image::AlphaMode;

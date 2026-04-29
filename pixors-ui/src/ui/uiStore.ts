@@ -138,10 +138,10 @@ export const useUIStore = create<UIState>()(
       }),
     }),
     {
-      name: 'pixors.panelLayout.v6',
+      name: 'pixors.panelLayout.v7',
       partialize: (state) => ({ panelLayout: state.panelLayout }),
       onRehydrateStorage: () => (state) => {
-        if (state && state.panelLayout?.version !== 6) {
+        if (state && state.panelLayout?.version !== 7) {
           state.setLayout(DEFAULT_LAYOUT);
         }
       },
