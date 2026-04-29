@@ -134,7 +134,6 @@ impl ViewportService {
     }
 
     /// Removes a viewport state when a tab is closed.
-    #[allow(dead_code)]
     pub async fn remove_viewport(&self, tab_id: &Uuid) {
         let mut viewports = self.viewports.write().await;
         viewports.remove(tab_id);

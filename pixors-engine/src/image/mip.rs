@@ -73,8 +73,6 @@ impl MipLevel {
 #[derive(Debug)]
 pub struct MipPyramid {
     levels: Vec<MipLevel>,
-    #[allow(dead_code)]
-    tile_size: u32,
 }
 
 impl MipPyramid {
@@ -101,7 +99,7 @@ impl MipPyramid {
             index += 1;
         }
 
-        Ok(Self { levels, tile_size })
+        Ok(Self { levels })
     }
     
     /// Returns the number of MIP levels (excluding level 0).
@@ -183,7 +181,7 @@ impl MipPyramid {
         }
 
         tracing::debug!("generate_from_mip0: {} levels generated", levels.len());
-        Ok(Self { levels, tile_size })
+        Ok(Self { levels })
     }
 }
 

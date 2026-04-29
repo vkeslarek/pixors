@@ -7,21 +7,12 @@ use bytemuck::{Pod, Zeroable};
 /// All components must be copyable, have a fixed bit depth, and be convertible
 /// to/from `f32` with appropriate scaling.
 pub trait Component: Copy + 'static + Pod + Zeroable {
-    /// Bit depth of the component (8 for `u8`, 16 for `u16`/`f16`, 32 for `f32`).
-    const BITS: u8;
-
-    /// Maximum value that corresponds to 1.0 in normalized `f32` representation.
-    /// For unsigned integer types this is `2^BITS - 1`; for floating‑point types it is 1.0.
-    const MAX_ONE_F32: f32;
-
-    /// Whether the component is a floating‑point type.
-    const IS_FLOAT: bool;
-
-    /// Zero value (0 for integer types, 0.0 for floating‑point).
     const ZERO: Self;
 
-    /// One value (maximum for integer types, 1.0 for floating‑point).
     const ONE: Self;
+
+    /// Maximum value in normalized `f32` (255 for u8, 65535 for u16, 1.0 for floats).
+    const MAX_ONE_F32: f32;
 
     /// Converts the component to normalized `f32` in range [0, 1] for unsigned integers,
     /// or direct value for floats.
@@ -36,9 +27,7 @@ pub trait Component: Copy + 'static + Pod + Zeroable {
 // -----------------------------------------------------------------------------
 
 impl Component for u8 {
-    const BITS: u8 = 8;
     const MAX_ONE_F32: f32 = 255.0;
-    const IS_FLOAT: bool = false;
     const ZERO: u8 = 0;
     const ONE: u8 = 255;
 
@@ -53,9 +42,7 @@ impl Component for u8 {
 }
 
 impl Component for u16 {
-    const BITS: u8 = 16;
     const MAX_ONE_F32: f32 = 65535.0;
-    const IS_FLOAT: bool = false;
     const ZERO: u16 = 0;
     const ONE: u16 = 65535;
 
@@ -70,9 +57,7 @@ impl Component for u16 {
 }
 
 impl Component for half::f16 {
-    const BITS: u8 = 16;
     const MAX_ONE_F32: f32 = 1.0;
-    const IS_FLOAT: bool = true;
     const ZERO: half::f16 = half::f16::from_bits(0);
     const ONE: half::f16 = half::f16::from_bits(0x3C00); // 1.0 in f16
 
@@ -88,9 +73,7 @@ impl Component for half::f16 {
 }
 
 impl Component for f32 {
-    const BITS: u8 = 32;
     const MAX_ONE_F32: f32 = 1.0;
-    const IS_FLOAT: bool = true;
     const ZERO: f32 = 0.0;
     const ONE: f32 = 1.0;
 

@@ -17,10 +17,6 @@ impl ColorConvertOperation {
     pub fn with_conv(conv: ColorConversion, alpha: AlphaPolicy) -> Self {
         Self { conv, alpha }
     }
-
-    pub fn new(src: ColorSpace, dst: ColorSpace, alpha: AlphaPolicy) -> Result<Self, crate::error::Error> {
-        Ok(Self { conv: src.converter_to(dst)?, alpha })
-    }
 }
 
 // ── Operation (Tile-based API) ───────────────────────────────────────

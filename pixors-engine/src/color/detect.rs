@@ -140,16 +140,6 @@ impl IccClassification {
 }
 
 // ---------------------------------------------------------------------------
-// CMYK / Lab stubs (future)
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-pub fn classify_icc_profile_cmyk(_bytes: &[u8]) -> Option<&'static str> { None }
-
-#[allow(dead_code)]
-pub fn classify_icc_profile_lab(_bytes: &[u8]) -> Option<&'static str> { None }
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

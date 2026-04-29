@@ -347,9 +347,6 @@ pub fn read_tiff_document_metadata(
 #[allow(dead_code)]
 fn read_tag_string(decoder: &mut Decoder<BufReader<File>>, tag: Tag) -> Option<String> {
     decoder.find_tag_unsigned::<u32>(tag).ok().flatten().map(|_| {
-        // Try to read as string — TIFF stores these as null-terminated ASCII
-        // The tiff crate doesn't expose string tags directly for all tags,
-        // so we return the tag ID as placeholder when found.
         format!("(see raw tag {})", tag.to_u16())
     })
 }
@@ -367,21 +364,4 @@ mod tests {
         let result = TiffFormat.read_document_info(Path::new("/nonexistent/file.tiff"));
         assert!(result.is_err());
     }
-}
-
-// --- YCbCr / CMYK / Lab stubs (inline from submodules) ---
-
-#[allow(dead_code)]
-fn decode_ycbcr(_data: &[u8], _width: u32, _height: u32) -> Result<crate::image::Image, crate::error::Error> {
-    Err(crate::error::Error::unsupported_sample_type("YCbCr decode not implemented"))
-}
-
-#[allow(dead_code)]
-fn decode_cmyk_to_rgba(_data: &[u8], _width: u32, _height: u32) -> Vec<u8> {
-    Vec::new()
-}
-
-#[allow(dead_code)]
-fn decode_lab_to_rgba(_data: &[u8], _width: u32, _height: u32) -> Vec<u8> {
-    Vec::new()
 }

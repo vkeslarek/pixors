@@ -595,47 +595,6 @@ impl TabService {
         Ok(())
     }
 
-    /// Ensures the MIP level for the given zoom is generated synchronously (blocking).
-    #[allow(dead_code)]
-    pub fn ensure_mip_level_blocking(tab: &mut TabData, zoom: f32) -> Result<(), Error> {
-        let level_idx = MipPyramid::level_for_zoom(zoom);
-        if level_idx == 0 {
-            return Ok(());
-        }
-
-        let is_gen = tab.is_generating_mips.clone();
-
-        for layer in &mut tab.layers {
-            if layer
-                .mip_pyramid
-                .level(level_idx)
-                .map(|l| l.generated)
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            if is_gen.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                return Ok(());
-            }
-
-            let ts = layer.tile_store.tile_size();
-            let iw = layer.tile_store.image_width();
-            let ih = layer.tile_store.image_height();
-            let mip0_path = layer.tile_store.base_dir();
-            let mip_base = layer.mip_base_dir.clone();
-
-            let mip0_view = WorkingWriter::open(mip0_path, ts, iw, ih)?;
-            let regenerated = tokio::task::block_in_place(|| {
-                crate::image::MipPyramid::generate_from_mip0(&mip0_view, &mip_base)
-            })?;
-
-            layer.mip_pyramid.replace_levels(regenerated.into_levels());
-            is_gen.store(false, std::sync::atomic::Ordering::SeqCst);
-        }
-        Ok(())
-    }
-
     /// Dispatches each command variant to its dedicated handler method.
     async fn handle_command_impl(
         &self,
