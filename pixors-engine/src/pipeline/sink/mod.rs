@@ -1,4 +1,3 @@
-pub mod debug_png;
 pub mod viewport;
 pub mod working;
 

@@ -34,11 +34,6 @@ impl<P: PixelAccumulator> MipOp<P> {
         let ow = coord.width as usize;
         let oh = coord.height as usize;
 
-        tracing::debug!(
-            "[MipOp] downsample mip={} tx={} ty={} out={}x{}",
-            dst_mip, dst_tx, dst_ty, ow, oh
-        );
-
         let mut data = Vec::with_capacity(ow * oh);
         for oy in 0..oh {
             for ox in 0..ow {
@@ -100,13 +95,6 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
 
         let dlen = tile.data.len();
         let expected = (tile.coord.width * tile.coord.height) as usize;
-
-        tracing::debug!(
-            "[MipOp] IN  mip={} tx={} ty={} w={} h={} px={} py={} len={}",
-            src_mip, tile.coord.tx, tile.coord.ty, tile.coord.width, tile.coord.height,
-            tile.coord.px, tile.coord.py, dlen
-        );
-
         if dlen != expected {
             tracing::warn!(
                 "[MipOp] tile data len {} != coord w={} h={} expected={} at mip={} tx={} ty={}",
@@ -118,7 +106,6 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
         emit.emit(Tile::new(tile.coord, (*tile.data).clone()));
 
         if src_mip >= self.max_levels {
-            tracing::debug!("[MipOp] STOP mip={} >= max_levels={}", src_mip, self.max_levels);
             return Ok(());
         }
 
@@ -127,12 +114,9 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
         let dst_ty = tile.coord.ty / 2;
         let qi = ((tile.coord.ty % 2) * 2 + (tile.coord.tx % 2)) as usize;
 
-        let acc_entries = self.accum.len();
         let key = (src_mip, dst_tx, dst_ty);
         let entry = self.accum.entry(key).or_insert_with(|| [None, None, None, None]);
         entry[qi] = Some(tile);
-
-        let filled = entry.iter().filter(|o| o.is_some()).count();
 
         // Check completeness: for interior tiles we need 4 quadrants,
         // for edge tiles we may need fewer.
@@ -147,11 +131,6 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
             let idx = (dy * 2 + dx) as usize;
             entry[idx].is_some()
         }));
-
-        tracing::debug!(
-            "[MipOp] ACC  src_mip={} dst_tx={} dst_ty={} qi={} filled={}/{} complete={} acc_entries={}",
-            src_mip, dst_tx, dst_ty, qi, filled, req_w * req_h, complete, acc_entries
-        );
 
         if complete {
             let dst_iw = (self.image_width >> dst_mip).max(1);
@@ -172,23 +151,15 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
     }
 
     fn finish(&mut self, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
-        let remaining = self.accum.len();
-        if remaining > 0 {
-            tracing::debug!("[MipOp] FINISH flushing {} partial quadrants", remaining);
-        }
+        // Flush partial quadrants at image edges
         let keys: Vec<_> = self.accum.keys().cloned().collect();
         for (src_mip, dst_tx, dst_ty) in keys {
             let entry = self.accum.remove(&(src_mip, dst_tx, dst_ty));
             if let Some(entry) = entry {
                 let any_some = entry.iter().any(|o| o.is_some());
                 if any_some {
-                    let filled = entry.iter().filter(|o| o.is_some()).count();
                     let dst_iw = (self.image_width >> (src_mip + 1)).max(1);
                     let dst_ih = (self.image_height >> (src_mip + 1)).max(1);
-                    tracing::debug!(
-                        "[MipOp] FLUSH src_mip={} dst_tx={} dst_ty={} filled={}/4 output={}x{}",
-                        src_mip, dst_tx, dst_ty, filled, dst_iw, dst_ih
-                    );
                     let new_tile = Self::downsample_quadrant(
                         &entry, src_mip + 1, dst_tx, dst_ty, self.tile_size, dst_iw, dst_ih,
                     );
@@ -196,7 +167,6 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
                 }
             }
         }
-        tracing::debug!("[MipOp] FINISH done, accum empty");
         Ok(())
     }
 }

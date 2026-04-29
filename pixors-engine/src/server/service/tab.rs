@@ -536,11 +536,10 @@ impl TabData {
                     crate::pixel::AlphaPolicy::PremultiplyOnPack,
                 ))
                 .then(MipOp::new(self.tile_size, max_mip, w, h))
-                .split(3);
+                .split(2);
 
             let br1 = branches.remove(0);
             let br2 = branches.remove(0);
-            let br3 = branches.remove(0);
 
             let wk_job = br1.sink(WorkingSink::new(
                 Arc::clone(&store),
@@ -550,49 +549,21 @@ impl TabData {
                 Arc::clone(&viewport),
                 ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
             ));
-            let debug_png_path = base.join(format!("debug_layer_{}.png", self.layers.len()));
-            let png_job = br3.sink(crate::pipeline::sink::debug_png::DebugPngSink::new(
-                &debug_png_path,
-                ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
-                w,
-                h,
-            ));
 
-            // Run all sinks and join — wait for all tiles to be stored
+            // Run both sinks and join — wait for all tiles to be stored
             let wk_handle = std::thread::spawn(move || {
-                tracing::debug!("[Pipeline] WorkingSink started");
                 wk_job.join();
-                tracing::debug!("[Pipeline] WorkingSink finished");
             });
             let vp_handle = {
                 let vp = Arc::clone(&viewport);
                 std::thread::spawn(move || {
-                    tracing::debug!("[Pipeline] ViewportSink started");
                     vp_job.join();
-                    tracing::debug!("[Pipeline] ViewportSink finished — {} tiles cached",
-                        vp.tile_count());
+                    tracing::info!("[Pipeline] ViewportSink: {} tiles cached", vp.tile_count());
                 })
             };
-            let png_handle = std::thread::spawn(move || {
-                tracing::debug!("[Pipeline] DebugPngSink started → {}", debug_png_path.display());
-                png_job.join();
-                tracing::debug!("[Pipeline] DebugPngSink finished");
-            });
 
             wk_handle.join().unwrap();
             vp_handle.join().unwrap();
-            png_handle.join().unwrap();
-
-            // DEBUG — dump all MIP levels from Viewport cache
-            for mip in 0..=12 {
-                let mip_w = (w >> mip).max(1);
-                let mip_h = (h >> mip).max(1);
-                viewport.dump_to_png(mip, mip_w, mip_h, &base.join(format!("vp_dump_layer_{}_mip{}.png", self.layers.len(), mip)));
-                // Individual tile dumps for mips 0..3
-                if mip <= 3 {
-                    viewport.dump_tiles_individual(mip, mip_w, mip_h, &base.join(format!("vp_tiles_mip{}", mip)));
-                }
-            }
 
             tracing::info!(
                 "[Pipeline] Both sinks finished for layer {} — {} tiles in Viewport",
