@@ -5,8 +5,8 @@ use crate::composite::{self, CompositeRequest, LayerView};
 use crate::convert::ColorConversion;
 use crate::error::Error;
 use crate::image::{BlendMode, MipPyramid, TileCoord, TileGrid};
-use crate::pipeline::operation::color::ColorConvertOperation;
 use crate::pipeline::sink::viewport::{Viewport, ViewportSink};
+use crate::pipeline::sink::working::WorkingSink;
 use crate::pixel::Rgba;
 use crate::storage::writer::WorkingWriter;
 use async_trait::async_trait;
@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::pipeline::sink::working::WorkingSink;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rect {
@@ -328,14 +327,11 @@ impl TabData {
     pub async fn open_image_v2(
         &mut self,
         path: impl AsRef<Path>,
-        tab_id: Uuid,
-        frame_tx: &tokio::sync::mpsc::UnboundedSender<crate::server::ws::types::ClientFrame>,
-        vp_cb: Option<Arc<dyn Fn(u32, crate::image::TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
+        vp_cb: Option<Arc<dyn Fn(u32, TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
     ) -> Result<(), Error> {
         self.close_image().await;
         let path = path.as_ref();
         self.color_conversion = Some(ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB)?);
-        let base = self.base_dir();
         self.has_image = true;
 
         let reader = crate::io::all_readers()
@@ -347,79 +343,95 @@ impl TabData {
 
         for layer_idx in 0..info.layer_count {
             let meta = reader.read_layer_metadata(path, layer_idx)?;
-            let w = meta.desc.width;
-            let h = meta.desc.height;
-            let src_cs = meta.desc.color_space;
-
-            let mip_base = base.join(format!("layer_{}_mips", self.layers.len()));
-            std::fs::create_dir_all(&mip_base)?;
-            let mip = MipPyramid::new(w, h, self.tile_size, mip_base.clone())?;
-
-            let store_path = base.join(format!("layer_{}", self.layers.len()));
-            let store = Arc::new(WorkingWriter::new(store_path, self.tile_size, w, h)?);
-
-            let mut viewport = Viewport::new();
-            viewport.on_tile_added = vp_cb.clone();
-            let viewport = Arc::new(viewport);
-
-            // ── New pipeline ────────────────────────────────────────────
-
-            use crate::pipeline::job::Job;
-            use crate::pipeline::source::file::FileImageSource;
-            use crate::pipeline::operation::color::ColorConvertOperation;
-            use crate::pipeline::operation::mip::MipOp;
-
-            let max_mip = (w.max(h) as f32).log2().ceil() as u32;
-
-            let mut branches = Job::from_source(FileImageSource::new(path, self.tile_size))
-                .then(ColorConvertOperation::with_conv(
-                    src_cs.converter_to(ColorSpace::ACES_CG)?,
-                    crate::pixel::AlphaPolicy::PremultiplyOnPack,
-                ))
-                .then(MipOp::new(self.tile_size, max_mip, w, h))
-                .split(2);
-
-            let br1 = branches.remove(0);
-            let br2 = branches.remove(0);
-
-            let wk_job = br1.sink(WorkingSink::new(
-                Arc::clone(&store),
-                ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap(),
-            ));
-            let vp_job = br2.sink(ViewportSink::new(
-                Arc::clone(&viewport),
-                ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
-            ));
-
-            // Run both sinks in background — tiles stream live via callback
-            let wk_handle = std::thread::spawn(move || {
-                wk_job.join();
-            });
-            let vp_handle = {
-                let vp = Arc::clone(&viewport);
-                std::thread::spawn(move || {
-                    vp_job.join();
-                    tracing::info!("[Pipeline] ViewportSink: {} tiles cached", vp.tile_count());
-                })
-            };
-
-            self.layers.push(LayerSlot {
-                id: Uuid::new_v4(),
-                tile_store: store,
-                mip_pyramid: mip,
-                mip_base_dir: mip_base,
-                width: w,
-                height: h,
-                offset: meta.offset,
-                opacity: 1.0,
-                visible: true,
-                blend_mode: crate::image::BlendMode::Normal,
-                viewport,
-                disk_handle: Some(wk_handle),
-            });
+            self.add_layer_pipeline(
+                path,
+                meta.desc.width,
+                meta.desc.height,
+                meta.desc.color_space,
+                meta.offset,
+                vp_cb.clone(),
+            )?;
         }
 
         self.recompute_doc_bounds();
+        Ok(())
+    }
+
+    fn add_layer_pipeline(
+        &mut self,
+        path: &Path,
+        w: u32,
+        h: u32,
+        src_cs: ColorSpace,
+        offset: (i32, i32),
+        vp_cb: Option<Arc<dyn Fn(u32, crate::image::TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
+    ) -> Result<(), Error> {
+        let base = self.base_dir();
+        let mip_base = base.join(format!("layer_{}_mips", self.layers.len()));
+        std::fs::create_dir_all(&mip_base)?;
+        let mip = MipPyramid::new(w, h, self.tile_size, mip_base.clone())?;
+
+        let store_path = base.join(format!("layer_{}", self.layers.len()));
+        let store = Arc::new(WorkingWriter::new(store_path, self.tile_size, w, h)?);
+
+        let mut viewport = Viewport::new();
+        viewport.on_tile_added = vp_cb;
+        let viewport = Arc::new(viewport);
+
+        use crate::pipeline::job::Job;
+        use crate::pipeline::operation::color::ColorConvertOperation;
+        use crate::pipeline::operation::mip::MipOp;
+        use crate::pipeline::source::file::FileImageSource;
+
+        let max_mip = (w.max(h) as f32).log2().ceil() as u32;
+
+        let mut branches = Job::from_source(FileImageSource::new(path, self.tile_size))
+            .then(ColorConvertOperation::with_conv(
+                src_cs.converter_to(ColorSpace::ACES_CG)?,
+                crate::pixel::AlphaPolicy::PremultiplyOnPack,
+            ))
+            .then(MipOp::new(self.tile_size, max_mip, w, h))
+            .split(2);
+
+        let br1 = branches.remove(0);
+        let br2 = branches.remove(0);
+
+        let wk_job = br1.sink(WorkingSink::new(
+            Arc::clone(&store),
+            ColorSpace::ACES_CG
+                .converter_to(ColorSpace::ACES_CG)
+                .unwrap(),
+        ));
+        let vp_job = br2.sink(ViewportSink::new(
+            Arc::clone(&viewport),
+            ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
+        ));
+
+        let wk_handle = std::thread::spawn(move || {
+            wk_job.join();
+        });
+        let _ = {
+            let vp = Arc::clone(&viewport);
+            std::thread::spawn(move || {
+                vp_job.join();
+                tracing::info!("[Pipeline] ViewportSink: {} tiles cached", vp.tile_count());
+            })
+        };
+
+        self.layers.push(LayerSlot {
+            id: Uuid::new_v4(),
+            tile_store: store,
+            mip_pyramid: mip,
+            mip_base_dir: mip_base,
+            width: w,
+            height: h,
+            offset,
+            opacity: 1.0,
+            visible: true,
+            blend_mode: crate::image::BlendMode::Normal,
+            viewport,
+            disk_handle: Some(wk_handle),
+        });
         Ok(())
     }
 

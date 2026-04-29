@@ -133,7 +133,7 @@ impl LoaderService {
 
         {
             let _sw = debug_stopwatch!("OpenFile:open_image");
-            match tab.open_image_v2(path, tab_id, &ctx.frame_tx, Some(cb)).await {
+            match tab.open_image_v2(path, Some(cb)).await {
                 Ok(()) => tracing::debug!("open_image: done tab={}", tab_id),
                 Err(e) => {
                     tracing::error!("Failed to load image: {}", e);

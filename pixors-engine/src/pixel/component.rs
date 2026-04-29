@@ -27,9 +27,9 @@ pub trait Component: Copy + 'static + Pod + Zeroable {
 // -----------------------------------------------------------------------------
 
 impl Component for u8 {
-    const MAX_ONE_F32: f32 = 255.0;
     const ZERO: u8 = 0;
     const ONE: u8 = 255;
+    const MAX_ONE_F32: f32 = 255.0;
 
     fn to_f32(self) -> f32 {
         self as f32 / Self::MAX_ONE_F32
@@ -42,9 +42,9 @@ impl Component for u8 {
 }
 
 impl Component for u16 {
-    const MAX_ONE_F32: f32 = 65535.0;
     const ZERO: u16 = 0;
     const ONE: u16 = 65535;
+    const MAX_ONE_F32: f32 = 65535.0;
 
     fn to_f32(self) -> f32 {
         self as f32 / Self::MAX_ONE_F32
@@ -57,9 +57,9 @@ impl Component for u16 {
 }
 
 impl Component for half::f16 {
-    const MAX_ONE_F32: f32 = 1.0;
     const ZERO: half::f16 = half::f16::from_bits(0);
-    const ONE: half::f16 = half::f16::from_bits(0x3C00); // 1.0 in f16
+    const ONE: half::f16 = half::f16::from_bits(0x3C00);
+    const MAX_ONE_F32: f32 = 1.0; // 1.0 in f16
 
     fn to_f32(self) -> f32 {
         // Call the primitive f16's to_f32 method
@@ -73,9 +73,9 @@ impl Component for half::f16 {
 }
 
 impl Component for f32 {
-    const MAX_ONE_F32: f32 = 1.0;
     const ZERO: f32 = 0.0;
     const ONE: f32 = 1.0;
+    const MAX_ONE_F32: f32 = 1.0;
 
     fn to_f32(self) -> f32 {
         self

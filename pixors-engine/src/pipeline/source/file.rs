@@ -1,11 +1,9 @@
-use crate::color::ColorSpace;
 use crate::error::Error;
 use crate::image::{Tile, TileCoord, TileGrid};
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::source::Source;
 use crate::pixel::Rgba;
 use half::f16;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -18,7 +16,10 @@ pub struct FileImageSource {
 
 impl FileImageSource {
     pub fn new(path: impl AsRef<Path>, tile_size: u32) -> Self {
-        Self { path: path.as_ref().to_path_buf(), tile_size }
+        Self {
+            path: path.as_ref().to_path_buf(),
+            tile_size,
+        }
     }
 }
 
@@ -59,14 +60,15 @@ impl FileImageSource {
         let info = reader.read_document_info(&path)?;
 
         for layer_idx in 0..info.layer_count {
-            if cancel.load(Ordering::Relaxed) { break; }
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
 
             let meta = reader.read_layer_metadata(&path, layer_idx)?;
             let w = meta.desc.width;
             let h = meta.desc.height;
             let channels = meta.desc.planes.len();
             let tiles_x = w.div_ceil(tile_size);
-            let tiles_y = h.div_ceil(tile_size);
 
             let (layer_tx, layer_rx) = std::sync::mpsc::channel::<Vec<u8>>();
             let path_c = path.clone();
@@ -77,50 +79,75 @@ impl FileImageSource {
                     self.0.send(pixels.to_vec()).ok();
                     Ok(())
                 }
-                fn name(&self) -> &'static str { "RawWriter" }
+                fn name(&self) -> &'static str {
+                    "RawWriter"
+                }
             }
 
             std::thread::spawn(move || {
-                let _ = reader.stream_tiles(&path_c, tile_size, &RawWriter(layer_tx), layer_idx, None);
+                let _ =
+                    reader.stream_tiles(&path_c, tile_size, &RawWriter(layer_tx), layer_idx, None);
             });
 
             let mut emitted = 0u32;
             for raw in layer_rx {
-                if cancel.load(Ordering::Relaxed) { break; }
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
 
                 let tx_tile = emitted % tiles_x;
                 let ty_tile = emitted / tiles_x;
                 let coord = TileCoord::new(0, tx_tile, ty_tile, tile_size, w, h);
 
                 let pixels: Vec<Rgba<f16>> = match channels {
-                    4 => raw.chunks_exact(4).map(|c| Rgba {
-                        r: f16::from_f32(c[0] as f32 / 255.0),
-                        g: f16::from_f32(c[1] as f32 / 255.0),
-                        b: f16::from_f32(c[2] as f32 / 255.0),
-                        a: f16::from_f32(c[3] as f32 / 255.0),
-                    }).collect(),
-                    3 => raw.chunks_exact(3).map(|c| Rgba {
-                        r: f16::from_f32(c[0] as f32 / 255.0),
-                        g: f16::from_f32(c[1] as f32 / 255.0),
-                        b: f16::from_f32(c[2] as f32 / 255.0),
-                        a: f16::ONE,
-                    }).collect(),
-                    1 => raw.chunks_exact(1).map(|c| {
-                        let v = f16::from_f32(c[0] as f32 / 255.0);
-                        Rgba::new(v, v, v, f16::ONE)
-                    }).collect(),
-                    _ => raw.chunks_exact(4).map(|c| Rgba {
-                        r: f16::from_f32(c[0] as f32 / 255.0),
-                        g: f16::from_f32(c[1] as f32 / 255.0),
-                        b: f16::from_f32(c[2] as f32 / 255.0),
-                        a: f16::from_f32(c[3] as f32 / 255.0),
-                    }).collect(),
+                    4 => raw
+                        .chunks_exact(4)
+                        .map(|c| Rgba {
+                            r: f16::from_f32(c[0] as f32 / 255.0),
+                            g: f16::from_f32(c[1] as f32 / 255.0),
+                            b: f16::from_f32(c[2] as f32 / 255.0),
+                            a: f16::from_f32(c[3] as f32 / 255.0),
+                        })
+                        .collect(),
+                    3 => raw
+                        .chunks_exact(3)
+                        .map(|c| Rgba {
+                            r: f16::from_f32(c[0] as f32 / 255.0),
+                            g: f16::from_f32(c[1] as f32 / 255.0),
+                            b: f16::from_f32(c[2] as f32 / 255.0),
+                            a: f16::ONE,
+                        })
+                        .collect(),
+                    1 => raw
+                        .chunks_exact(1)
+                        .map(|c| {
+                            let v = f16::from_f32(c[0] as f32 / 255.0);
+                            Rgba::new(v, v, v, f16::ONE)
+                        })
+                        .collect(),
+                    _ => raw
+                        .chunks_exact(4)
+                        .map(|c| Rgba {
+                            r: f16::from_f32(c[0] as f32 / 255.0),
+                            g: f16::from_f32(c[1] as f32 / 255.0),
+                            b: f16::from_f32(c[2] as f32 / 255.0),
+                            a: f16::from_f32(c[3] as f32 / 255.0),
+                        })
+                        .collect(),
                 };
 
                 if emitted <= 2 {
                     tracing::debug!(
                         "[FileImageSource] tile {}: tx={} ty={} px={} py={} w={} h={} pixels={} channels={}",
-                        emitted, coord.tx, coord.ty, coord.px, coord.py, coord.width, coord.height, pixels.len(), channels
+                        emitted,
+                        coord.tx,
+                        coord.ty,
+                        coord.px,
+                        coord.py,
+                        coord.width,
+                        coord.height,
+                        pixels.len(),
+                        channels
                     );
                 }
 
@@ -175,12 +202,23 @@ mod tests {
 
         let tiles: Vec<Tile<Rgba<f16>>> = rx.iter().collect();
         let expected = (w.div_ceil(4) * h.div_ceil(4)) as usize;
-        assert_eq!(tiles.len(), expected, "tile count for {}x{} with tile_size=4 should be {}", w, h, expected);
+        assert_eq!(
+            tiles.len(),
+            expected,
+            "tile count for {}x{} with tile_size=4 should be {}",
+            w,
+            h,
+            expected
+        );
 
         for tile in &tiles {
             let px_count = tile.coord.pixel_count();
             assert!(px_count > 0, "tile should have non-zero pixel count");
-            assert_eq!(tile.data.len(), px_count, "tile data length should match pixel count");
+            assert_eq!(
+                tile.data.len(),
+                px_count,
+                "tile data length should match pixel count"
+            );
         }
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -211,10 +249,25 @@ mod tests {
         let r = px.r.to_f32();
         let g = px.g.to_f32();
         let b = px.b.to_f32();
-        assert!((r - 100.0 / 255.0).abs() < 0.02, "red {:.3} should be ~0.392", r);
-        assert!((g - 150.0 / 255.0).abs() < 0.02, "green {:.3} should be ~0.588", g);
-        assert!((b - 200.0 / 255.0).abs() < 0.02, "blue {:.3} should be ~0.784", b);
-        assert!((px.a.to_f32() - 1.0).abs() < 0.01, "alpha should be 1.0 for RGB PNG");
+        assert!(
+            (r - 100.0 / 255.0).abs() < 0.02,
+            "red {:.3} should be ~0.392",
+            r
+        );
+        assert!(
+            (g - 150.0 / 255.0).abs() < 0.02,
+            "green {:.3} should be ~0.588",
+            g
+        );
+        assert!(
+            (b - 200.0 / 255.0).abs() < 0.02,
+            "blue {:.3} should be ~0.784",
+            b
+        );
+        assert!(
+            (px.a.to_f32() - 1.0).abs() < 0.01,
+            "alpha should be 1.0 for RGB PNG"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

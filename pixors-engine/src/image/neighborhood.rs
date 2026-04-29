@@ -1,4 +1,4 @@
-use crate::image::{Tile, TileCoord, TileGrid};
+use crate::image::{Tile, TileCoord};
 use std::collections::HashMap;
 use std::sync::Arc;
 

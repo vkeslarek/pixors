@@ -26,7 +26,7 @@ fn build_router() -> (Router, Arc<AppState>) {
         .layer(cors)
         .with_state(state.clone());
 
-    // tokio::spawn(session_cleanup_task(state.clone())); // disabled — pipeline runs longer than TTL
+    tokio::spawn(session_cleanup_task(state.clone()));
     tokio::spawn(heartbeat_broadcast_task(state.clone()));
 
     (router, state)
@@ -42,7 +42,9 @@ pub fn start_server_bg(cfg: Config) {
                 .await
                 .expect("failed to bind server address");
             eprintln!("Engine server on {}", addr);
-            axum::serve(listener, app).await.expect("engine server crashed");
+            axum::serve(listener, app)
+                .await
+                .expect("engine server crashed");
         });
     });
 }
