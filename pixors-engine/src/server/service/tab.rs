@@ -550,7 +550,7 @@ impl TabData {
                 ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
             ));
 
-            // Run both sinks and join — wait for all tiles to be stored
+            // Run both sinks in background — tiles stream live via callback
             let wk_handle = std::thread::spawn(move || {
                 wk_job.join();
             });
@@ -561,15 +561,6 @@ impl TabData {
                     tracing::info!("[Pipeline] ViewportSink: {} tiles cached", vp.tile_count());
                 })
             };
-
-            wk_handle.join().unwrap();
-            vp_handle.join().unwrap();
-
-            tracing::info!(
-                "[Pipeline] Both sinks finished for layer {} — {} tiles in Viewport",
-                self.layers.len(),
-                viewport.tile_count()
-            );
 
             self.layers.push(LayerSlot {
                 id: Uuid::new_v4(),
@@ -583,7 +574,7 @@ impl TabData {
                 visible: true,
                 blend_mode: crate::image::BlendMode::Normal,
                 viewport,
-                disk_handle: None,
+                disk_handle: Some(wk_handle),
             });
         }
 

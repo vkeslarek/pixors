@@ -110,8 +110,7 @@ impl LoaderService {
                     Some(s) => s,
                     None => return,
                 };
-                let zoom = vp_state.zoom.max(0.0001);
-                let desired_mip = crate::image::MipPyramid::level_for_zoom(zoom) as u32;
+                let desired_mip = crate::image::MipPyramid::level_for_zoom(vp_state.zoom.max(0.0001)) as u32;
                 if mip != desired_mip { return; }
 
                 let mip_scale = 0.5_f32.powi(mip as i32);
@@ -161,8 +160,8 @@ impl LoaderService {
             .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))
             .await;
 
-        // Pipeline has completed — all tiles are cached in Viewport.
-        // Emit ImageLoaded so the frontend can request tiles.
+        // Emit ImageLoaded so the frontend can start requesting tiles immediately.
+        // Tiles stream live via the Viewport callback as the pipeline runs.
         send_session_event(
             &ctx.frame_tx,
             &EngineEvent::Loader(LoaderEvent::ImageLoaded {
