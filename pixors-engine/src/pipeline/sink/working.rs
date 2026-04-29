@@ -4,10 +4,8 @@ use crate::image::Tile;
 use crate::pixel::Rgba;
 use crate::pipeline::sink::Sink;
 use crate::storage::WorkingWriter;
-use crate::stream::{Frame, FrameKind, TileSink};
 use half::f16;
-use std::sync::{mpsc, Arc};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 
 pub struct WorkingSink {
     store: Arc<WorkingWriter>,
@@ -20,27 +18,7 @@ impl WorkingSink {
     }
 }
 
-// ── TileSink (old API, Frame-based) ───────────────────────────────────────
-
-impl TileSink for WorkingSink {
-    fn run(&self, rx: mpsc::Receiver<Frame>) -> JoinHandle<()> {
-        let store = Arc::clone(&self.store);
-        std::thread::spawn(move || {
-            while let Ok(frame) = rx.recv() {
-                if let FrameKind::Tile { coord } = frame.kind {
-                    let f16_pixels: Vec<Rgba<f16>> =
-                        bytemuck::cast_slice(&frame.data).to_vec();
-                    if let Err(e) = store.write_tile_f16(&Tile::new(coord, f16_pixels)) {
-                        tracing::error!("WorkingSink: write failed: {}", e);
-                    }
-                }
-                if frame.is_terminal() { break; }
-            }
-        })
-    }
-}
-
-// ── Sink (new API, Tile-based) ────────────────────────────────────────────
+// ── Sink (Tile-based API) ────────────────────────────────────────────
 
 impl Sink for WorkingSink {
     type Item = Tile<Rgba<f16>>;

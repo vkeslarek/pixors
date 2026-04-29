@@ -9,7 +9,6 @@ pub mod approx;
 pub mod color;
 pub mod pixel;
 pub mod image;
-pub mod stream;
 pub mod convert;
 pub mod io;
 pub mod utils;

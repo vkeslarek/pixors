@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 use crate::pipeline::sink::working::WorkingSink;
-use crate::stream::ImageFileSource;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rect {
@@ -303,36 +302,19 @@ impl TabData {
             .iter()
             .filter(|l| l.visible)
             .map(|l| {
-                let has_mip = mip_level == 0
-                    || l.mip_pyramid
-                        .level(mip_level)
-                        .map(|lv| lv.generated)
-                        .unwrap_or(false);
-                let actual_mip = if has_mip { mip_level as u32 } else { 0 };
-                let store = if actual_mip == 0 {
-                    &*l.tile_store
-                } else {
-                    l.mip_pyramid
-                        .level(mip_level)
-                        .map(|level| &level.tile_store)
-                        .unwrap_or(&*l.tile_store)
-                };
-                let (w, h) = if actual_mip == 0 {
-                    (l.width, l.height)
-                } else {
-                    l.mip_pyramid
-                        .level(mip_level)
-                        .map(|level| (level.width, level.height))
-                        .unwrap_or((l.width >> mip_level, l.height >> mip_level))
-                };
+                let actual_mip = mip_level as u32;
+                let (w, h) = (
+                    (l.width >> mip_level).max(1),
+                    (l.height >> mip_level).max(1),
+                );
                 let comp_offset = (
                     (l.offset.0 - self.doc_origin.0) >> actual_mip,
                     (l.offset.1 - self.doc_origin.1) >> actual_mip,
                 );
                 LayerView {
                     id: l.id,
-                    store,
-                    size: (w.max(1), h.max(1)),
+                    store: &l.tile_store,
+                    size: (w, h),
                     offset: comp_offset,
                     opacity: l.opacity,
                     blend: l.blend_mode,
@@ -340,147 +322,6 @@ impl TabData {
                 }
             })
             .collect()
-    }
-
-    pub async fn open_image(
-        &mut self,
-        path: impl AsRef<Path>,
-        tab_id: Uuid,
-        frame_tx: &tokio::sync::mpsc::UnboundedSender<crate::server::ws::types::ClientFrame>,
-        vp_cb: Option<Arc<dyn Fn(u32, crate::image::TileCoord, Arc<Vec<u8>>) + Send + Sync>>,
-    ) -> Result<(), Error> {
-        self.close_image().await;
-        let path = path.as_ref();
-        self.color_conversion = Some(ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB)?);
-        let base = self.base_dir();
-        self.has_image = true;
-
-        use crate::stream::tee;
-        use crate::stream::{ MipPipe, Pipe, TileSink, TileSource};
-
-        // Read metadata first to know source color space + dimensions
-        let reader = crate::io::all_readers()
-            .iter()
-            .find(|r| r.can_handle(path))
-            .copied()
-            .ok_or_else(|| Error::unsupported_sample_type("No reader for file"))?;
-        let info = reader.read_document_info(path)?;
-
-        for layer_idx in 0..info.layer_count {
-            let meta = reader.read_layer_metadata(path, layer_idx)?;
-            let w = meta.desc.width;
-            let h = meta.desc.height;
-            let src_cs = meta.desc.color_space;
-            let mip_base = base.join(format!("layer_{}_mips", self.layers.len()));
-            std::fs::create_dir_all(&mip_base)?;
-            let mip = MipPyramid::new(w, h, self.tile_size, mip_base.clone())?;
-
-            // Create disk storage (shared Arc for WorkingSink + later MIP gen reads)
-            let store_path = base.join(format!("layer_{}", self.layers.len()));
-            let store = Arc::new(WorkingWriter::new(store_path, self.tile_size, w, h)?);
-
-            // Create viewport (RAM tile cache, shared with server)
-            let mut viewport = Viewport::new();
-            viewport.on_tile_added = vp_cb.clone();
-            let viewport = Arc::new(viewport);
-
-            // ── Stream pipeline ──────────────────────────────────────
-            let rx = {
-                let _sw = crate::debug_stopwatch!("OpenFile:stream_tiles");
-                ImageFileSource::new(path.to_path_buf(), self.tile_size, 0).open()?
-            };
-
-            // Color convert to sRGB u8 (display), then MIP
-            let mut rx = ColorConvertOperation::new(
-                src_cs,
-                ColorSpace::SRGB,
-                crate::pixel::AlphaPolicy::Straight,
-                false,
-                meta.desc.clone(),
-            )?
-            .pipe(rx);
-            let num_levels = {
-                let mut lw = w;
-                let mut lh = h;
-                let mut n = 0u32;
-                while lw > 1 || lh > 1 {
-                    lw = (lw / 2).max(1);
-                    lh = (lh / 2).max(1);
-                    n += 1;
-                }
-                n.min(6)
-            };
-            rx = MipPipe::new(self.tile_size, num_levels).pipe(rx);
-
-            let mut rx_vec = tee(rx, 3);
-            let pr_rx = rx_vec.pop().unwrap();
-            let wk_rx = rx_vec.pop().unwrap();
-            let vp_rx = rx_vec.pop().unwrap();
-
-            // Working branch: convert sRGB u8 → f16 ACEScg premul, then write to disk
-            let wk_rx = ColorConvertOperation::new(
-                ColorSpace::SRGB,
-                ColorSpace::ACES_CG,
-                crate::pixel::AlphaPolicy::PremultiplyOnPack,
-                true,
-                crate::image::buffer::BufferDesc::rgba8_interleaved(
-                    1,
-                    1,
-                    ColorSpace::SRGB,
-                    crate::image::AlphaMode::Straight,
-                ),
-            )?
-            .pipe(wk_rx);
-
-            let vp_sink = ViewportSink::new(
-                Arc::clone(&viewport),
-                ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap(),
-            );
-            let wk_sink = WorkingSink::new(
-                Arc::clone(&store),
-                ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap(),
-            );
-
-            // Progress branch: emit ImageLoadProgress events
-            use crate::stream::ProgressSink;
-            let frame_tx_progress = frame_tx.clone();
-            let tab_id_progress = tab_id;
-            let pr_sink = ProgressSink::new(move |percent| {
-                let event = crate::server::event_bus::EngineEvent::Loader(
-                    crate::server::service::loader::LoaderEvent::ImageLoadProgress {
-                        tab_id: tab_id_progress,
-                        percent,
-                    },
-                );
-                use crate::server::ws::types::send_session_event;
-                send_session_event(&frame_tx_progress, &event);
-            });
-
-            let _vp_handle = vp_sink.run(vp_rx);
-            let wk_handle = wk_sink.run(wk_rx);
-            let _pr_handle = pr_sink.run(pr_rx);
-
-            // DON'T join — tiles auto-stream to frontend via vp_cb callback
-            // Disk handle joined in Drop
-
-            self.layers.push(LayerSlot {
-                id: Uuid::new_v4(),
-                tile_store: store,
-                mip_pyramid: mip,
-                mip_base_dir: mip_base,
-                width: w,
-                height: h,
-                offset: meta.offset,
-                opacity: 1.0,
-                visible: true,
-                blend_mode: crate::image::BlendMode::Normal,
-                viewport,
-                disk_handle: Some(wk_handle),
-            });
-        }
-
-        self.recompute_doc_bounds();
-        Ok(())
     }
 
     /// Open an image using the new pipeline (Job/Source/Sink).

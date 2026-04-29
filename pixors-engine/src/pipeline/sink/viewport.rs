@@ -2,13 +2,11 @@ use crate::convert::ColorConversion;
 use crate::image::{Tile, TileCoord};
 use crate::pixel::{AlphaPolicy, Rgba};
 use crate::pipeline::sink::Sink;
-use crate::stream::{Frame, FrameKind, TileSink};
 use half::f16;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Viewport — persistent tile cache in RAM. The server queries this for tiles.
@@ -42,7 +40,7 @@ impl Viewport {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ViewportSink — TileSink (old Frame API) + Sink (new Tile API)
+// ViewportSink — Sink (new Tile API)
 // ═══════════════════════════════════════════════════════════════════════════
 
 pub struct ViewportSink {
@@ -53,29 +51,6 @@ pub struct ViewportSink {
 impl ViewportSink {
     pub fn new(viewport: Arc<Viewport>, color_conv: ColorConversion) -> Self {
         Self { viewport, color_conv }
-    }
-}
-
-impl TileSink for ViewportSink {
-    fn run(&self, rx: mpsc::Receiver<Frame>) -> JoinHandle<()> {
-        let vp = Arc::clone(&self.viewport);
-        std::thread::spawn(move || {
-            let mut tile_count = 0u32;
-            while let Ok(frame) = rx.recv() {
-                match frame.kind {
-                    FrameKind::Tile { coord } => {
-                        vp.put(frame.meta.mip_level, coord, Arc::new(frame.data.into_owned()));
-                        tile_count += 1;
-                    }
-                    FrameKind::StreamDone => {
-                        tracing::debug!("viewport_sink: stored {} tiles, marking ready", tile_count);
-                        vp.mark_ready();
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        })
     }
 }
 
