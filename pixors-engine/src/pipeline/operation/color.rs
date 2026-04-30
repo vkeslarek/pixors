@@ -1,4 +1,4 @@
-use crate::color::ColorSpace;
+use std::sync::Arc;
 use crate::convert::ColorConversion;
 use crate::image::Tile;
 use crate::pixel::{AlphaPolicy, Rgba};
@@ -27,7 +27,7 @@ impl Operation for ColorConvertOperation {
 
     fn name(&self) -> &'static str { "color_convert" }
 
-    fn process(&mut self, tile: Self::In, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
+    fn process(&mut self, tile: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
         let converted: Vec<Rgba<f16>> = self.conv.convert_pixels(&tile.data, self.alpha);
         emit.emit(Tile::new(tile.coord, converted));
         Ok(())
@@ -37,6 +37,7 @@ impl Operation for ColorConvertOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::ColorSpace;
     use crate::image::TileCoord;
     use crate::pipeline::emitter::Emitter;
 
@@ -60,7 +61,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let mut emit = Emitter::new(tx);
 
-        crate::pipeline::operation::Operation::process(&mut op, tile, &mut emit).unwrap();
+        Operation::process(&mut op, Arc::new(tile), &mut emit).unwrap();
         drop(emit);
 
         let result = rx.recv().unwrap();
@@ -81,7 +82,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let mut emit = Emitter::new(tx);
 
-        crate::pipeline::operation::Operation::process(&mut op, tile, &mut emit).unwrap();
+        crate::pipeline::operation::Operation::process(&mut op, Arc::new(tile), &mut emit).unwrap();
         drop(emit);
 
         let result = rx.recv().unwrap();
@@ -100,14 +101,14 @@ mod tests {
 
         let (tx1, rx1) = std::sync::mpsc::sync_channel(1);
         let mut emit1 = Emitter::new(tx1);
-        crate::pipeline::operation::Operation::process(&mut op1, tile, &mut emit1).unwrap();
+        crate::pipeline::operation::Operation::process(&mut op1, Arc::new(tile), &mut emit1).unwrap();
         drop(emit1);
 
         let intermediate = rx1.recv().unwrap();
 
         let (tx2, rx2) = std::sync::mpsc::sync_channel(1);
         let mut emit2 = Emitter::new(tx2);
-        crate::pipeline::operation::Operation::process(&mut op2, intermediate, &mut emit2).unwrap();
+        crate::pipeline::operation::Operation::process(&mut op2, Arc::new(intermediate), &mut emit2).unwrap();
         drop(emit2);
 
         let final_tile = rx2.recv().unwrap();
@@ -132,7 +133,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let mut emit = Emitter::new(tx);
 
-        crate::pipeline::operation::Operation::process(&mut op, tile, &mut emit).unwrap();
+        crate::pipeline::operation::Operation::process(&mut op, Arc::new(tile), &mut emit).unwrap();
         drop(emit);
 
         let result = rx.recv().unwrap();

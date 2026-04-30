@@ -4,6 +4,8 @@ pub mod layer;
 pub mod loader;
 pub mod tool;
 pub mod viewport;
+pub mod working_image;
+pub mod filter;
 
 use async_trait::async_trait;
 use serde::Serialize;

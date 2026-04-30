@@ -87,10 +87,9 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
 
     fn process(
         &mut self,
-        tile: Self::In,
+        tile: Arc<Self::In>,
         emit: &mut Emitter<Self::Out>,
     ) -> Result<(), crate::error::Error> {
-        let tile = Arc::new(tile);
         let src_mip = tile.coord.mip_level;
 
         let dlen = tile.data.len();
@@ -144,7 +143,7 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
             *entry = [None, None, None, None];
 
             // Recurse: the new MIP tile also goes through process()
-            self.process(new_tile, emit)?;
+            self.process(Arc::new(new_tile), emit)?;
         }
 
         Ok(())

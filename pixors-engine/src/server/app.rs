@@ -2,6 +2,7 @@
 
 use crate::server::event_bus::{EngineCommand, EventBus};
 use crate::server::service::Service;
+use crate::server::service::filter::FilterService;
 use crate::server::service::layer::LayerService;
 use crate::server::service::loader::LoaderService;
 use crate::server::service::session::SessionService;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub loader_service: Arc<LoaderService>,
     pub tool_service: Arc<ToolService>,
     pub viewport_service: Arc<ViewportService>,
+    pub filter_service: Arc<FilterService>,
     pub session_service: Arc<SessionService>,
     pub event_bus: Arc<EventBus>,
     pub session_manager: Arc<SessionManager>,
@@ -39,6 +41,7 @@ impl AppState {
             loader_service: Arc::new(LoaderService::new()),
             tool_service: Arc::new(ToolService::new()),
             viewport_service: Arc::new(ViewportService::new()),
+            filter_service: Arc::new(FilterService::new()),
             session_service: Arc::new(SessionService::new()),
             session_manager: Arc::new(SessionManager::new()),
         }
@@ -66,6 +69,10 @@ impl AppState {
             }
             EngineCommand::Tool(c) => {
                 self.tool_service.handle_command(c, &state, ctx).await;
+            }
+            EngineCommand::Filter(c) => {
+                tracing::info!("[App] Filter command received: {:?}", c);
+                self.filter_service.handle_command(c, &state, ctx).await;
             }
         }
     }

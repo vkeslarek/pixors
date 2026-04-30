@@ -113,7 +113,9 @@ pub struct JobBuilder<Item: Send + 'static> {
 }
 
 impl<Item: Send + 'static> JobBuilder<Item> {
-    pub fn then<O: Operation<In = Item>>(mut self, mut op: O) -> JobBuilder<O::Out> {
+    pub fn then<O: Operation<In = Item>>(mut self, mut op: O) -> JobBuilder<O::Out>
+    where Item: Clone
+    {
         let (tx, next_rx) = mpsc::sync_channel(64);
         let cancel_inner = self.cancel.clone();
         let prog = Arc::clone(&self.progress);
@@ -124,7 +126,7 @@ impl<Item: Send + 'static> JobBuilder<Item> {
                 if cancel_inner.load(Ordering::Relaxed) {
                     break;
                 }
-                if op.process(item, &mut emit).is_err() {
+                if op.process(Arc::new(item), &mut emit).is_err() {
                     cancel_inner.store(true, Ordering::Release);
                     break;
                 }
@@ -235,10 +237,10 @@ mod tests {
 
         fn process(
             &mut self,
-            item: u32,
+            item: Arc<u32>,
             emit: &mut Emitter<u32>,
         ) -> Result<(), crate::error::Error> {
-            emit.emit(item * 2);
+            emit.emit(*item * 2);
             Ok(())
         }
     }
@@ -255,10 +257,10 @@ mod tests {
 
         fn process(
             &mut self,
-            item: u32,
+            item: Arc<u32>,
             emit: &mut Emitter<String>,
         ) -> Result<(), crate::error::Error> {
-            emit.emit(format!("{}", item));
+            emit.emit(format!("{}", *item));
             Ok(())
         }
     }
@@ -369,11 +371,12 @@ mod tests {
 
         fn process(
             &mut self,
-            mut item: Vec<u8>,
+            item: Arc<Vec<u8>>,
             emit: &mut Emitter<Vec<u8>>,
         ) -> Result<(), crate::error::Error> {
-            item.reverse();
-            emit.emit(item);
+            let mut v = (*item).clone();
+            v.reverse();
+            emit.emit(v);
             Ok(())
         }
     }

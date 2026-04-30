@@ -123,9 +123,9 @@ impl LayerService {
 
         state.session_manager.with_tab_session(&ctx.session_id, |ts| {
             let layers = ts.get(&tab_id).map(|tab| {
-                tab.layers.iter().enumerate().map(|(idx, l)| LayerInfo {
+                tab.layers().iter().enumerate().map(|(idx, l)| LayerInfo {
                     id: l.id,
-                    name: if tab.layers.len() == 1 { "Background".into() } else { format!("Layer {}", idx + 1) },
+                    name: if tab.layers().len() == 1 { "Background".into() } else { format!("Layer {}", idx + 1) },
                     visible: l.visible,
                     opacity: l.opacity,
                     blend_mode: format!("{:?}", l.blend_mode),
@@ -158,19 +158,14 @@ impl LayerService {
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| {
                 let tab = ts.tabs.get_mut(&tab_id)?;
-                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
-                let (prev_w, prev_h) = (tab.doc_width, tab.doc_height);
-                layer.visible = visible;
+                let (prev_w, prev_h) = (tab.doc_width(), tab.doc_height());
+                {
+                    let layer = tab.layers_mut().iter_mut().find(|l| l.id == layer_id)?;
+                    layer.visible = visible;
+                }
                 tab.recompute_doc_bounds();
-                let changed = tab.doc_width != prev_w || tab.doc_height != prev_h;
-                Some((
-                    tab.composition_sig(),
-                    prev_w,
-                    prev_h,
-                    tab.doc_width,
-                    tab.doc_height,
-                    changed,
-                ))
+                let changed = tab.doc_width() != prev_w || tab.doc_height() != prev_h;
+                Some((tab.composition_sig(), prev_w, prev_h, tab.doc_width(), tab.doc_height(), changed))
             })
             .await
             .flatten();
@@ -210,8 +205,10 @@ impl LayerService {
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| {
                 let tab = ts.tabs.get_mut(&tab_id)?;
-                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
-                layer.opacity = opacity.clamp(0.0, 1.0);
+                {
+                    let layer = tab.layers_mut().iter_mut().find(|l| l.id == layer_id)?;
+                    layer.opacity = opacity.clamp(0.0, 1.0);
+                }
                 Some(tab.composition_sig())
             })
             .await
@@ -247,19 +244,14 @@ impl LayerService {
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| {
                 let tab = ts.tabs.get_mut(&tab_id)?;
-                let layer = tab.layers.iter_mut().find(|l| l.id == layer_id)?;
-                let (prev_w, prev_h) = (tab.doc_width, tab.doc_height);
-                layer.offset = (x, y);
+                let (prev_w, prev_h) = (tab.doc_width(), tab.doc_height());
+                {
+                    let layer = tab.layers_mut().iter_mut().find(|l| l.id == layer_id)?;
+                    layer.offset = (x, y);
+                }
                 tab.recompute_doc_bounds();
-                let changed = tab.doc_width != prev_w || tab.doc_height != prev_h;
-                Some((
-                    tab.composition_sig(),
-                    prev_w,
-                    prev_h,
-                    tab.doc_width,
-                    tab.doc_height,
-                    changed,
-                ))
+                let changed = tab.doc_width() != prev_w || tab.doc_height() != prev_h;
+                Some((tab.composition_sig(), prev_w, prev_h, tab.doc_width(), tab.doc_height(), changed))
             })
             .await
             .flatten();

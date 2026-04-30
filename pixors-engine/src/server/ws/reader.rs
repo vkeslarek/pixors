@@ -20,12 +20,13 @@ pub async fn run_reader_task(
         match msg {
             Message::Binary(data) => {
                 if let Ok(cmd) = rmp_serde::from_slice::<EngineCommand>(&data) {
+                    tracing::debug!("[WS] command received: {:?}", cmd);
                     state.route_command(cmd, &mut ctx).await;
                     if ctx.close_requested {
                         break;
                     }
-                } else if let Err(e) = rmp_serde::from_slice::<EngineCommand>(&data) {
-                    tracing::warn!("Invalid command received: {} bytes, error: {}", data.len(), e);
+                } else {
+                    tracing::warn!("Invalid command received: {} bytes", data.len());
                 }
             }
             Message::Close(_) => {

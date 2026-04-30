@@ -1,6 +1,21 @@
 use crate::image::{Tile, TileCoord};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::hash::Hash;
+
+/// Identifies a tile within a MIP level for neighborhood accumulation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NeighborhoodCoord {
+    pub mip: u32,
+    pub tx: u32,
+    pub ty: u32,
+}
+
+impl NeighborhoodCoord {
+    pub fn new(mip: u32, tx: u32, ty: u32) -> Self { Self { mip, tx, ty } }
+    pub fn from_tile(tile: &TileCoord) -> Self { Self { mip: tile.mip_level, tx: tile.tx, ty: tile.ty } }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EdgeCondition {
@@ -11,6 +26,7 @@ pub enum EdgeCondition {
 
 /// A center tile and its surrounding neighbors within a given radius.
 /// Used by operations that need pixel data beyond tile boundaries (blur, etc.).
+#[derive(Clone)]
 pub struct Neighborhood<P: Clone + Send + Sync + 'static> {
     pub radius: u32,
     pub center: TileCoord,
@@ -69,6 +85,13 @@ impl<P: Clone + Send + Sync + 'static> Neighborhood<P> {
     /// Total tiles contained (including center and neighbors).
     pub fn tile_count(&self) -> usize {
         self.tiles.len()
+    }
+
+    /// Lookup a tile by its grid offset relative to the center.
+    /// Outer Option: whether the slot was filled. Inner Option: whether it
+    /// holds an actual tile (None = explicitly empty / out-of-bounds).
+    pub fn tile_at_offset(&self, dtx: i32, dty: i32) -> Option<&Option<Arc<Tile<P>>>> {
+        self.tiles.get(&(dtx, dty))
     }
 
     /// Read a pixel at absolute image coordinates (px, py).

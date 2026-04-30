@@ -154,7 +154,7 @@ impl LoaderService {
 
         tracing::debug!("open_image: done tab={}", tab_id);
         let (width, height) = tab.image_info().unwrap_or((0, 0));
-        let layer_count = tab.layers.len();
+        let layer_count = tab.layers().len();
         state
             .session_manager
             .with_tab_session_mut(&ctx.session_id, |ts| ts.add(tab))

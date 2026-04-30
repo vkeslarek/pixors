@@ -7,7 +7,8 @@ pub enum Orientation {
     FlipH, Rotate180, FlipV, Transpose, Rotate90, Transverse, Rotate270,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+use std::hash::Hash;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum BlendMode {
     #[default] Normal,
 }

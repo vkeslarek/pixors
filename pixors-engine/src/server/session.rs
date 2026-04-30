@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::server::app::AppState;
 use crate::server::event_bus::EngineEvent;
 use crate::server::service::session::SessionEvent;
-use crate::server::service::tab::TabSessionData;
+use crate::server::service::tab::Tabs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum SessionStatus {
@@ -24,7 +24,7 @@ pub enum SessionStatus {
 
 #[derive(Debug)]
 pub struct Session {
-    pub tab_session: TabSessionData,
+    pub tab_session: Tabs,
     pub status: SessionStatus,
     pub last_status: Instant,
 }
@@ -32,7 +32,7 @@ pub struct Session {
 impl Session {
     fn new() -> Self {
         Self {
-            tab_session: TabSessionData::new(),
+            tab_session: Tabs::new(),
             status: SessionStatus::Connected,
             last_status: Instant::now(),
         }
@@ -95,7 +95,7 @@ impl SessionManager {
 
     /// Read-only access to a session's tab data.
     pub async fn with_tab_session<F, R>(&self, session_id: &Uuid, f: F) -> Option<R>
-    where F: FnOnce(&TabSessionData) -> R
+    where F: FnOnce(&Tabs) -> R
     {
         let s = self.get(session_id).await?;
         let session = s.read().await;
@@ -104,7 +104,7 @@ impl SessionManager {
 
     /// Mutable access to a session's tab data.
     pub async fn with_tab_session_mut<F, R>(&self, session_id: &Uuid, f: F) -> Option<R>
-    where F: FnOnce(&mut TabSessionData) -> R
+    where F: FnOnce(&mut Tabs) -> R
     {
         let s = self.get(session_id).await?;
         let mut session = s.write().await;
