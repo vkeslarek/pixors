@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import * as Toast from '@radix-ui/react-toast'
-import { MenuBar, TabBar } from '@/components/MenuBar'
+import { MenuBar } from '@/components/MenuBar'
 import { WorkspaceBar } from '@/components/WorkspaceBar'
-import { Viewport } from '@/components/Viewport'
+import { PixorsEngineWidget } from '@/components/viewport/PixorsEngineWidget'
 import { DockArea } from '@/components/DockArea'
 import { StatusBar } from '@/components/StatusBar'
-import { ProgressBar } from '@/components/ProgressBar'
 import '@/App.css'
 
 import { registerShortcuts } from '@/keymap'
@@ -73,14 +72,12 @@ export default function App() {
           <WorkspaceBar />
           <DockArea side="left" />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-            <TabBar />
-            <Viewport />
+            <PixorsEngineWidget />
             <DockArea side="bottom" />
           </div>
           <DockArea side="right" />
         </div>
         <DropPreviewOverlay />
-        <ProgressBar />
         <StatusBar />
         <GlobalToaster />
       </div>

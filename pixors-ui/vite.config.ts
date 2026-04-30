@@ -11,9 +11,13 @@ export default defineConfig({
     },
     server: {
         fs: {
-            allow: ['..']
+            allow: ['..', '../../pixors-wasm']
         }
     },
+    optimizeDeps: {
+        exclude: ['pixors-wasm']
+    },
+    assetsInclude: ['**/*.wasm'],
     build: {
         target: 'es2022'
     },
