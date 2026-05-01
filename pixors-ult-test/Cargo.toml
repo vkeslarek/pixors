@@ -1,0 +1,12 @@
+[package]
+name = "pixors-ult-test"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+iced = { version = "0.13", features = ["advanced", "tokio"] }
+iced_aw = { version = "0.12", default-features = false, features = ["menu"] }
+bytemuck = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

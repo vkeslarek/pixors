@@ -78,3 +78,36 @@ impl Pixel for Rgba<f32> {
         Rgba { r: rgba[0], g: rgba[1], b: rgba[2], a: rgba[3] }
     }
 }
+
+impl Pixel for Rgba<u8> {
+    fn unpack(self) -> [f32; 4] {
+        [
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+            self.a as f32 / 255.0,
+        ]
+    }
+    fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) {
+        let r: [f32; 4] = rr.into();
+        let g: [f32; 4] = gg.into();
+        let b: [f32; 4] = bb.into();
+        let a: [f32; 4] = aa.into();
+        for i in 0..4 {
+            out[i] = Rgba {
+                r: (r[i].clamp(0.0, 1.0) * 255.0).round() as u8,
+                g: (g[i].clamp(0.0, 1.0) * 255.0).round() as u8,
+                b: (b[i].clamp(0.0, 1.0) * 255.0).round() as u8,
+                a: (a[i].clamp(0.0, 1.0) * 255.0).round() as u8,
+            };
+        }
+    }
+    fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self {
+        Rgba {
+            r: (rgba[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            g: (rgba[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            b: (rgba[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+            a: (rgba[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+        }
+    }
+}

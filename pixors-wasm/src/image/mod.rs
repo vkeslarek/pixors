@@ -1,7 +1,7 @@
 pub mod buffer;
+pub mod tile;
 mod meta;
 
 pub use meta::AlphaMode;
-pub use meta::{ChannelKind, ChannelLayoutKind};
-pub use meta::{SampleType, SampleLayout};
-pub use buffer::{SampleFormat, PlaneDesc, BufferDesc, ImageBuffer};
+pub use buffer::{SampleFormat, BufferDesc, ImageBuffer};
+pub use tile::{Tile, TileCoord, TileGrid};
