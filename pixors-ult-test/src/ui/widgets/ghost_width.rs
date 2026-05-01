@@ -24,14 +24,13 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> Node {
-        let child = self.content.as_widget().layout(&mut tree.children[0], renderer, limits);
-        let mut node = Node::with_children(Size::new(0.0, child.size().height), vec![child]);
-        node
+        let child = self.content.as_widget_mut().layout(&mut tree.children[0], renderer, limits);
+        Node::with_children(Size::new(0.0, child.size().height), vec![child])
     }
 
     fn draw(

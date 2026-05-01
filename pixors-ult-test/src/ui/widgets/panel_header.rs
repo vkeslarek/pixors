@@ -39,9 +39,9 @@ pub fn panel_header<'a, Msg: 'a + Clone>(
                     ..Default::default()
                 }
             });
-        r = r.push(iced::widget::horizontal_space()).push(close);
+        r = r.push(iced::widget::Space::new().width(Length::Fill)).push(close);
     } else {
-        r = r.push(iced::widget::horizontal_space());
+        r = r.push(iced::widget::Space::new().width(Length::Fill));
     }
 
     container(r.padding([0, 12]).align_y(iced::Alignment::Center))

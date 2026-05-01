@@ -42,7 +42,7 @@ impl State {
 
         let layout = column![
             column(buttons).spacing(2).padding(4),
-            iced::widget::vertical_space(),
+            iced::widget::Space::new().height(Length::Fill),
             column(footer_items).spacing(2).padding(4),
         ]
         .height(Length::Fill);

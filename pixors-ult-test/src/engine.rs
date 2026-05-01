@@ -1,9 +1,8 @@
-use iced::event;
-use iced::mouse;
 use iced::widget::shader::{self, Viewport};
-use iced::{Point, Rectangle, Size};
+use iced::{Event, Point, Rectangle, Size};
+use iced::mouse;
 
-pub use crate::engine::shader::wgpu;
+pub use iced::wgpu;
 
 use crate::viewport::camera::{Camera, CameraUniform};
 
@@ -27,11 +26,10 @@ impl<Msg> shader::Program<Msg> for EngineProgram {
     fn update(
         &self,
         state: &mut Self::State,
-        event: shader::Event,
+        event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-        _shell: &mut iced::advanced::Shell<'_, Msg>,
-    ) -> (event::Status, Option<Msg>) {
+    ) -> Option<shader::Action<Msg>> {
         let size = Size::new(bounds.width, bounds.height);
         if state.last_bounds.map_or(true, |s| s != size) {
             state.camera.resize(size.width, size.height);
@@ -43,21 +41,21 @@ impl<Msg> shader::Program<Msg> for EngineProgram {
         }
 
         match event {
-            shader::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if cursor.position_in(bounds).is_some() {
                     state.dragging = true;
                     state.last_pos = cursor.position_in(bounds);
-                    (event::Status::Captured, None)
+                    Some(shader::Action::request_redraw().and_capture())
                 } else {
-                    (event::Status::Ignored, None)
+                    None
                 }
             }
-            shader::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 state.dragging = false;
                 state.last_pos = None;
-                (event::Status::Ignored, None)
+                None
             }
-            shader::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if state.dragging {
                     if let Some(curr) = cursor.position_in(bounds) {
                         if let Some(last) = state.last_pos {
@@ -67,26 +65,26 @@ impl<Msg> shader::Program<Msg> for EngineProgram {
                         }
                         state.last_pos = Some(curr);
                     }
-                    (event::Status::Captured, None)
+                    Some(shader::Action::request_redraw().and_capture())
                 } else {
-                    (event::Status::Ignored, None)
+                    None
                 }
             }
-            shader::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 if cursor.position_in(bounds).is_some() {
                     let dy = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => y * 24.0,
-                        mouse::ScrollDelta::Pixels { y, .. } => y,
+                        mouse::ScrollDelta::Pixels { y, .. } => *y,
                     };
                     let factor = if dy > 0.0 { 1.1_f32.powf(dy) } else { 1.0 / 1.1_f32.powf(-dy) };
                     let pos = cursor.position_in(bounds).unwrap_or(Point::new(0.0, 0.0));
                     state.camera.zoom_at(factor, pos.x, pos.y);
-                    (event::Status::Captured, None)
+                    Some(shader::Action::request_redraw().and_capture())
                 } else {
-                    (event::Status::Ignored, None)
+                    None
                 }
             }
-            _ => (event::Status::Ignored, None),
+            _ => None,
         }
     }
 
@@ -129,14 +127,18 @@ pub struct EnginePrimitive {
     camera: CameraUniform,
 }
 
-struct EnginePipeline {
+pub struct EnginePipeline {
     pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
 }
 
-impl EnginePipeline {
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+impl shader::Pipeline for EnginePipeline {
+    fn new(
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("engine.wgsl"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
@@ -168,22 +170,25 @@ impl EnginePipeline {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs",
+                entry_point: Some("vs"),
                 buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs",
+                entry_point: Some("fs"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -211,19 +216,16 @@ impl EnginePipeline {
 }
 
 impl shader::Primitive for EnginePrimitive {
+    type Pipeline = EnginePipeline;
+
     fn prepare(
         &self,
-        device: &wgpu::Device,
+        pipeline: &mut Self::Pipeline,
+        _device: &wgpu::Device,
         queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        storage: &mut shader::Storage,
         _bounds: &Rectangle,
         _viewport: &Viewport,
     ) {
-        if !storage.has::<EnginePipeline>() {
-            storage.store(EnginePipeline::new(device, format));
-        }
-        let pipeline = storage.get::<EnginePipeline>().unwrap();
         queue.write_buffer(
             &pipeline.camera_buffer,
             0,
@@ -233,12 +235,11 @@ impl shader::Primitive for EnginePrimitive {
 
     fn render(
         &self,
+        pipeline: &Self::Pipeline,
         encoder: &mut wgpu::CommandEncoder,
-        storage: &shader::Storage,
         target: &wgpu::TextureView,
         clip_bounds: &Rectangle<u32>,
     ) {
-        let pipeline = storage.get::<EnginePipeline>().unwrap();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("engine pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -248,6 +249,7 @@ impl shader::Primitive for EnginePrimitive {
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,

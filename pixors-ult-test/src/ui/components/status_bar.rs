@@ -113,7 +113,7 @@ impl State {
         .align_y(iced::Alignment::Center);
 
         container(
-            row![left, iced::widget::horizontal_space(), right]
+            row![left, iced::widget::Space::new().width(Length::Fill), right]
                 .spacing(12)
                 .padding([0, 12])
                 .align_y(iced::Alignment::Center),

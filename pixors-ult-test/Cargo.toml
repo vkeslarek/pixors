@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-iced = { version = "0.13.1", features = ["advanced", "tokio"] }
-iced_aw = { version = "0.12", default-features = false, features = ["menu"] }
+iced = { version = "0.14", features = ["advanced", "tokio"] }
+iced_aw = { version = "0.13", default-features = false, features = ["menu"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 half = { version = "2.7.1", features = ["bytemuck"] }
 wide = "1.3.0"
