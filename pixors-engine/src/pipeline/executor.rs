@@ -1,86 +1,103 @@
+use std::any::Any;
+use std::collections::VecDeque;
+
 use crate::error::Error;
 use crate::pipeline::graph::Graph;
 use crate::pipeline::node::Node;
 
 pub fn run(graph: &mut Graph) -> Result<(), Error> {
-    let node_count = graph.node_count();
-    if node_count == 0 {
-        return Ok(());
+    if let Err(errors) = graph.validate() {
+        return Err(Error::internal(format!(
+            "validation failed: {} mismatch(es)",
+            errors.len()
+        )));
     }
 
-    let mut node_outputs: Vec<Vec<Box<dyn std::any::Any + Send>>> = vec![Vec::new(); node_count];
+    let order = topo_sort(graph)?;
+    let n = graph.node_count();
+    let mut pending: Vec<VecDeque<Box<dyn Any>>> = (0..n).map(|_| VecDeque::new()).collect();
 
-    for &(from, to) in &graph.edges {
-        if node_outputs[from].is_empty() {
-            let outputs = execute_node(&mut graph.nodes[from])?;
-            node_outputs[from] = outputs;
+    for idx in order {
+        if graph.edges.iter().all(|(_, to)| *to != idx) {
+            let mut buf = Vec::new();
+            let mut emit = |item: Box<dyn Any>| buf.push(item);
+            match &mut graph.nodes[idx] {
+                Node::Source(s) => {
+                    s.run_cpu_erased(&mut emit)?;
+                    s.finish_cpu_erased(&mut emit)?;
+                }
+                _ => {}
+            }
+            route(idx, buf, graph, &mut pending);
         }
 
-        for item in node_outputs[from].drain(..) {
-            feed_node(&mut graph.nodes[to], item)?;
+        while let Some(item) = pending[idx].pop_front() {
+            let mut buf = Vec::new();
+            let mut emit = |item: Box<dyn Any>| buf.push(item);
+            match &mut graph.nodes[idx] {
+                Node::Converter(c) => c.process_cpu_erased(item, &mut emit)?,
+                Node::Operation(o) => o.process_cpu_erased(item, &mut emit)?,
+                Node::Sink(s) => s.consume_cpu_erased(item)?,
+                Node::Source(_) => return Err(Error::internal("source cannot receive input")),
+            }
+            route(idx, buf, graph, &mut pending);
         }
-    }
 
-    for idx in graph.outputs.iter() {
-        if node_outputs[*idx].is_empty() {
-            node_outputs[*idx] = execute_node(&mut graph.nodes[*idx])?;
+        let mut buf = Vec::new();
+        let mut emit = |item: Box<dyn Any>| buf.push(item);
+        match &mut graph.nodes[idx] {
+            Node::Converter(c) => c.finish_cpu_erased(&mut emit)?,
+            Node::Operation(o) => o.finish_cpu_erased(&mut emit)?,
+            Node::Sink(s) => s.finish_cpu_erased()?,
+            _ => {}
         }
-    }
-
-    for node in graph.nodes.iter_mut() {
-        finish_node(node)?;
+        route(idx, buf, graph, &mut pending);
     }
 
     Ok(())
 }
 
-fn execute_node(node: &mut Node) -> Result<Vec<Box<dyn std::any::Any + Send>>, Error> {
-    match node {
-        Node::Source(s) => {
-            let mut out = Vec::new();
-            let mut emit = |item: Box<dyn std::any::Any + Send>| out.push(item);
-            s.run_cpu_erased(&mut emit)?;
-            s.finish_cpu_erased(&mut emit)?;
-            Ok(out)
+fn route(
+    from: usize,
+    items: Vec<Box<dyn Any>>,
+    graph: &Graph,
+    pending: &mut [VecDeque<Box<dyn Any>>],
+) {
+    for item in items {
+        for &(f, to) in &graph.edges {
+            if f == from {
+                pending[to].push_back(item);
+                break;
+            }
         }
-        Node::Converter(c) | Node::Operation(c) => {
-            // Converters and operations need input from upstream.
-            // If called as "source" (no input), return empty.
-            Ok(Vec::new())
-        }
-        Node::Sink(_) => Ok(Vec::new()),
     }
 }
 
-fn feed_node(node: &mut Node, item: Box<dyn std::any::Any + Send>) -> Result<(), Error> {
-    match node {
-        Node::Converter(c) => c.consume_input_erased(item),
-        Node::Operation(o) => o.consume_input_erased(item),
-        Node::Sink(s) => s.consume_cpu_erased(item),
-        Node::Source(_) => Err(Error::internal("source cannot receive input")),
+fn topo_sort(graph: &Graph) -> Result<Vec<usize>, Error> {
+    let n = graph.node_count();
+    let mut in_degree = vec![0; n];
+    for &(_, to) in &graph.edges {
+        in_degree[to] += 1;
     }
-}
 
-fn finish_node(node: &mut Node) -> Result<(), Error> {
-    match node {
-        Node::Converter(c) => {
-            let mut out = Vec::new();
-            let mut emit = |item: Box<dyn std::any::Any + Send>| out.push(item);
-            c.finish_cpu_erased(&mut emit)?;
-            Ok(())
-        }
-        Node::Operation(o) => {
-            let mut out = Vec::new();
-            let mut emit = |item: Box<dyn std::any::Any + Send>| out.push(item);
-            o.finish_cpu_erased(&mut emit)?;
-            Ok(())
-        }
-        Node::Sink(s) => s.finish_cpu_erased(),
-        Node::Source(_) => {
-            let mut out = Vec::new();
-            let mut emit = |item: Box<dyn std::any::Any + Send>| out.push(item);
-            // Source already done in execute_node, noop here
-            Ok(())
+    let mut queue: VecDeque<usize> = (0..n).filter(|i| in_degree[*i] == 0).collect();
+    let mut order = Vec::new();
+
+    while let Some(idx) = queue.pop_front() {
+        order.push(idx);
+        for &(from, to) in &graph.edges {
+            if from == idx {
+                in_degree[to] -= 1;
+                if in_degree[to] == 0 {
+                    queue.push_back(to);
+                }
+            }
         }
     }
+
+    if order.len() != n {
+        return Err(Error::internal("graph contains a cycle"));
+    }
+
+    Ok(order)
 }

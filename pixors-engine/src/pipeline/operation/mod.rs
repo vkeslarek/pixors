@@ -3,9 +3,10 @@ use std::any::{Any, TypeId};
 use crate::error::Error;
 use crate::pipeline::runner::{RunnerOptions, RunnerKind};
 
-pub mod file;
+pub mod blur;
 
-pub trait Source: Clone {
+pub trait Operation: Clone {
+    type Input;
     type Output;
 
     fn name(&self) -> &'static str;
@@ -19,7 +20,7 @@ pub trait Source: Clone {
         }
     }
 
-    fn run_cpu(&mut self, _emit: &mut crate::pipeline::runner::Emitter<Self::Output>) -> Result<(), Error> {
+    fn process_cpu(&mut self, _input: Self::Input, _emit: &mut crate::pipeline::runner::Emitter<Self::Output>) -> Result<(), Error> {
         Err(Error::internal("CPU runner not available"))
     }
 
@@ -28,45 +29,56 @@ pub trait Source: Clone {
     }
 }
 
-pub trait AnySource {
+pub trait AnyOperation {
+    fn input_type_id(&self) -> TypeId;
+    fn input_type_name(&self) -> &'static str;
     fn output_type_id(&self) -> TypeId;
     fn output_type_name(&self) -> &'static str;
     fn name(&self) -> &'static str;
     fn params(&self) -> serde_json::Value;
-    fn clone_source(&self) -> Box<dyn AnySource>;
+    fn clone_operation(&self) -> Box<dyn AnyOperation>;
     fn available_runners(&self) -> RunnerOptions;
-    fn run_cpu_erased(&mut self, emit: &mut dyn FnMut(Box<dyn Any>)) -> Result<(), Error>;
+    fn process_cpu_erased(&mut self, input: Box<dyn Any>, emit: &mut dyn FnMut(Box<dyn Any>)) -> Result<(), Error>;
     fn finish_cpu_erased(&mut self, emit: &mut dyn FnMut(Box<dyn Any>)) -> Result<(), Error>;
 }
 
-impl<S: Source + serde::Serialize + 'static> AnySource for S {
+impl<O: Operation + serde::Serialize + 'static> AnyOperation for O {
+    fn input_type_id(&self) -> TypeId {
+        TypeId::of::<O::Input>()
+    }
+
+    fn input_type_name(&self) -> &'static str {
+        std::any::type_name::<O::Input>()
+    }
+
     fn output_type_id(&self) -> TypeId {
-        TypeId::of::<S::Output>()
+        TypeId::of::<O::Output>()
     }
 
     fn output_type_name(&self) -> &'static str {
-        std::any::type_name::<S::Output>()
+        std::any::type_name::<O::Output>()
     }
 
     fn name(&self) -> &'static str {
-        S::name(self)
+        O::name(self)
     }
 
     fn params(&self) -> serde_json::Value {
         serde_json::to_value(self).unwrap_or_default()
     }
 
-    fn clone_source(&self) -> Box<dyn AnySource> {
+    fn clone_operation(&self) -> Box<dyn AnyOperation> {
         Box::new(self.clone())
     }
 
     fn available_runners(&self) -> RunnerOptions {
-        S::available_runners(self)
+        O::available_runners(self)
     }
 
-    fn run_cpu_erased(&mut self, emit: &mut dyn FnMut(Box<dyn Any>)) -> Result<(), Error> {
+    fn process_cpu_erased(&mut self, input: Box<dyn Any>, emit: &mut dyn FnMut(Box<dyn Any>)) -> Result<(), Error> {
+        let typed: O::Input = *input.downcast().map_err(|_| Error::internal("type mismatch in operation"))?;
         let mut emitter = crate::pipeline::runner::Emitter::new();
-        S::run_cpu(self, &mut emitter)?;
+        O::process_cpu(self, typed, &mut emitter)?;
         for item in emitter.into_items() {
             emit(Box::new(item));
         }
@@ -75,7 +87,7 @@ impl<S: Source + serde::Serialize + 'static> AnySource for S {
 
     fn finish_cpu_erased(&mut self, emit: &mut dyn FnMut(Box<dyn Any>)) -> Result<(), Error> {
         let mut emitter = crate::pipeline::runner::Emitter::new();
-        S::finish_cpu(self, &mut emitter)?;
+        O::finish_cpu(self, &mut emitter)?;
         for item in emitter.into_items() {
             emit(Box::new(item));
         }

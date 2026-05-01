@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 
 use crate::error::Error;
 use crate::pipeline::runner::{RunnerOptions, RunnerKind};
@@ -35,7 +35,7 @@ pub trait AnySink {
     fn params(&self) -> serde_json::Value;
     fn clone_sink(&self) -> Box<dyn AnySink>;
     fn available_runners(&self) -> RunnerOptions;
-    fn consume_cpu_erased(&mut self, input: Box<dyn Any + Send>) -> Result<(), Error>;
+    fn consume_cpu_erased(&mut self, input: Box<dyn Any>) -> Result<(), Error>;
     fn finish_cpu_erased(&mut self) -> Result<(), Error>;
 }
 
@@ -64,7 +64,7 @@ impl<S: Sink + serde::Serialize + 'static> AnySink for S {
         S::available_runners(self)
     }
 
-    fn consume_cpu_erased(&mut self, input: Box<dyn Any + Send>) -> Result<(), Error> {
+    fn consume_cpu_erased(&mut self, input: Box<dyn Any>) -> Result<(), Error> {
         let typed: S::Input = *input.downcast().map_err(|_| Error::internal("type mismatch in sink"))?;
         S::consume_cpu(self, typed)
     }
