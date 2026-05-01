@@ -1,8 +1,9 @@
 use iced::widget::{button, container, row, text};
-use iced::{Background, Border, Color, Element, Length};
+use iced::{Background, Border, Color, Element, Length, Shadow};
 
 use iced_aw::menu::{self, Item, Menu};
-use iced_aw::style::{menu_bar::primary, Status};
+use iced_aw::style::menu_bar::primary;
+use iced_aw::style::status::Status;
 use iced_aw::{menu_bar, menu_items};
 
 use crate::ui::theme::{
@@ -31,22 +32,22 @@ pub fn view() -> Element<'static, Msg> {
 
     let mb = menu_bar!(
         (trigger("File"), mtpl(menu_items!(
-            (item("Open…", "Ctrl+O", Msg::OpenFile))
-            (separator())
-            (item("Exit", "Alt+F4", Msg::Exit))
-        )).width(200.0))
+            (item("Open\u{2026}", "Ctrl+O", Msg::OpenFile)),
+            (separator()),
+            (item("Exit", "Alt+F4", Msg::Exit)),
+        )).width(200.0)),
         (trigger("View"), mtpl(menu_items!(
-            (item("Zoom In", "Ctrl++", Msg::ZoomIn))
-            (item("Zoom Out", "Ctrl+-", Msg::ZoomOut))
-            (item("Fit to Screen", "Ctrl+0", Msg::FitToScreen))
-            (item("Actual Size", "Ctrl+1", Msg::ActualSize))
-        )).width(200.0))
+            (item("Zoom In", "Ctrl++", Msg::ZoomIn)),
+            (item("Zoom Out", "Ctrl+-", Msg::ZoomOut)),
+            (item("Fit to Screen", "Ctrl+0", Msg::FitToScreen)),
+            (item("Actual Size", "Ctrl+1", Msg::ActualSize)),
+        )).width(200.0)),
         (trigger("Window"), mtpl(menu_items!(
-            (item("Toggle Layers", "", Msg::ToggleLayers))
-            (item("Toggle Filters", "", Msg::ToggleFilters))
-            (separator())
-            (item("Reset Layout", "", Msg::ResetLayout))
-        )).width(200.0))
+            (item("Toggle Layers", "", Msg::ToggleLayers)),
+            (item("Toggle Filters", "", Msg::ToggleFilters)),
+            (separator()),
+            (item("Reset Layout", "", Msg::ResetLayout)),
+        )).width(200.0)),
     )
     .draw_path(menu::DrawPath::Backdrop)
     .style(|theme: &iced::Theme, status: Status| menu::Style {

@@ -1,3 +1,9 @@
+mod color;
+mod pixel;
+mod image;
+mod pipeline;
+mod error;
+mod approx;
 mod ui;
 mod engine;
 mod viewport;

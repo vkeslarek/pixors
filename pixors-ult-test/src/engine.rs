@@ -3,7 +3,7 @@ use iced::mouse;
 use iced::widget::shader::{self, Viewport};
 use iced::{Point, Rectangle, Size};
 
-pub use iced::widget::shader::wgpu;
+pub use crate::engine::shader::wgpu;
 
 use crate::viewport::camera::{Camera, CameraUniform};
 
