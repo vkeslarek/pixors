@@ -13,3 +13,8 @@ pub trait Operation: Send + 'static {
 
     fn finish(&mut self, _emit: &mut Emitter<Self::Out>) -> Result<(), Error> { Ok(()) }
 }
+
+pub mod blur;
+pub mod color;
+pub mod mip;
+pub mod neighborhood;

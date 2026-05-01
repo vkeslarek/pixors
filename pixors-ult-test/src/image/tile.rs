@@ -1,6 +1,6 @@
 use crate::color::ColorSpace;
-use crate::color::ColorConversion;
 use crate::pixel::Rgba;
+use crate::color::ColorConversion;
 use crate::pixel::AlphaPolicy;
 use half::f16;
 use serde::{Deserialize, Serialize};
