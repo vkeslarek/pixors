@@ -1,5 +1,5 @@
 [workspace]
-members = ["pixors-engine", "pixors-desktop", "pixors-wasm", "pixors-ult-test"]
+members = ["pixors-desktop"]
 resolver = "3"
 
 [workspace.package]
