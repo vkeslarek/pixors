@@ -1,22 +1,14 @@
-pub mod kernel;
-pub mod pool;
-pub mod scheduler;
-
-pub mod color;
-pub mod composite;
-pub mod container;
+pub mod data;
 pub mod error;
 pub mod gpu;
-pub mod image;
-pub mod io;
-pub mod pixel;
-pub mod pipeline;
-pub mod storage;
+pub mod graph;
+pub mod model;
+pub mod operation;
+pub mod sink;
+pub mod source;
+pub mod stage;
 pub mod utils;
 
 pub mod prelude {
-    pub use crate::color::ColorSpace;
-    pub use crate::pipeline::state::{ExportFormat, StateNode};
-    pub use crate::pipeline::state_graph::builder::PathBuilder;
-    pub use crate::pipeline::state_graph::compile::ExecutionMode;
+    pub use crate::model::color::ColorSpace;
 }

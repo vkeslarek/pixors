@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use crate::container::meta::PixelMeta;
-    use crate::container::{EdgeCondition, Neighborhood, Tile, TileCoord};
-    use crate::pipeline::exec_graph::emitter::Emitter;
-    use crate::pipeline::exec_graph::item::Item;
-    use crate::pipeline::exec_graph::runner::OperationRunner;
-    use crate::pipeline::exec::{
+    use crate::data::meta::PixelMeta;
+    use crate::data::{EdgeCondition, Neighborhood, Tile, TileCoord};
+    use crate::graph::emitter::Emitter;
+    use crate::graph::item::Item;
+    use crate::graph::runner::OperationRunner;
+    use crate::stage::{
         blur_kernel, download, upload,
     };
-    use crate::pixel::{AlphaPolicy, PixelFormat};
+    use crate::model::pixel::{AlphaPolicy, PixelFormat};
     use crate::gpu::Buffer;
 
     /// GPU smoke test: blur a 32×32 RGBA8 tile via Upload → BlurKernelGpu →
@@ -36,7 +36,7 @@ mod tests {
                 data[o + 3] = 255;
             }
         }
-        let meta = PixelMeta::new(PixelFormat::Rgba8, crate::color::ColorSpace::SRGB, AlphaPolicy::Straight);
+        let meta = PixelMeta::new(PixelFormat::Rgba8, crate::model::color::ColorSpace::SRGB, AlphaPolicy::Straight);
         let coord = TileCoord::new(0, 0, w, w, h);
 
         // CPU reference.

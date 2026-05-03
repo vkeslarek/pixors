@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-pub use crate::scheduler::GpuBuffer;
+pub use crate::gpu::scheduler::GpuBuffer;
 
 /// Pixel storage. `Cpu` uses an `Arc<Vec<u8>>` for cheap clones (copy-on-write
 /// when callers need exclusive access via `Arc::make_mut`). `Gpu` wraps a

@@ -4,8 +4,9 @@ use petgraph::Direction;
 use petgraph::algo::toposort;
 use petgraph::visit::EdgeRef;
 
-use crate::pipeline::exec::{ExecNode, Stage};
-use crate::pipeline::exec_graph::graph::{ExecEdgePorts, ExecGraph, StageId};
+use crate::data::Device;
+use crate::stage::{ExecNode, Stage};
+use crate::graph::graph::{ExecEdgePorts, ExecGraph, StageId};
 
 /// Walk the ExecGraph and fuse runs of adjacent GPU nodes into
 /// FusedGpuKernel nodes. Returns a new graph.
@@ -47,7 +48,7 @@ pub fn fuse_gpu_kernels(graph: &ExecGraph) -> ExecGraph {
                     .map(|&sid| graph.graph[sid].clone())
                     .collect();
                 let fused =
-                    crate::pipeline::exec::FusedGpuKernel { steps };
+                    crate::operation::FusedGpuKernel { steps };
                 let new_id =
                     new_graph.add_stage(ExecNode::FusedGpuKernel(fused));
                 for &sid in chain {
@@ -135,7 +136,7 @@ fn find_gpu_chains(graph: &ExecGraph) -> Vec<Vec<StageId>> {
 }
 
 fn is_gpu_node(graph: &ExecGraph, sid: StageId) -> bool {
-    graph.graph[sid].device() == crate::pipeline::exec::Device::Gpu
+    graph.graph[sid].device() == Device::Gpu
 }
 
 fn rebuild_unchanged(graph: &ExecGraph) -> ExecGraph {

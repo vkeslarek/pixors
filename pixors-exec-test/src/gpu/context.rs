@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use crate::scheduler::Scheduler;
+use crate::gpu::scheduler::Scheduler;
 
 /// Singleton wgpu device + queue + scheduler, initialized lazily.
 pub struct GpuContext {
