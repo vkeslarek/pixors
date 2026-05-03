@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-/// Manages a tiled GPU texture with MIP chain for the viewport.
+/// Manages a tiled GPU texture for the viewport.
+/// MIP chain is deferred (mip_level_count = 1 until storage texture support is available).
 pub struct TiledTexture {
     pub texture: iced::wgpu::Texture,
     pub full_view: iced::wgpu::TextureView,
@@ -8,15 +9,11 @@ pub struct TiledTexture {
     pub width: u32,
     pub height: u32,
     pub tile_size: u32,
-    pub mip_count: u32,
     pub dirty_tiles: HashSet<(u32, u32)>,
-    pub mip_dirty: bool,
 }
 
 impl TiledTexture {
     pub fn new(device: &iced::wgpu::Device, width: u32, height: u32, tile_size: u32) -> Self {
-        let mip_count = ((width.max(height) as f32).log2().floor() as u32) + 1;
-
         let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
             label: Some("viewport_tiled_texture"),
             size: iced::wgpu::Extent3d {
@@ -24,13 +21,12 @@ impl TiledTexture {
                 height,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: mip_count,
+            mip_level_count: 1,
             sample_count: 1,
             dimension: iced::wgpu::TextureDimension::D2,
             format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: iced::wgpu::TextureUsages::TEXTURE_BINDING
-                | iced::wgpu::TextureUsages::COPY_DST
-                | iced::wgpu::TextureUsages::STORAGE_BINDING,
+                | iced::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
@@ -42,10 +38,6 @@ impl TiledTexture {
             address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
             mag_filter: iced::wgpu::FilterMode::Linear,
             min_filter: iced::wgpu::FilterMode::Linear,
-            mipmap_filter: iced::wgpu::FilterMode::Linear,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: mip_count as f32,
-            anisotropy_clamp: 1,
             ..Default::default()
         });
 
@@ -56,13 +48,10 @@ impl TiledTexture {
             width,
             height,
             tile_size,
-            mip_count,
             dirty_tiles: HashSet::new(),
-            mip_dirty: false,
         }
     }
 
-    /// Upload one tile of RGBA8 pixels from CPU memory.
     pub fn write_tile_cpu(
         &mut self,
         device: &iced::wgpu::Device,
@@ -130,7 +119,6 @@ impl TiledTexture {
         let tx = px / self.tile_size;
         let ty = py / self.tile_size;
         self.dirty_tiles.insert((tx, ty));
-        self.mip_dirty = true;
     }
 
     pub fn view(&self) -> &iced::wgpu::TextureView {

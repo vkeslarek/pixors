@@ -56,7 +56,7 @@ mod tests {
         let kinds = exec.kind_names();
         assert!(kinds.iter().any(|k| *k == "file_decoder"));
         assert!(kinds.iter().any(|k| *k == "blur_kernel"));
-        assert!(kinds.iter().any(|k| *k == "display_sink"));
+        assert!(kinds.iter().any(|k| *k == "tile_sink"));
     }
 
     #[test]

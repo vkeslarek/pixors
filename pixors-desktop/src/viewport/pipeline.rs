@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 use iced::widget::shader;
 
 use crate::viewport::camera::CameraUniform;
-use crate::viewport::mip_builder::MipBuilder;
 use crate::viewport::tiled_texture::TiledTexture;
 
 pub struct ViewportPipeline {
@@ -11,9 +10,7 @@ pub struct ViewportPipeline {
     pub camera_buffer: iced::wgpu::Buffer,
     pub bind_group: iced::wgpu::BindGroup,
     pub bgl: iced::wgpu::BindGroupLayout,
-    pub format: iced::wgpu::TextureFormat,
     pub tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
-    pub mip_builder: MipBuilder,
     texture_dims: Option<(u32, u32)>,
 }
 
@@ -137,9 +134,7 @@ impl shader::Pipeline for ViewportPipeline {
             camera_buffer,
             bind_group,
             bgl,
-            format,
             tiled_texture: None,
-            mip_builder: MipBuilder::new(device),
             texture_dims: None,
         }
     }
@@ -180,7 +175,7 @@ impl ViewportPipeline {
     pub fn maybe_rebind(
         &mut self,
         device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        _queue: &iced::wgpu::Queue,
     ) -> bool {
         let Some(tex) = &self.tiled_texture else {
             return false;
@@ -188,27 +183,9 @@ impl ViewportPipeline {
         let guard = tex.lock().unwrap();
         let dims = guard.dims();
         let dims_changed = self.texture_dims != Some(dims);
-        let needs_mip = guard.mip_dirty;
         drop(guard);
 
-        if dims_changed || needs_mip {
-            if needs_mip {
-                let mut encoder =
-                    device.create_command_encoder(&iced::wgpu::CommandEncoderDescriptor {
-                        label: Some("mip_regenerate"),
-                    });
-                let mut guard = tex.lock().unwrap();
-                self.mip_builder.regenerate_all(
-                    device,
-                    &mut encoder,
-                    &guard.texture,
-                    guard.mip_count,
-                );
-                guard.mip_dirty = false;
-                guard.dirty_tiles.clear();
-                queue.submit(std::iter::once(encoder.finish()));
-            }
-
+        if dims_changed {
             let guard = tex.lock().unwrap();
             self.bind_group = Self::build_bind_group(
                 device,
