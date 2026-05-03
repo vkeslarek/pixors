@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pixors-shader = { path = "../pixors-shader" }
+pixors-executor = { path = "../pixors-executor" }
 enum_dispatch = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 wide = "1.3.0"

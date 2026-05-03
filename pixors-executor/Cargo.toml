@@ -1,5 +1,5 @@
 [package]
-name = "pixors-exec-test"
+name = "pixors-executor"
 version.workspace = true
 edition.workspace = true
 

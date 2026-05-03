@@ -14,6 +14,7 @@ use crate::operation::OperationNode;
 use crate::stage::{Stage, StageNode};
 
 use super::cpu::CpuChainRunner;
+use super::event::PipelineEvent;
 use super::gpu::GpuChainRunner;
 use super::runner::{ItemReceiver, ItemSender, Runner, CHANNEL_BOUND};
 
@@ -206,7 +207,8 @@ impl Pipeline {
     }
 
     /// Run the pipeline. Spawns one thread per chain; blocks until all finish.
-    pub fn run(self) -> Result<(), Error> {
+    pub fn run(self, events: Option<std::sync::mpsc::Sender<PipelineEvent>>) -> Result<(), Error> {
+        use super::event::PipelineEvent;
         std::thread::scope(|s| {
             let mut handles = Vec::new();
             for (runner, inputs, outputs) in self.chains {
@@ -218,6 +220,9 @@ impl Pipeline {
                 match h.join() {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => {
+                        if let Some(ref tx) = events {
+                            let _ = tx.send(PipelineEvent::Error(e.to_string()));
+                        }
                         if first_error.is_none() {
                             first_error = Some(e);
                         }
@@ -228,6 +233,9 @@ impl Pipeline {
                         }
                     }
                 }
+            }
+            if let Some(ref tx) = events {
+                let _ = tx.send(PipelineEvent::Done);
             }
             first_error.map(Err).unwrap_or(Ok(()))
         })
