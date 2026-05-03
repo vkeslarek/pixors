@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use iced::widget::shader;
 use iced::{Event, Point, Rectangle, Size};
@@ -7,7 +6,6 @@ use iced::mouse;
 
 use crate::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
-use crate::ui::file_ops::PendingPipeline;
 
 pub struct ViewportProgram {
     pub pending_writes: Arc<PendingTileWrites>,
@@ -17,7 +15,6 @@ pub struct PendingTileWrites {
     pub queue: Mutex<Vec<PendingTile>>,
     pub realloc: Mutex<Option<(u32, u32)>>,
     pub new_img: Mutex<Option<(u32, u32)>>,
-    pub pipeline: Mutex<Option<PendingPipeline>>,
 }
 
 impl PendingTileWrites {
@@ -26,7 +23,6 @@ impl PendingTileWrites {
             queue: Mutex::new(Vec::new()),
             realloc: Mutex::new(None),
             new_img: Mutex::new(None),
-            pipeline: Mutex::new(None),
         })
     }
 

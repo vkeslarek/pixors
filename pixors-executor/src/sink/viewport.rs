@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock, Mutex};
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use crate::graph::item::Item;
 use crate::error::Error;
 use crate::debug_stopwatch;
 
-// ── Global viewport (installed by desktop, consumed by sink) ──────────────────
+// ── Installed by desktop, consumed by sink ──────────────────────────────────
 
 pub struct ViewportTarget {
     pub texture: Arc<wgpu::Texture>,
@@ -79,8 +79,7 @@ impl CpuKernel for ViewportSinkRunner {
                 layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: None },
             },
             wgpu::ImageCopyTexture {
-                texture: &target.texture,
-                mip_level: 0,
+                texture: &target.texture, mip_level: 0,
                 origin: wgpu::Origin3d { x: px, y: py, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },

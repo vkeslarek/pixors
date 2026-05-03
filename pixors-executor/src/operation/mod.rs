@@ -10,9 +10,9 @@ use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
 
 use blur::Blur;
 use color::ColorConvert;
-use data::NeighborhoodAgg;
-use data::ScanLineAccumulator;
-use data::TileToScanline;
+pub use data::NeighborhoodAgg;
+pub use data::ScanLineAccumulator;
+pub use data::TileToScanline;
 use transfer::Download;
 use transfer::Upload;
 

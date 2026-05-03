@@ -9,7 +9,7 @@ const BATCH_SIZE: usize = 16;
 
 struct CachedPipeline {
     pipeline: Arc<wgpu::ComputePipeline>,
-    bgl: Arc<wgpu::BindGroupLayout>,
+    bgls: Vec<Arc<wgpu::BindGroupLayout>>,
     has_params: bool,
 }
 
@@ -83,9 +83,9 @@ impl Scheduler {
         kernel.write_params(&mut params);
         self.queue.write_buffer(&param_buf, 0, &params);
 
-        let bind_group = build_bind_group(
+        let (bg0, bg1) = build_bind_groups(
             &self.device,
-            &cached.bgl,
+            &cached.bgls,
             cached.has_params,
             inputs,
             &param_buf,
@@ -106,7 +106,10 @@ impl Scheduler {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&cached.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, &bg0, &[]);
+            if let Some(ref bg1) = bg1 {
+                pass.set_bind_group(1, bg1, &[]);
+            }
             pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
         }
 
@@ -158,7 +161,7 @@ impl Scheduler {
         let entry = cache.entry(sig_hash).or_insert_with(|| {
             build_pipeline(&self.device, sig).expect("failed to build pipeline")
         });
-        Ok(entry.bgl.clone())
+        Ok(entry.bgls.first().cloned().ok_or_else(|| "no BGL".to_string())?)
     }
 }
 
@@ -178,64 +181,67 @@ fn build_pipeline(
     sig: &KernelSignature,
 ) -> Result<CachedPipeline, String> {
     let has_params = !sig.params.is_empty();
-    let num_inputs = sig.inputs.len() as u32;
-    let num_outputs = sig.outputs.len() as u32;
 
-    let mut entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::new();
-    let mut binding: u32 = 0;
+    let mut bgls: Vec<Arc<wgpu::BindGroupLayout>> = Vec::new();
 
+    // Group 0: storage buffers
+    {
+        let mut binding: u32 = 0;
+        let mut entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::new();
+        for _ in sig.inputs.iter() {
+            entries.push(wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+            binding += 1;
+        }
+        for _ in sig.outputs.iter() {
+            entries.push(wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+            binding += 1;
+        }
+        bgls.push(Arc::new(device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor { label: Some("group0"), entries: &entries },
+        )));
+    }
+
+    // Group 1: params uniform
     if has_params {
-        entries.push(wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        let bgl = Arc::new(device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("group1"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
             },
-            count: None,
-        });
-        binding += 1;
+        ));
+        bgls.push(bgl);
     }
 
-    for _ in sig.inputs.iter() {
-        entries.push(wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        });
-        binding += 1;
-    }
+    let bgl_refs: Vec<&wgpu::BindGroupLayout> = bgls.iter().map(|b| b.as_ref()).collect();
 
-    for _ in sig.outputs.iter() {
-        entries.push(wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        });
-        binding += 1;
-    }
-
-    let _ = num_inputs + num_outputs;
-
-    let bgl = Arc::new(
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some(sig.name),
-            entries: &entries,
-        }),
-    );
-
-    let spirv = sig.body; // SPIR-V binary
+    let spirv = sig.body;
     let mut words: Vec<u32> = vec![0u32; spirv.len() / 4];
     unsafe {
         std::ptr::copy_nonoverlapping(spirv.as_ptr(), words.as_mut_ptr() as *mut u8, spirv.len());
@@ -249,7 +255,7 @@ fn build_pipeline(
     let pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("kernel_layout"),
-            bind_group_layouts: &[&bgl],
+            bind_group_layouts: &bgl_refs,
             push_constant_ranges: &[],
         });
 
@@ -266,48 +272,51 @@ fn build_pipeline(
 
     Ok(CachedPipeline {
         pipeline,
-        bgl,
+        bgls,
         has_params,
     })
 }
 
-fn build_bind_group(
+fn build_bind_groups(
     device: &wgpu::Device,
-    bgl: &wgpu::BindGroupLayout,
+    bgls: &[Arc<wgpu::BindGroupLayout>],
     has_params: bool,
     inputs: &[&GpuBuffer],
     params: &wgpu::Buffer,
     output: &wgpu::Buffer,
-) -> Result<wgpu::BindGroup, String> {
+) -> Result<(wgpu::BindGroup, Option<wgpu::BindGroup>), String> {
     let mut entries: Vec<wgpu::BindGroupEntry> = Vec::new();
-    let mut binding: u32 = 0;
-
-    if has_params {
+    for (i, input) in inputs.iter().enumerate() {
         entries.push(wgpu::BindGroupEntry {
-            binding,
-            resource: params.as_entire_binding(),
-        });
-        binding += 1;
-    }
-
-    for input in inputs {
-        entries.push(wgpu::BindGroupEntry {
-            binding,
+            binding: i as u32,
             resource: input.buffer.as_entire_binding(),
         });
-        binding += 1;
     }
-
     entries.push(wgpu::BindGroupEntry {
-        binding,
+        binding: inputs.len() as u32,
         resource: output.as_entire_binding(),
     });
 
-    Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("kernel_bind_group"),
-        layout: bgl,
+    let bg0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("group0"),
+        layout: &bgls[0],
         entries: &entries,
-    }))
+    });
+
+    let bg1 = if has_params {
+        Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("group1"),
+            layout: &bgls[1],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
+            }],
+        }))
+    } else {
+        None
+    };
+
+    Ok((bg0, bg1))
 }
 
 fn hash_signature(sig: &KernelSignature) -> u64 {
@@ -327,7 +336,7 @@ impl CachedPipeline {
     fn clone_arcs(&self) -> Self {
         Self {
             pipeline: self.pipeline.clone(),
-            bgl: self.bgl.clone(),
+            bgls: self.bgls.clone(),
             has_params: self.has_params,
         }
     }

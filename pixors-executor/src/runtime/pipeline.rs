@@ -71,7 +71,17 @@ impl Pipeline {
         for (src, dst, ports) in edges {
             let src_dev = device_map[&src];
             let dst_dev = device_map[&dst];
-            if src_dev == Device::Cpu && dst_dev == Device::Gpu {
+
+            // Only Tile data can live on GPU; Neighborhood and ScanLine are always CPU.
+            // GpuChainRunner handles Neighborhood assembly+upload internally.
+            let out_kind = g[src]
+                .ports()
+                .outputs
+                .get(ports.from_port as usize)
+                .map(|p| p.kind);
+            let is_tile_edge = out_kind == Some(crate::stage::DataKind::Tile);
+
+            if src_dev == Device::Cpu && dst_dev == Device::Gpu && is_tile_edge {
                 let upload_id = g.add_node(StageNode::Operation(OperationNode::Upload(Upload)));
                 if let Some(e) = g.find_edge(src, dst) {
                     g.remove_edge(e);
@@ -79,7 +89,7 @@ impl Pipeline {
                 g.add_edge(src, upload_id, ports);
                 g.add_edge(upload_id, dst, ports);
                 updated_device_map.insert(upload_id, Device::Cpu);
-            } else if src_dev == Device::Gpu && dst_dev == Device::Cpu {
+            } else if src_dev == Device::Gpu && dst_dev == Device::Cpu && is_tile_edge {
                 let download_id =
                     g.add_node(StageNode::Operation(OperationNode::Download(Download)));
                 if let Some(e) = g.find_edge(src, dst) {
