@@ -1,61 +1,159 @@
-use crate::gpu::kernel::{GpuKernel, KernelClass, KernelSig};
+use std::collections::{HashMap, HashSet};
 
-/// Fuses two adjacents kernels A and B into a chained kernel C.
-/// Returns `None` if fusion rules are not satisfied.
-pub fn try_fuse(a: &dyn GpuKernel, b: &dyn GpuKernel) -> Option<Box<dyn GpuKernel>> {
-    let sig_a = a.sig();
-    let sig_b = b.sig();
+use petgraph::Direction;
+use petgraph::algo::toposort;
+use petgraph::visit::EdgeRef;
 
-    // Only PerPixel + PerPixel for now
-    if !matches!(sig_a.class, KernelClass::PerPixel)
-        || !matches!(sig_b.class, KernelClass::PerPixel)
-    {
-        return None;
+use crate::pipeline::exec::{ExecNode, Stage};
+use crate::pipeline::exec_graph::graph::{ExecEdgePorts, ExecGraph, StageId};
+
+/// Walk the ExecGraph and fuse runs of adjacent GPU nodes into
+/// FusedGpuKernel nodes. Returns a new graph.
+pub fn fuse_gpu_kernels(graph: &ExecGraph) -> ExecGraph {
+    let chains = find_gpu_chains(graph);
+    if chains.iter().all(|c| c.len() < 2) {
+        return rebuild_unchanged(graph);
     }
 
-    let fa = a.fusable_body()?;
-    let fb = b.fusable_body()?;
+    let mut in_chain: HashMap<StageId, (usize, usize)> = HashMap::new();
+    for (ci, chain) in chains.iter().enumerate() {
+        for (pos, &sid) in chain.iter().enumerate() {
+            in_chain.insert(sid, (ci, pos));
+        }
+    }
 
-    let fused_body = format!(
-        "        // fused kernel: {} → {}\n        let pix0 = unpack(in0_src[idx]);\n        {}\n        {}\n        out0_dst[idx] = pack(pix2);\n",
-        sig_a.name,
-        sig_b.name,
-        fa.replace("return", "pix1 ="),
-        fb.replace("return", "pix2 ="),
-    );
+    let mut new_graph = ExecGraph::new();
+    let mut id_map: HashMap<StageId, StageId> = HashMap::new();
 
-    let fused_sig = KernelSig {
-        name: "fused",
-        inputs: sig_a.inputs,
-        outputs: sig_b.outputs,
-        params: &[],
-        workgroup: (8, 8, 1),
-        dispatch: crate::gpu::kernel::DispatchShape::PerPixel,
-        class: KernelClass::PerPixel,
-        body_wgsl: Box::leak(fused_body.into_boxed_str()),
-    };
+    let topo = toposort(&graph.graph, None).expect("no cycle");
 
-    Some(Box::new(FusedKernel {
-        sig: fused_sig,
-        _a: a.sig().name,
-        _b: b.sig().name,
-    }))
+    for &old_id in &topo {
+        let node = &graph.graph[old_id];
+
+        if let Some(&(ci, pos)) = in_chain.get(&old_id) {
+            let chain = &chains[ci];
+            if chain.len() < 2 {
+                let new_id = new_graph.add_stage(node.clone());
+                id_map.insert(old_id, new_id);
+            } else if pos == 0 {
+                let steps: Vec<ExecNode> = chain
+                    .iter()
+                    .map(|&sid| graph.graph[sid].clone())
+                    .collect();
+                let fused =
+                    crate::pipeline::exec::FusedGpuKernel { steps };
+                let new_id =
+                    new_graph.add_stage(ExecNode::FusedGpuKernel(fused));
+                for &sid in chain {
+                    id_map.insert(sid, new_id);
+                }
+            }
+        } else {
+            let new_id = new_graph.add_stage(node.clone());
+            id_map.insert(old_id, new_id);
+        }
+    }
+
+    let mut added_edges: HashSet<(StageId, StageId)> = HashSet::new();
+    for &old_id in &topo {
+        for er in graph.graph.edges_directed(old_id, Direction::Outgoing) {
+            let src = id_map[&old_id];
+            let tgt = id_map[&er.target()];
+            if src != tgt && added_edges.insert((src, tgt)) {
+                new_graph.add_edge(src, tgt, ExecEdgePorts::default());
+            }
+        }
+    }
+
+    new_graph.outputs = graph
+        .outputs
+        .iter()
+        .filter_map(|(old_id, port)| Some((*id_map.get(old_id)?, *port)))
+        .collect();
+
+    new_graph
 }
 
-struct FusedKernel {
-    sig: KernelSig,
-    _a: &'static str,
-    _b: &'static str,
+fn find_gpu_chains(graph: &ExecGraph) -> Vec<Vec<StageId>> {
+    let topo = toposort(&graph.graph, None).expect("no cycle");
+    let mut visited: HashSet<StageId> = HashSet::new();
+    let mut chains: Vec<Vec<StageId>> = Vec::new();
+
+    for &sid in &topo {
+        if visited.contains(&sid) {
+            continue;
+        }
+        if !is_gpu_node(graph, sid) {
+            continue;
+        }
+
+        let pred_is_gpu = graph
+            .graph
+            .edges_directed(sid, Direction::Incoming)
+            .any(|er| is_gpu_node(graph, er.source()));
+        if pred_is_gpu {
+            continue;
+        }
+
+        let mut chain = vec![sid];
+        visited.insert(sid);
+        let mut cur = sid;
+
+        loop {
+            let succs: Vec<StageId> = graph
+                .graph
+                .edges_directed(cur, Direction::Outgoing)
+                .map(|er| er.target())
+                .collect();
+            if succs.len() != 1 {
+                break;
+            }
+            let next = succs[0];
+            if !is_gpu_node(graph, next) {
+                break;
+            }
+            let preds: Vec<_> = graph
+                .graph
+                .edges_directed(next, Direction::Incoming)
+                .collect();
+            if preds.len() != 1 {
+                break;
+            }
+            chain.push(next);
+            visited.insert(next);
+            cur = next;
+        }
+        chains.push(chain);
+    }
+    chains
 }
 
-impl GpuKernel for FusedKernel {
-    fn sig(&self) -> &KernelSig {
-        &self.sig
-    }
+fn is_gpu_node(graph: &ExecGraph, sid: StageId) -> bool {
+    graph.graph[sid].device() == crate::pipeline::exec::Device::Gpu
+}
 
-    fn write_params(&self, _dst: &mut [u8]) {}
+fn rebuild_unchanged(graph: &ExecGraph) -> ExecGraph {
+    let topo = toposort(&graph.graph, None).expect("no cycle");
+    let mut new_graph = ExecGraph::new();
+    let mut id_map: HashMap<StageId, StageId> = HashMap::new();
 
-    fn fusable_body(&self) -> Option<&'static str> {
-        None // already fused
+    for &old_id in &topo {
+        let new_id = new_graph.add_stage(graph.graph[old_id].clone());
+        id_map.insert(old_id, new_id);
     }
+    for &old_id in &topo {
+        for er in graph.graph.edges_directed(old_id, Direction::Outgoing) {
+            new_graph.add_edge(
+                id_map[&old_id],
+                id_map[&er.target()],
+                ExecEdgePorts::default(),
+            );
+        }
+    }
+    new_graph.outputs = graph
+        .outputs
+        .iter()
+        .filter_map(|(old_id, port)| Some((*id_map.get(old_id)?, *port)))
+        .collect();
+    new_graph
 }

@@ -15,23 +15,7 @@ use crate::debug_stopwatch;
 
 const BLUR_SPIRV: &[u8] = include_bytes!("../../../../../pixors-shader/src/kernels/blur.spv");
 
-impl GpuKernel for BlurKernel {
-    fn sig(&self) -> &KernelSig {
-        &BLUR_SIG
-    }
-
-    fn write_params(&self, dst: &mut [u8]) {
-        let w = 0u32;
-        let h = 0u32;
-        let params = BlurParams {
-            width: w,
-            height: h,
-            radius: self.radius,
-            _pad: 0,
-        };
-        dst[..16].copy_from_slice(bytemuck::bytes_of(&params));
-    }
-}
+const BATCH_SIZE: usize = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlurKernelGpu {

@@ -11,7 +11,8 @@ pub mod to_scanline;
 pub mod to_tile;
 pub mod upload;
 
-pub use blur_kernel::{BlurKernel, BlurKernelGpu, BlurKernelGpuRunner, BlurKernelRunner};
+pub use blur_kernel::{BlurKernel, BlurKernelGpu, BlurKernelGpuRunner, BlurKernelRunner,
+                      FusedGpuKernel, FusedGpuKernelRunner};
 pub use cache_reader::CacheReader;
 pub use cache_writer::CacheWriter;
 pub use color_convert::ColorConvert;
@@ -71,6 +72,7 @@ pub enum ExecNode {
     NeighborhoodAgg,
     BlurKernel,
     BlurKernelGpu,
+    FusedGpuKernel,
     Upload,
     Download,
     CacheReader,

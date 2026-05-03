@@ -158,6 +158,9 @@ pub fn compile(
         })
         .collect();
 
+    // Post-compile GPU kernel elision
+    let exec = crate::pipeline::exec_graph::fusion::fuse_gpu_kernels(&exec);
+
     Ok(exec)
 }
 
