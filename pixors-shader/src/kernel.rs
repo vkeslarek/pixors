@@ -43,13 +43,14 @@ pub enum KernelClass {
 
 pub struct KernelSig {
     pub name: &'static str,
+    pub entry: &'static str,
     pub inputs: &'static [ResourceDecl],
     pub outputs: &'static [ResourceDecl],
     pub params: &'static [ParamDecl],
     pub workgroup: (u32, u32, u32),
     pub dispatch: DispatchShape,
     pub class: KernelClass,
-    pub body_wgsl: &'static str,
+    pub body: &'static [u8],
 }
 
 pub trait GpuKernel: Send + Sync {

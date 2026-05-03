@@ -22,12 +22,24 @@ fn main() {
             let ok = Command::new("slangc")
                 .env("LD_LIBRARY_PATH", format!("{home}/.local/lib"))
                 .arg(&path)
-                .arg("-o")
-                .arg(&dest_path)
+                .arg("-I")
+                .arg("shaders")
                 .arg("-target")
-                .arg("wgsl")
-                .status()
-                .map(|s| s.success())
+                .arg("spirv")
+                .output()
+                .map(|o| {
+                    if o.status.success() && !o.stderr.is_empty() {
+                        // SPIR-V writes to stdout
+                        !o.stdout.is_empty() && std::fs::write(&dest_path.with_extension("spv"), &o.stdout).is_ok()
+                    } else {
+                        // Check for errors
+                        let stderr = String::from_utf8_lossy(&o.stderr);
+                        if !stderr.is_empty() && !stderr.contains("warning") {
+                            eprintln!("slangc error: {}", stderr);
+                        }
+                        false
+                    }
+                })
                 .unwrap_or(false);
 
             if ok {

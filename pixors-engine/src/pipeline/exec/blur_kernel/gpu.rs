@@ -16,10 +16,11 @@ use pixors_shader::kernel::{BindAccess, BindElem, DispatchShape, GpuKernel, Kern
 
 const BATCH_SIZE: usize = 16;
 
-const BLUR_BODY: &str = pixors_shader::wgsl::BLUR;
+const BLUR_SPIRV: &[u8] = include_bytes!("../../../../../pixors-shader/src/kernels/blur.spv");
 
 static BLUR_SIG: KernelSig = KernelSig {
     name: "blur",
+    entry: "cs_blur",
     inputs: &[ResourceDecl {
         name: "src",
         elem: BindElem::PixelRgba8U32,
@@ -51,7 +52,7 @@ static BLUR_SIG: KernelSig = KernelSig {
     workgroup: (8, 8, 1),
     dispatch: DispatchShape::PerPixel,
     class: KernelClass::Stencil { radius: 0 },
-    body_wgsl: BLUR_BODY,
+    body: BLUR_SPIRV,
 };
 
 pub struct BlurKernel {

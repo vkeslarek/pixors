@@ -235,10 +235,12 @@ fn build_pipeline(
         }),
     );
 
-    let wgsl = assemble_wgsl(sig);
+    let spirv = sig.body; // SPIR-V binary
+    let words: &[u32] = bytemuck::cast_slice(spirv);
+    let source = wgpu::ShaderSource::SpirV(std::borrow::Cow::Borrowed(words));
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(sig.name),
-        source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+        source,
     });
 
     let pipeline_layout =
@@ -248,16 +250,16 @@ fn build_pipeline(
             push_constant_ranges: &[],
         });
 
-    let pipeline = Arc::new(
-        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some(sig.name),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: "entry",
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        }),
-    );
+        let pipeline = Arc::new(
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(sig.name),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: sig.entry,
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            }),
+        );
 
     Ok(CachedPipeline {
         pipeline,
@@ -308,7 +310,7 @@ fn build_bind_group(
 fn hash_sig(sig: &KernelSig) -> u64 {
     let mut h = DefaultHasher::new();
     sig.name.hash(&mut h);
-    sig.body_wgsl.hash(&mut h);
+    sig.body.hash(&mut h);
     for i in sig.inputs {
         i.name.hash(&mut h);
     }
@@ -316,45 +318,6 @@ fn hash_sig(sig: &KernelSig) -> u64 {
         o.name.hash(&mut h);
     }
     h.finish()
-}
-
-fn assemble_wgsl(sig: &KernelSig) -> String {
-    let mut wgsl = String::new();
-
-    if !sig.params.is_empty() {
-        wgsl.push_str("struct Params {\n");
-        for p in sig.params {
-            let ty = match p.ty {
-                crate::kernel::ParamType::U32 => "u32",
-                crate::kernel::ParamType::I32 => "i32",
-                crate::kernel::ParamType::F32 => "f32",
-            };
-            wgsl.push_str(&format!("    {}: {},\n", p.name, ty));
-        }
-        wgsl.push_str("};\n");
-        wgsl.push_str("@group(0) @binding(0) var<uniform> params: Params;\n");
-    }
-
-    for (i, inp) in sig.inputs.iter().enumerate() {
-        let b = if sig.params.is_empty() { i as u32 } else { i as u32 + 1 };
-        wgsl.push_str(&format!(
-            "@group(0) @binding({}) var<storage, read> {}: array<u32>;\n",
-            b, inp.name
-        ));
-    }
-
-    for (i, out) in sig.outputs.iter().enumerate() {
-        let b = sig.inputs.len() as u32
-            + if sig.params.is_empty() { i as u32 } else { i as u32 + 1 };
-        wgsl.push_str(&format!(
-            "@group(0) @binding({}) var<storage, read_write> {}: array<u32>;\n",
-            b, out.name
-        ));
-    }
-
-    wgsl.push_str(sig.body_wgsl);
-    wgsl.push('\n');
-    wgsl
 }
 
 impl CachedPipeline {
