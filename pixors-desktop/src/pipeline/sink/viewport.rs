@@ -1,6 +1,6 @@
-use crate::color::ColorConversion;
-use crate::image::{Tile, TileCoord};
-use crate::pixel::{AlphaPolicy, Rgba};
+use pixors_engine::color::ColorConversion;
+use pixors_engine::image::{Tile, TileCoord};
+use pixors_engine::pixel::{AlphaPolicy, Rgba};
 use crate::pipeline::sink::Sink;
 use half::f16;
 use parking_lot::RwLock;
@@ -57,7 +57,7 @@ impl ViewportSink {
 impl Sink for ViewportSink {
     type Item = Tile<Rgba<f16>>;
 
-    fn consume(&self, item: Self::Item) -> Result<(), crate::error::Error> {
+    fn consume(&self, item: Self::Item) -> Result<(), pixors_engine::error::Error> {
         use std::sync::atomic::{AtomicU32, Ordering};
         static COUNT: AtomicU32 = AtomicU32::new(0);
         let c = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
@@ -87,8 +87,8 @@ impl Sink for ViewportSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::ColorSpace;
-    use crate::image::TileCoord;
+    use pixors_engine::color::ColorSpace;
+    use pixors_engine::image::TileCoord;
 
     fn make_tile(r: f32, g: f32, b: f32, a: f32, w: u32, h: u32) -> Tile<Rgba<f16>> {
         let coord = TileCoord::from_xywh(0, 0, 0, w, h);

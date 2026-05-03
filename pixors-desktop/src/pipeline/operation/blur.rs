@@ -1,5 +1,5 @@
-use crate::image::{Neighborhood, Tile};
-use crate::pixel::PixelAccumulator;
+use pixors_engine::image::{Neighborhood, Tile};
+use pixors_engine::pixel::PixelAccumulator;
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::operation::Operation;
 use std::sync::Arc;
@@ -83,7 +83,7 @@ where
 
     fn name(&self) -> &'static str { "box_blur" }
 
-    fn process(&mut self, nbhd: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
+    fn process(&mut self, nbhd: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), pixors_engine::error::Error> {
         let cx = nbhd.center.px;
         let cy = nbhd.center.py;
         let cw = nbhd.center.width;

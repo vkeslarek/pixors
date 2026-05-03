@@ -206,7 +206,7 @@ mod tests {
         type In = u32;
         type Out = u32;
         fn name(&self) -> &'static str { "double" }
-        fn process(&mut self, item: Arc<u32>, emit: &mut Emitter<u32>) -> Result<(), crate::error::Error> {
+        fn process(&mut self, item: Arc<u32>, emit: &mut Emitter<u32>) -> Result<(), pixors_engine::error::Error> {
             emit.emit(*item * 2);
             Ok(())
         }
@@ -217,7 +217,7 @@ mod tests {
         type In = u32;
         type Out = String;
         fn name(&self) -> &'static str { "to_string" }
-        fn process(&mut self, item: Arc<u32>, emit: &mut Emitter<String>) -> Result<(), crate::error::Error> {
+        fn process(&mut self, item: Arc<u32>, emit: &mut Emitter<String>) -> Result<(), pixors_engine::error::Error> {
             emit.emit(format!("{}", *item));
             Ok(())
         }
@@ -226,7 +226,7 @@ mod tests {
     struct CollectSink<T: Send + 'static> { data: Arc<Mutex<Vec<T>>> }
     impl<T: Send + 'static> Sink for CollectSink<T> {
         type Item = T;
-        fn consume(&self, item: T) -> Result<(), crate::error::Error> {
+        fn consume(&self, item: T) -> Result<(), pixors_engine::error::Error> {
             self.data.lock().unwrap().push(item);
             Ok(())
         }

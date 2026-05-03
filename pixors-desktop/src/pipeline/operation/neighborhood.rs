@@ -1,4 +1,4 @@
-use crate::image::{EdgeCondition, Neighborhood, NeighborhoodCoord, Tile, TileCoord, TileGrid};
+use pixors_engine::image::{EdgeCondition, Neighborhood, NeighborhoodCoord, Tile, TileCoord, TileGrid};
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::operation::Operation;
 use std::collections::HashMap;
@@ -59,7 +59,7 @@ impl<P: Clone + Send + Sync + 'static> Operation for NeighborhoodAccumOp<P> {
 
     fn name(&self) -> &'static str { "neighborhood" }
 
-    fn process(&mut self, tile: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
+    fn process(&mut self, tile: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), pixors_engine::error::Error> {
         let ncoord = NeighborhoodCoord::from_tile(&tile.coord);
         self.cache.insert(ncoord, Arc::clone(&tile));
 
@@ -79,7 +79,7 @@ impl<P: Clone + Send + Sync + 'static> Operation for NeighborhoodAccumOp<P> {
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
+    fn finish(&mut self, emit: &mut Emitter<Self::Out>) -> Result<(), pixors_engine::error::Error> {
         let mut mips: Vec<u32> = self.cache.keys().map(|c| c.mip).collect();
         mips.sort(); mips.dedup();
         for mip in mips {

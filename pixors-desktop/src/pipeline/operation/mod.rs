@@ -1,4 +1,4 @@
-use crate::error::Error;
+use pixors_engine::error::Error;
 use crate::pipeline::emitter::Emitter;
 use std::sync::Arc;
 

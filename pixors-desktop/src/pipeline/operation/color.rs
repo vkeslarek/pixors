@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use crate::color::ColorConversion;
-use crate::image::Tile;
-use crate::pixel::{AlphaPolicy, Rgba};
+use pixors_engine::color::ColorConversion;
+use pixors_engine::image::Tile;
+use pixors_engine::pixel::{AlphaPolicy, Rgba};
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::operation::Operation;
 use half::f16;
@@ -27,7 +27,7 @@ impl Operation for ColorConvertOperation {
 
     fn name(&self) -> &'static str { "color_convert" }
 
-    fn process(&mut self, tile: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
+    fn process(&mut self, tile: Arc<Self::In>, emit: &mut Emitter<Self::Out>) -> Result<(), pixors_engine::error::Error> {
         let converted: Vec<Rgba<f16>> = self.conv.convert_pixels(&tile.data, self.alpha);
         emit.emit(Tile::new(tile.coord, converted));
         Ok(())
@@ -37,8 +37,8 @@ impl Operation for ColorConvertOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::ColorSpace;
-    use crate::image::TileCoord;
+    use pixors_engine::color::ColorSpace;
+    use pixors_engine::image::TileCoord;
     use crate::pipeline::emitter::Emitter;
 
     fn make_tile(r: f32, g: f32, b: f32, a: f32, w: u32, h: u32) -> Tile<Rgba<f16>> {

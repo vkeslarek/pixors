@@ -1,13 +1,4 @@
-mod color;
-mod pixel;
-mod image;
 mod pipeline;
-mod error;
-mod approx;
-mod composite;
-mod io;
-mod storage;
-mod utils;
 mod ui;
 mod engine;
 mod viewport;

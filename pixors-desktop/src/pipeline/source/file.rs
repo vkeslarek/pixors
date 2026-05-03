@@ -1,8 +1,8 @@
-use crate::error::Error;
-use crate::image::{Tile, TileCoord, TileGrid};
+use pixors_engine::error::Error;
+use pixors_engine::image::{Tile, TileCoord, TileGrid};
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::source::Source;
-use crate::pixel::Rgba;
+use pixors_engine::pixel::Rgba;
 use half::f16;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,7 +34,7 @@ impl Source for FileImageSource {
 
     fn total(&self) -> Option<u32> {
         // Estimate from file — open synchronously to get dimensions
-        let reader = crate::io::all_readers()
+        let reader = pixors_engine::io::all_readers()
             .iter()
             .find(|r| r.can_handle(&self.path))
             .copied()?;
@@ -51,7 +51,7 @@ impl FileImageSource {
         emit: &mut Emitter<Tile<Rgba<f16>>>,
         cancel: Arc<AtomicBool>,
     ) -> Result<(), Error> {
-        let reader = crate::io::all_readers()
+        let reader = pixors_engine::io::all_readers()
             .iter()
             .find(|r| r.can_handle(&path))
             .copied()
@@ -74,7 +74,7 @@ impl FileImageSource {
             let path_c = path.clone();
 
             struct RawWriter(std::sync::mpsc::Sender<Vec<u8>>);
-            impl crate::storage::writer::TileWriter<u8> for RawWriter {
+            impl pixors_engine::storage::writer::TileWriter<u8> for RawWriter {
                 fn write_tile(&self, _coord: TileCoord, pixels: &[u8]) -> Result<(), Error> {
                     self.0.send(pixels.to_vec()).ok();
                     Ok(())

@@ -1,8 +1,8 @@
-use crate::image::{Tile, TileCoord};
-use crate::pixel::Rgba;
+use pixors_engine::image::{Tile, TileCoord};
+use pixors_engine::pixel::Rgba;
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::source::Source;
-use crate::storage::WorkingWriter;
+use pixors_engine::storage::WorkingWriter;
 use half::f16;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

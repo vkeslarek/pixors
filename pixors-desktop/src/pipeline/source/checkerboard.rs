@@ -1,7 +1,7 @@
-use crate::image::{Tile, TileCoord, TileGrid};
+use pixors_engine::image::{Tile, TileCoord, TileGrid};
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::source::Source;
-use crate::pixel::Rgba;
+use pixors_engine::pixel::Rgba;
 use half::f16;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;

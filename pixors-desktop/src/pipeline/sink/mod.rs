@@ -1,4 +1,4 @@
-use crate::error::Error;
+use pixors_engine::error::Error;
 
 /// Consumes items one at a time. The framework handles channels and threads.
 pub trait Sink: Send + Sync + 'static {

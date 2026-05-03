@@ -1,9 +1,9 @@
-use crate::color::ColorSpace;
-use crate::color::ColorConversion;
-use crate::image::Tile;
-use crate::pixel::Rgba;
+use pixors_engine::color::ColorSpace;
+use pixors_engine::color::ColorConversion;
+use pixors_engine::image::Tile;
+use pixors_engine::pixel::Rgba;
 use crate::pipeline::sink::Sink;
-use crate::storage::WorkingWriter;
+use pixors_engine::storage::WorkingWriter;
 use half::f16;
 use std::sync::Arc;
 
@@ -23,10 +23,10 @@ impl WorkingSink {
 impl Sink for WorkingSink {
     type Item = Tile<Rgba<f16>>;
 
-    fn consume(&self, item: Self::Item) -> Result<(), crate::error::Error> {
+    fn consume(&self, item: Self::Item) -> Result<(), pixors_engine::error::Error> {
         let converted = self.color_conv.convert_pixels(
             &item.data,
-            crate::pixel::AlphaPolicy::PremultiplyOnPack,
+            pixors_engine::pixel::AlphaPolicy::PremultiplyOnPack,
         );
         let tile = Tile::with_color_space(item.coord, converted, ColorSpace::ACES_CG);
 
@@ -40,7 +40,7 @@ impl Sink for WorkingSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::image::TileCoord;
+    use pixors_engine::image::TileCoord;
 
     #[test]
     fn workingsink_consume_writes_and_reads_back() {

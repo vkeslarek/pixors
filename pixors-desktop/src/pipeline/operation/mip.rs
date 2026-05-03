@@ -1,5 +1,5 @@
-use crate::image::{Tile, TileCoord};
-use crate::pixel::PixelAccumulator;
+use pixors_engine::image::{Tile, TileCoord};
+use pixors_engine::pixel::PixelAccumulator;
 use crate::pipeline::emitter::Emitter;
 use crate::pipeline::operation::Operation;
 use std::collections::HashMap;
@@ -89,7 +89,7 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
         &mut self,
         tile: Arc<Self::In>,
         emit: &mut Emitter<Self::Out>,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<(), pixors_engine::error::Error> {
         let src_mip = tile.coord.mip_level;
 
         let dlen = tile.data.len();
@@ -149,7 +149,7 @@ impl<P: PixelAccumulator> Operation for MipOp<P> {
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Self::Out>) -> Result<(), crate::error::Error> {
+    fn finish(&mut self, emit: &mut Emitter<Self::Out>) -> Result<(), pixors_engine::error::Error> {
         // Flush partial quadrants at image edges
         let keys: Vec<_> = self.accum.keys().cloned().collect();
         for (src_mip, dst_tx, dst_ty) in keys {
