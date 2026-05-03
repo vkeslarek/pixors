@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
-use wgpu::util::DeviceExt;
 
 use crate::container::Tile;
 use crate::pipeline::exec_graph::emitter::Emitter;
@@ -11,11 +10,72 @@ use crate::pipeline::exec_graph::runner::OperationRunner;
 use crate::pipeline::exec::{Device, Stage};
 use crate::error::Error;
 use crate::gpu::{self, GpuContext};
-use crate::gpu::kernels::blur as gpu_blur;
+use crate::gpu::kernel::{BindAccess, BindElem, DispatchShape, GpuKernel, KernelClass, KernelSig, ParamDecl, ParamType, ResourceDecl};
+use crate::gpu::scheduler::Scheduler;
 use crate::gpu::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 
 const BATCH_SIZE: usize = 16;
+
+const BLUR_BODY: &str = include_str!("../../../gpu/kernels/blur.wgsl");
+
+static BLUR_SIG: KernelSig = KernelSig {
+    name: "blur",
+    inputs: &[ResourceDecl {
+        name: "src",
+        elem: BindElem::PixelRgba8U32,
+        access: BindAccess::Read,
+    }],
+    outputs: &[ResourceDecl {
+        name: "dst",
+        elem: BindElem::PixelRgba8U32,
+        access: BindAccess::ReadWrite,
+    }],
+    params: &[
+        ParamDecl {
+            name: "width",
+            ty: ParamType::U32,
+        },
+        ParamDecl {
+            name: "height",
+            ty: ParamType::U32,
+        },
+        ParamDecl {
+            name: "radius",
+            ty: ParamType::U32,
+        },
+        ParamDecl {
+            name: "_pad",
+            ty: ParamType::U32,
+        },
+    ],
+    workgroup: (8, 8, 1),
+    dispatch: DispatchShape::PerPixel,
+    class: KernelClass::Stencil { radius: 0 },
+    body_wgsl: BLUR_BODY,
+};
+
+pub struct BlurKernel {
+    pub radius: u32,
+}
+
+impl GpuKernel for BlurKernel {
+    fn sig(&self) -> &KernelSig {
+        &BLUR_SIG
+    }
+
+    fn write_params(&self, dst: &mut [u8]) {
+        let w = 0u32;
+        let h = 0u32;
+        let params = BlurParams {
+            width: w,
+            height: h,
+            radius: self.radius,
+            _pad: 0,
+        };
+        dst[..16].copy_from_slice(bytemuck::bytes_of(&params));
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlurKernelGpu {
@@ -66,13 +126,16 @@ impl BlurKernelGpuRunner {
         }
         let c = gpu::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
         self.ctx = Some(c.clone());
-        Ok(c)
+        Scheduler::init(c.clone());
+        self.ctx = Some(c);
+        self.ctx.clone().ok_or_else(|| Error::internal("GPU init failed"))
     }
 
     fn submit_chunk(&mut self) {
         let Some(ctx) = self.ctx.clone() else {
             return;
         };
+        Scheduler::global().flush();
         if let Some(encoder) = self.encoder.take() {
             ctx.queue.submit(std::iter::once(encoder.finish()));
         }
@@ -90,7 +153,7 @@ impl BlurKernelGpuRunner {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct Params {
+struct BlurParams {
     width: u32,
     height: u32,
     radius: u32,
@@ -124,47 +187,32 @@ impl OperationRunner for BlurKernelGpuRunner {
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;
 
-        let src_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("blur-gpu-src"),
-            size: src_size,
-            usage: scratch_usage,
-            mapped_at_creation: false,
-        });
-        let dst_buf = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("blur-gpu-dst"),
-            size: src_size,
-            usage: scratch_usage,
-            mapped_at_creation: false,
-        });
-        let out_buf = Arc::new(ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("blur-gpu-out"),
-            size: out_size,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        }));
+        let pool = &Scheduler::global().pool();
+        let src_buf = pool.acquire(src_size, scratch_usage).arc();
+        let dst_buf = pool.acquire(src_size, scratch_usage).arc();
+        let out_buf = pool.acquire(out_size, scratch_usage).arc();
 
-        let params = Params {
+        let params = BlurParams {
             width: rw,
             height: rh,
             radius: r,
             _pad: 0,
         };
-        let params_buf = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("blur-gpu-params"),
-            contents: bytemuck::bytes_of(&params),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let param_buf = pool.acquire(16, wgpu::BufferUsages::UNIFORM).arc();
+        ctx.queue
+            .write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
-        let pipeline = gpu_blur::get_or_init(&ctx);
+        let kernel = BlurKernel {
+            radius: self.radius,
+        };
+        let sched = Scheduler::global();
         let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blur-gpu-bg"),
-            layout: &pipeline.bgl,
+            layout: &sched.bind_group_layout(&BLUR_SIG).unwrap(),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: params_buf.as_entire_binding(),
+                    resource: param_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -213,12 +261,13 @@ impl OperationRunner for BlurKernelGpuRunner {
             }
         }
 
+        let pipeline = sched.compute_pipeline(&BLUR_SIG).unwrap();
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("blur-gpu-pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&pipeline.pipeline);
+            pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
             let gx = rw.div_ceil(8);
             let gy = rh.div_ceil(8);
@@ -234,9 +283,9 @@ impl OperationRunner for BlurKernelGpuRunner {
             encoder.copy_buffer_to_buffer(&dst_buf, src_off, &out_buf, dst_off, len);
         }
 
-        self.keepalive.push(Arc::new(src_buf));
-        self.keepalive.push(Arc::new(dst_buf));
-        self.keepalive.push(Arc::new(params_buf));
+        self.keepalive.push(src_buf);
+        self.keepalive.push(dst_buf);
+        self.keepalive.push(param_buf);
         self.keepalive.push(out_buf.clone());
 
         let gbuf = GpuBuffer::new(out_buf, out_size);

@@ -3,7 +3,10 @@
 
 pub mod buffer;
 pub mod context;
+pub mod kernel;
 pub mod kernels;
+pub mod pool;
+pub mod scheduler;
 
 #[cfg(test)]
 mod tests;
