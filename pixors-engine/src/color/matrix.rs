@@ -46,8 +46,12 @@ impl Matrix3x3 {
         ])
     }
 
-    pub fn col(&self, i: usize) -> [f32; 3] { self.0[i] }
-    pub fn row(&self, i: usize) -> [f32; 3] { [self.0[0][i], self.0[1][i], self.0[2][i]] }
+    pub fn col(&self, i: usize) -> [f32; 3] {
+        self.0[i]
+    }
+    pub fn row(&self, i: usize) -> [f32; 3] {
+        [self.0[0][i], self.0[1][i], self.0[2][i]]
+    }
 
     /// Returns the matrix as a row-major 3x3 array.
     /// Useful for passing to SIMD code that expects row-major layout.
@@ -86,7 +90,10 @@ impl Matrix3x3 {
             - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
             + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
         if det.abs() <= 1e-12 {
-            return Err(Error::ColorConversion(format!("singular matrix (det = {})", det)));
+            return Err(Error::ColorConversion(format!(
+                "singular matrix (det = {})",
+                det
+            )));
         }
         let inv_det = 1.0 / det;
         let mut inv = [[0.0; 3]; 3];
@@ -110,7 +117,10 @@ impl Matrix3x3 {
 // --- RGB ↔ XYZ matrix derivation ---
 
 /// Derives the RGB→XYZ matrix for given primaries and white point.
-pub fn rgb_to_xyz_matrix(primaries: RgbPrimaries, white_point: WhitePoint) -> Result<Matrix3x3, Error> {
+pub fn rgb_to_xyz_matrix(
+    primaries: RgbPrimaries,
+    white_point: WhitePoint,
+) -> Result<Matrix3x3, Error> {
     let chroma = primaries.chromaticities();
     let wp_xyz = white_point.xyz();
 
@@ -128,15 +138,15 @@ pub fn rgb_to_xyz_matrix(primaries: RgbPrimaries, white_point: WhitePoint) -> Re
 // --- Bradford chromatic adaptation ---
 
 const BRADFORD: Matrix3x3 = Matrix3x3::from_rows(
-    [ 0.8951,  0.2664, -0.1614],
-    [-0.7502,  1.7135,  0.0367],
-    [ 0.0389, -0.0685,  1.0296],
+    [0.8951, 0.2664, -0.1614],
+    [-0.7502, 1.7135, 0.0367],
+    [0.0389, -0.0685, 1.0296],
 );
 
 const BRADFORD_INV: Matrix3x3 = Matrix3x3::from_rows(
-    [ 0.9869929, -0.1470543,  0.1599627],
-    [ 0.4323053,  0.5183603,  0.0492912],
-    [-0.0085287,  0.0400428,  0.9684867],
+    [0.9869929, -0.1470543, 0.1599627],
+    [0.4323053, 0.5183603, 0.0492912],
+    [-0.0085287, 0.0400428, 0.9684867],
 );
 
 /// Chromatic adaptation matrix from `src_white` to `dst_white` via Bradford CAT.
@@ -147,9 +157,21 @@ pub fn bradford_cat(src_white: WhitePoint, dst_white: WhitePoint) -> Matrix3x3 {
     let src_lms = BRADFORD.mul_vec(src_white.xyz());
     let dst_lms = BRADFORD.mul_vec(dst_white.xyz());
     let ratio = [
-        if src_lms[0].abs() > 1e-12 { dst_lms[0] / src_lms[0] } else { 1.0 },
-        if src_lms[1].abs() > 1e-12 { dst_lms[1] / src_lms[1] } else { 1.0 },
-        if src_lms[2].abs() > 1e-12 { dst_lms[2] / src_lms[2] } else { 1.0 },
+        if src_lms[0].abs() > 1e-12 {
+            dst_lms[0] / src_lms[0]
+        } else {
+            1.0
+        },
+        if src_lms[1].abs() > 1e-12 {
+            dst_lms[1] / src_lms[1]
+        } else {
+            1.0
+        },
+        if src_lms[2].abs() > 1e-12 {
+            dst_lms[2] / src_lms[2]
+        } else {
+            1.0
+        },
     ];
     BRADFORD_INV.mul(&Matrix3x3::diag(ratio[0], ratio[1], ratio[2]).mul(&BRADFORD))
 }
@@ -186,7 +208,8 @@ mod tests {
     fn matrix_inverse() {
         let m = Matrix3x3::from_cols([2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]);
         let inv = m.inverse().unwrap();
-        let expected = Matrix3x3::from_cols([0.5, 0.0, 0.0], [0.0, 1.0 / 3.0, 0.0], [0.0, 0.0, 0.25]);
+        let expected =
+            Matrix3x3::from_cols([0.5, 0.0, 0.0], [0.0, 1.0 / 3.0, 0.0], [0.0, 0.0, 0.25]);
         for i in 0..3 {
             for j in 0..3 {
                 assert_approx_eq!(inv.0[i][j], expected.0[i][j], 1e-6);

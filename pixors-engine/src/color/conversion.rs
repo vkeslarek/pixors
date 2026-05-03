@@ -1,11 +1,11 @@
 //! Color conversion engine — precomputed LUTs for fast pixel conversion.
 
-use wide::f32x4;
-use crate::color::{ColorSpace, TransferFn};
 use crate::color::Matrix3x3;
+use crate::color::{ColorSpace, TransferFn};
 use crate::error::Error;
 use crate::image::meta::SampleFormat;
 use crate::pixel::{AlphaPolicy, Pixel};
+use wide::f32x4;
 
 /// Precomputed converter between two color spaces.
 ///
@@ -35,13 +35,27 @@ impl ColorConversion {
             .map(|i| dst_tf.encode(i as f32 / 4095.0))
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        Ok(Self { src, dst, matrix, decode_u8: src_u8_lut, encode: encode_lut })
+        Ok(Self {
+            src,
+            dst,
+            matrix,
+            decode_u8: src_u8_lut,
+            encode: encode_lut,
+        })
     }
 
-    pub fn src(&self) -> ColorSpace { self.src }
-    pub fn dst(&self) -> ColorSpace { self.dst }
-    pub fn matrix(&self) -> &Matrix3x3 { &self.matrix }
-    pub fn encode_lut(&self) -> &[f32] { &self.encode }
+    pub fn src(&self) -> ColorSpace {
+        self.src
+    }
+    pub fn dst(&self) -> ColorSpace {
+        self.dst
+    }
+    pub fn matrix(&self) -> &Matrix3x3 {
+        &self.matrix
+    }
+    pub fn encode_lut(&self) -> &[f32] {
+        &self.encode
+    }
 
     // pub fn convert_row<D: Pixel>(&self, data: &[u8], desc: &BufferDesc, y: u32, dst: &mut [D], mode: AlphaPolicy) {
     //     self.convert_row_strided(data, desc, y, 0, desc.width, dst, mode)
@@ -92,9 +106,7 @@ impl ColorConversion {
         let n = src.len();
 
         // Same color space + same pixel type: no conversion needed.
-        if self.src == self.dst
-            && std::any::TypeId::of::<S>() == std::any::TypeId::of::<D>()
-        {
+        if self.src == self.dst && std::any::TypeId::of::<S>() == std::any::TypeId::of::<D>() {
             return bytemuck::cast_slice(src).to_vec();
         }
 
@@ -160,12 +172,17 @@ impl ColorConversion {
     #[inline]
     pub fn decode_to_linear(&self, rgb: [f32; 3]) -> [f32; 3] {
         let tf = self.src.transfer();
-        self.matrix.mul_vec([tf.decode(rgb[0]), tf.decode(rgb[1]), tf.decode(rgb[2])])
+        self.matrix
+            .mul_vec([tf.decode(rgb[0]), tf.decode(rgb[1]), tf.decode(rgb[2])])
     }
 
     #[inline]
     pub fn decode_u8_to_linear(&self, r: u8, g: u8, b: u8) -> [f32; 3] {
-        self.matrix.mul_vec([self.decode_u8[r as usize], self.decode_u8[g as usize], self.decode_u8[b as usize]])
+        self.matrix.mul_vec([
+            self.decode_u8[r as usize],
+            self.decode_u8[g as usize],
+            self.decode_u8[b as usize],
+        ])
     }
 
     #[inline]
@@ -179,7 +196,11 @@ pub fn lookup_encode(y: f32, lut: &[f32]) -> f32 {
     let idx = y.clamp(0.0, 1.0) * (lut.len() - 1) as f32;
     let i = idx as usize;
     let frac = idx - i as f32;
-    if i + 1 < lut.len() { lut[i] + frac * (lut[i + 1] - lut[i]) } else { lut[i] }
+    if i + 1 < lut.len() {
+        lut[i] + frac * (lut[i + 1] - lut[i])
+    } else {
+        lut[i]
+    }
 }
 
 #[inline(always)]
@@ -200,7 +221,13 @@ pub fn encode_simd(v: f32x4, lut: &[f32]) -> f32x4 {
     f32x4::from(out)
 }
 
-pub fn apply_mode(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, mode: AlphaPolicy) -> (f32x4, f32x4, f32x4) {
+pub fn apply_mode(
+    rr: f32x4,
+    gg: f32x4,
+    bb: f32x4,
+    aa: f32x4,
+    mode: AlphaPolicy,
+) -> (f32x4, f32x4, f32x4) {
     match mode {
         AlphaPolicy::PremultiplyOnPack | AlphaPolicy::OpaqueDrop => (rr * aa, gg * aa, bb * aa),
         AlphaPolicy::Straight => (rr, gg, bb),
@@ -209,7 +236,9 @@ pub fn apply_mode(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, mode: AlphaPolicy)
 
 pub fn apply_mode_one(linear: [f32; 3], a: f32, mode: AlphaPolicy) -> [f32; 3] {
     match mode {
-        AlphaPolicy::PremultiplyOnPack | AlphaPolicy::OpaqueDrop => [linear[0] * a, linear[1] * a, linear[2] * a],
+        AlphaPolicy::PremultiplyOnPack | AlphaPolicy::OpaqueDrop => {
+            [linear[0] * a, linear[1] * a, linear[2] * a]
+        }
         AlphaPolicy::Straight => linear,
     }
 }
@@ -217,9 +246,9 @@ pub fn apply_mode_one(linear: [f32; 3], a: f32, mode: AlphaPolicy) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use half::f16;
     use crate::image::meta::AlphaMode;
     use crate::pixel::{AlphaPolicy, Rgba};
+    use half::f16;
 
     #[test]
     fn converter_has_dst_field() {
@@ -287,11 +316,27 @@ mod tests {
     fn convert_pixels_acescg_to_srgb_u8() {
         let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
         let pixels = vec![
-            Rgba { r: f16::from_f32(0.5), g: f16::from_f32(0.3), b: f16::from_f32(0.7), a: f16::from_f32(0.8) },
-            Rgba { r: f16::from_f32(1.0), g: f16::from_f32(0.0), b: f16::from_f32(0.5), a: f16::from_f32(1.0) },
-            Rgba { r: f16::from_f32(0.0), g: f16::from_f32(0.0), b: f16::from_f32(0.0), a: f16::from_f32(0.0) },
+            Rgba {
+                r: f16::from_f32(0.5),
+                g: f16::from_f32(0.3),
+                b: f16::from_f32(0.7),
+                a: f16::from_f32(0.8),
+            },
+            Rgba {
+                r: f16::from_f32(1.0),
+                g: f16::from_f32(0.0),
+                b: f16::from_f32(0.5),
+                a: f16::from_f32(1.0),
+            },
+            Rgba {
+                r: f16::from_f32(0.0),
+                g: f16::from_f32(0.0),
+                b: f16::from_f32(0.0),
+                a: f16::from_f32(0.0),
+            },
         ];
-        let result: Vec<[u8; 4]> = conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&pixels, AlphaPolicy::Straight);
+        let result: Vec<[u8; 4]> =
+            conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&pixels, AlphaPolicy::Straight);
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -325,20 +370,19 @@ mod tests {
             (0.0, 0.2, 0.8),
         ]
         .into_iter()
-        .map(|(r, g, b)| Rgba { r: f16::from_f32(r), g: f16::from_f32(g), b: f16::from_f32(b), a: f16::ONE })
+        .map(|(r, g, b)| Rgba {
+            r: f16::from_f32(r),
+            g: f16::from_f32(g),
+            b: f16::from_f32(b),
+            a: f16::ONE,
+        })
         .collect();
 
-        let acescg: Vec<Rgba<f16>> =
-            srgb_to_acescg.convert_pixels::<Rgba<f16>, Rgba<f16>>(
-                &colors_f16,
-                AlphaPolicy::PremultiplyOnPack,
-            );
+        let acescg: Vec<Rgba<f16>> = srgb_to_acescg
+            .convert_pixels::<Rgba<f16>, Rgba<f16>>(&colors_f16, AlphaPolicy::PremultiplyOnPack);
 
         let result: Vec<[u8; 4]> =
-            acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(
-                &acescg,
-                AlphaPolicy::Straight,
-            );
+            acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, AlphaPolicy::Straight);
 
         for (i, (orig, out)) in colors_f16.iter().zip(result.iter()).enumerate() {
             let expected_r = (orig.r.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -354,7 +398,9 @@ mod tests {
             assert!(
                 dr <= 2 && dg <= 2 && db <= 2,
                 "Color #{i}: expected ({expected_r},{expected_g},{expected_b}) got ({},{},{}) — diff ({dr},{dg},{db})",
-                out[0], out[1], out[2]
+                out[0],
+                out[1],
+                out[2]
             );
             assert_eq!(da, 0, "Alpha #{i}: expected {expected_a} got {}", out[3]);
         }
@@ -362,7 +408,9 @@ mod tests {
 
     #[test]
     fn convert_pixels_same_space_same_type_is_copy() {
-        let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::ACES_CG).unwrap();
+        let conv = ColorSpace::ACES_CG
+            .converter_to(ColorSpace::ACES_CG)
+            .unwrap();
 
         let src: Vec<Rgba<f16>> = (0..20)
             .map(|i| Rgba {
@@ -389,14 +437,12 @@ mod tests {
     fn convert_pixels_apply_mode_premultiplies_vs_straight() {
         let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
 
-        let src: Vec<Rgba<f16>> = vec![
-            Rgba {
-                r: f16::from_f32(0.25),
-                g: f16::from_f32(0.15),
-                b: f16::from_f32(0.0),
-                a: f16::from_f32(0.5),
-            },
-        ];
+        let src: Vec<Rgba<f16>> = vec![Rgba {
+            r: f16::from_f32(0.25),
+            g: f16::from_f32(0.15),
+            b: f16::from_f32(0.0),
+            a: f16::from_f32(0.5),
+        }];
 
         let premul: Vec<Rgba<f16>> =
             conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::PremultiplyOnPack);
@@ -406,15 +452,24 @@ mod tests {
         let p = &premul[0];
         let s = &straight[0];
 
-        assert!((p.a.to_f32() - 0.5).abs() < 0.01, "alpha preserved in premul: {}", p.a.to_f32());
-        assert!((s.a.to_f32() - 0.5).abs() < 0.01, "alpha preserved in straight: {}", s.a.to_f32());
+        assert!(
+            (p.a.to_f32() - 0.5).abs() < 0.01,
+            "alpha preserved in premul: {}",
+            p.a.to_f32()
+        );
+        assert!(
+            (s.a.to_f32() - 0.5).abs() < 0.01,
+            "alpha preserved in straight: {}",
+            s.a.to_f32()
+        );
 
         // With Straight, Rgba<f16>::unpack div-by-alpha is NOT reversed by pack.
         // RGB values should be lower in premul (multiplied by alpha)
         assert!(
             p.r.to_f32() < s.r.to_f32(),
             "premultiplied r ({:.3}) should be < straight r ({:.3})",
-            p.r.to_f32(), s.r.to_f32()
+            p.r.to_f32(),
+            s.r.to_f32()
         );
     }
 
@@ -425,8 +480,16 @@ mod tests {
 
         // sRGB green in Rgb<f16>: (0, 1, 0)
         let src: Vec<Rgb<f16>> = vec![
-            Rgb { r: f16::from_f32(0.0), g: f16::from_f32(1.0), b: f16::from_f32(0.0) },
-            Rgb { r: f16::from_f32(0.5), g: f16::from_f32(0.5), b: f16::from_f32(0.5) },
+            Rgb {
+                r: f16::from_f32(0.0),
+                g: f16::from_f32(1.0),
+                b: f16::from_f32(0.0),
+            },
+            Rgb {
+                r: f16::from_f32(0.5),
+                g: f16::from_f32(0.5),
+                b: f16::from_f32(0.5),
+            },
         ];
 
         let dst: Vec<Rgba<f16>> =
@@ -434,34 +497,66 @@ mod tests {
 
         assert_eq!(dst.len(), 2);
         let first = &dst[0];
-        assert!((first.r.to_f32() - 0.0).abs() < 0.02, "r: {:.3}", first.r.to_f32());
-        assert!((first.g.to_f32() - 1.0).abs() < 0.02, "g: {:.3}", first.g.to_f32());
-        assert!((first.b.to_f32() - 0.0).abs() < 0.02, "b: {:.3}", first.b.to_f32());
-        assert!((first.a.to_f32() - 1.0).abs() < 0.01, "a should be 1.0 from Rgb unpack: {:.3}", first.a.to_f32());
+        assert!(
+            (first.r.to_f32() - 0.0).abs() < 0.02,
+            "r: {:.3}",
+            first.r.to_f32()
+        );
+        assert!(
+            (first.g.to_f32() - 1.0).abs() < 0.02,
+            "g: {:.3}",
+            first.g.to_f32()
+        );
+        assert!(
+            (first.b.to_f32() - 0.0).abs() < 0.02,
+            "b: {:.3}",
+            first.b.to_f32()
+        );
+        assert!(
+            (first.a.to_f32() - 1.0).abs() < 0.01,
+            "a should be 1.0 from Rgb unpack: {:.3}",
+            first.a.to_f32()
+        );
 
         let second = &dst[1];
-        assert!((second.a.to_f32() - 1.0).abs() < 0.01, "a should be 1.0: {:.3}", second.a.to_f32());
+        assert!(
+            (second.a.to_f32() - 1.0).abs() < 0.01,
+            "a should be 1.0: {:.3}",
+            second.a.to_f32()
+        );
     }
 
     #[test]
     fn convert_pixels_u8_to_f16_rt_alpha_straight() {
         let conv = ColorSpace::SRGB.converter_to(ColorSpace::SRGB).unwrap();
 
-        let src: Vec<[u8; 4]> = vec![
-            [255, 0, 0, 128],
-            [0, 255, 0, 255],
-            [128, 128, 128, 64],
-        ];
+        let src: Vec<[u8; 4]> = vec![[255, 0, 0, 128], [0, 255, 0, 255], [128, 128, 128, 64]];
 
         let f16: Vec<Rgba<f16>> =
             conv.convert_pixels::<[u8; 4], Rgba<f16>>(&src, AlphaPolicy::Straight);
 
         assert_eq!(f16.len(), 3);
         // u8→f16 Straight: values scaled to [0,1], alpha preserved as-is
-        assert!((f16[0].r.to_f32() - 1.0).abs() < 0.02, "r: {:.3}", f16[0].r.to_f32());
-        assert!((f16[0].a.to_f32() - 128.0 / 255.0).abs() < 0.02, "a: {:.3}", f16[0].a.to_f32());
-        assert!((f16[1].a.to_f32() - 1.0).abs() < 0.01, "a: {:.3}", f16[1].a.to_f32());
-        assert!((f16[2].a.to_f32() - 64.0 / 255.0).abs() < 0.02, "a: {:.3}", f16[2].a.to_f32());
+        assert!(
+            (f16[0].r.to_f32() - 1.0).abs() < 0.02,
+            "r: {:.3}",
+            f16[0].r.to_f32()
+        );
+        assert!(
+            (f16[0].a.to_f32() - 128.0 / 255.0).abs() < 0.02,
+            "a: {:.3}",
+            f16[0].a.to_f32()
+        );
+        assert!(
+            (f16[1].a.to_f32() - 1.0).abs() < 0.01,
+            "a: {:.3}",
+            f16[1].a.to_f32()
+        );
+        assert!(
+            (f16[2].a.to_f32() - 64.0 / 255.0).abs() < 0.02,
+            "a: {:.3}",
+            f16[2].a.to_f32()
+        );
     }
 
     #[test]
@@ -469,10 +564,7 @@ mod tests {
         let to_acescg = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
         let to_srgb = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
 
-        let src: Vec<[u8; 4]> = vec![
-            [200, 100, 50, 255],
-            [0, 128, 255, 128],
-        ];
+        let src: Vec<[u8; 4]> = vec![[200, 100, 50, 255], [0, 128, 255, 128]];
 
         let acescg: Vec<Rgba<f16>> =
             to_acescg.convert_pixels::<[u8; 4], Rgba<f16>>(&src, AlphaPolicy::PremultiplyOnPack);
@@ -487,7 +579,12 @@ mod tests {
             let dg = (back[i][1] as i32 - src[i][1] as i32).unsigned_abs();
             let db = (back[i][2] as i32 - src[i][2] as i32).unsigned_abs();
             let da = (back[i][3] as i32 - src[i][3] as i32).unsigned_abs();
-            assert!(dr <= 2, "pixel {i} r diff {dr}: {} vs {}", back[i][0], src[i][0]);
+            assert!(
+                dr <= 2,
+                "pixel {i} r diff {dr}: {} vs {}",
+                back[i][0],
+                src[i][0]
+            );
             assert!(dg <= 2, "pixel {i} g diff {dg}");
             assert!(db <= 2, "pixel {i} b diff {db}");
             assert_eq!(da, 0, "pixel {i} alpha should be exact");

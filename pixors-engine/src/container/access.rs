@@ -1,7 +1,6 @@
 use crate::container::tile::TileCoord;
-use crate::container::Container;
 
-pub trait PixelIterable: Container {
+pub trait PixelIterable {
     fn pixel_count(&self) -> usize;
 }
 
@@ -10,7 +9,7 @@ pub trait KernelIterable: PixelIterable {
     fn height(&self) -> u32;
 }
 
-pub trait NeighborhoodIterable: Container {
+pub trait NeighborhoodIterable {
     fn center(&self) -> &TileCoord;
     fn tiles(&self) -> &[TileCoord];
 }

@@ -1,5 +1,5 @@
-use thiserror::Error;
 use png::DecodingError;
+use thiserror::Error;
 
 /// Represents all possible errors in the pixors library.
 #[derive(Debug, Error)]

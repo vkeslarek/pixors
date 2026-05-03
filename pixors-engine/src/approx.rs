@@ -84,7 +84,6 @@ macro_rules! assert_approx_eq {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn f32_approx_eq() {

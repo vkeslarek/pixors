@@ -3,7 +3,12 @@ use wide::f32x4;
 
 impl Pixel for [u8; 4] {
     fn unpack(self) -> [f32; 4] {
-        [self[0] as f32 / 255.0, self[1] as f32 / 255.0, self[2] as f32 / 255.0, self[3] as f32 / 255.0]
+        [
+            self[0] as f32 / 255.0,
+            self[1] as f32 / 255.0,
+            self[2] as f32 / 255.0,
+            self[3] as f32 / 255.0,
+        ]
     }
     fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) {
         let r: [f32; 4] = rr.into();
@@ -31,7 +36,12 @@ impl Pixel for [u8; 4] {
 
 impl Pixel for [u16; 4] {
     fn unpack(self) -> [f32; 4] {
-        [self[0] as f32 / 65535.0, self[1] as f32 / 65535.0, self[2] as f32 / 65535.0, self[3] as f32 / 65535.0]
+        [
+            self[0] as f32 / 65535.0,
+            self[1] as f32 / 65535.0,
+            self[2] as f32 / 65535.0,
+            self[3] as f32 / 65535.0,
+        ]
     }
     fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) {
         let r: [f32; 4] = rr.into();
@@ -59,7 +69,12 @@ impl Pixel for [u16; 4] {
 
 impl Pixel for [u8; 3] {
     fn unpack(self) -> [f32; 4] {
-        [self[0] as f32 / 255.0, self[1] as f32 / 255.0, self[2] as f32 / 255.0, 1.0]
+        [
+            self[0] as f32 / 255.0,
+            self[1] as f32 / 255.0,
+            self[2] as f32 / 255.0,
+            1.0,
+        ]
     }
     fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, _aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) {
         let r: [f32; 4] = rr.into();
@@ -84,7 +99,12 @@ impl Pixel for [u8; 3] {
 
 impl Pixel for [u16; 3] {
     fn unpack(self) -> [f32; 4] {
-        [self[0] as f32 / 65535.0, self[1] as f32 / 65535.0, self[2] as f32 / 65535.0, 1.0]
+        [
+            self[0] as f32 / 65535.0,
+            self[1] as f32 / 65535.0,
+            self[2] as f32 / 65535.0,
+            1.0,
+        ]
     }
     fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, _aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) {
         let r: [f32; 4] = rr.into();

@@ -1,5 +1,4 @@
 use crate::container::meta::PixelMeta;
-use crate::container::Container;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -15,21 +14,7 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(index: u32, width: u32, height: u32, meta: PixelMeta) -> Self {
-        Self {
-            index,
-            width,
-            height,
-            x: 0,
-            y: 0,
-            opacity: 1.0,
-            meta,
-        }
-    }
-}
-
-impl Container for Layer {
-    fn meta(&self) -> &PixelMeta {
-        &self.meta
+        Self { index, width, height, x: 0, y: 0, opacity: 1.0, meta }
     }
 }
 
@@ -40,8 +25,6 @@ pub struct Layers {
 
 impl Layers {
     pub fn new(layers: Vec<Layer>) -> Self {
-        Self {
-            layers: Arc::new(layers),
-        }
+        Self { layers: Arc::new(layers) }
     }
 }

@@ -28,11 +28,19 @@ impl Pixel for Rgb<f16> {
         let g: [f32; 4] = gg.into();
         let b: [f32; 4] = bb.into();
         for i in 0..4 {
-            out[i] = Rgb { r: f16::from_f32(r[i]), g: f16::from_f32(g[i]), b: f16::from_f32(b[i]) };
+            out[i] = Rgb {
+                r: f16::from_f32(r[i]),
+                g: f16::from_f32(g[i]),
+                b: f16::from_f32(b[i]),
+            };
         }
     }
     fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self {
-        Rgb { r: f16::from_f32(rgba[0]), g: f16::from_f32(rgba[1]), b: f16::from_f32(rgba[2]) }
+        Rgb {
+            r: f16::from_f32(rgba[0]),
+            g: f16::from_f32(rgba[1]),
+            b: f16::from_f32(rgba[2]),
+        }
     }
 }
 
@@ -45,11 +53,18 @@ impl Pixel for Rgb<f32> {
         let g: [f32; 4] = gg.into();
         let b: [f32; 4] = bb.into();
         for i in 0..4 {
-            out[i] = Rgb { r: r[i], g: g[i], b: b[i] };
+            out[i] = Rgb {
+                r: r[i],
+                g: g[i],
+                b: b[i],
+            };
         }
     }
     fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self {
-        Rgb { r: rgba[0], g: rgba[1], b: rgba[2] }
+        Rgb {
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+        }
     }
 }
-

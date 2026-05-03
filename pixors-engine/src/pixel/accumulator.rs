@@ -1,5 +1,5 @@
-use half::f16;
 use crate::pixel::Rgba;
+use half::f16;
 
 /// A pixel type that supports accumulate + subtract + average.
 /// Useful for convolution, box blur, downsampling, etc.
@@ -34,7 +34,12 @@ impl PixelAccumulator for [u8; 4] {
 
     fn from_sum(sum: [u32; 4], count: u32) -> Self {
         let c = count.max(1);
-        [(sum[0] / c) as u8, (sum[1] / c) as u8, (sum[2] / c) as u8, (sum[3] / c) as u8]
+        [
+            (sum[0] / c) as u8,
+            (sum[1] / c) as u8,
+            (sum[2] / c) as u8,
+            (sum[3] / c) as u8,
+        ]
     }
 }
 

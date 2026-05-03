@@ -1,5 +1,4 @@
 use crate::container::meta::PixelMeta;
-use crate::container::Container;
 
 #[derive(Debug, Clone)]
 pub struct Image {
@@ -15,11 +14,5 @@ impl Image {
             height,
             meta,
         }
-    }
-}
-
-impl Container for Image {
-    fn meta(&self) -> &PixelMeta {
-        &self.meta
     }
 }

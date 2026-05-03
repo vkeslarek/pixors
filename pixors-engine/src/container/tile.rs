@@ -1,9 +1,7 @@
-use crate::container::access::{KernelIterable, PixelIterable};
 use crate::container::meta::PixelMeta;
-use crate::container::Container;
-use serde::{Deserialize, Serialize};
+use crate::storage::Buffer;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileCoord {
     pub tx: u32,
     pub ty: u32,
@@ -37,17 +35,6 @@ impl TileCoord {
         }
     }
 
-    pub fn from_xywh(px: u32, py: u32, width: u32, height: u32) -> Self {
-        Self {
-            tx: 0,
-            ty: 0,
-            px,
-            py,
-            width,
-            height,
-        }
-    }
-
     pub fn pixel_count(&self) -> usize {
         (self.width * self.height) as usize
     }
@@ -61,32 +48,11 @@ impl TileCoord {
 pub struct Tile {
     pub coord: TileCoord,
     pub meta: PixelMeta,
+    pub data: Buffer,
 }
 
 impl Tile {
-    pub fn new(coord: TileCoord, meta: PixelMeta) -> Self {
-        Self { coord, meta }
-    }
-}
-
-impl Container for Tile {
-    fn meta(&self) -> &PixelMeta {
-        &self.meta
-    }
-}
-
-impl PixelIterable for Tile {
-    fn pixel_count(&self) -> usize {
-        self.coord.pixel_count()
-    }
-}
-
-impl KernelIterable for Tile {
-    fn width(&self) -> u32 {
-        self.coord.width
-    }
-
-    fn height(&self) -> u32 {
-        self.coord.height
+    pub fn new(coord: TileCoord, meta: PixelMeta, data: Buffer) -> Self {
+        Self { coord, meta, data }
     }
 }

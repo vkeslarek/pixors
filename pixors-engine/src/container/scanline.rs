@@ -1,5 +1,5 @@
 use crate::container::meta::PixelMeta;
-use crate::container::Container;
+use crate::storage::Buffer;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ScanLineCoord {
@@ -7,26 +7,21 @@ pub struct ScanLineCoord {
     pub y: u32,
 }
 
-impl ScanLineCoord {
-    pub fn new(width: u32, y: u32) -> Self {
-        Self { width, y }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ScanLine {
-    pub coord: ScanLineCoord,
+    pub y: u32,
+    pub width: u32,
     pub meta: PixelMeta,
+    pub data: Buffer,
 }
 
 impl ScanLine {
-    pub fn new(coord: ScanLineCoord, meta: PixelMeta) -> Self {
-        Self { coord, meta }
-    }
-}
-
-impl Container for ScanLine {
-    fn meta(&self) -> &PixelMeta {
-        &self.meta
+    pub fn new(y: u32, width: u32, meta: PixelMeta, data: Buffer) -> Self {
+        Self {
+            y,
+            width,
+            meta,
+            data,
+        }
     }
 }

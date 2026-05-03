@@ -16,8 +16,18 @@ impl<T: Component> Rgba<T> {
     pub const fn new(r: T, g: T, b: T, a: T) -> Self {
         Self { r, g, b, a }
     }
-    pub const ZERO: Self = Self { r: T::ZERO, g: T::ZERO, b: T::ZERO, a: T::ZERO };
-    pub const ONE: Self = Self { r: T::ONE, g: T::ONE, b: T::ONE, a: T::ONE };
+    pub const ZERO: Self = Self {
+        r: T::ZERO,
+        g: T::ZERO,
+        b: T::ZERO,
+        a: T::ZERO,
+    };
+    pub const ONE: Self = Self {
+        r: T::ONE,
+        g: T::ONE,
+        b: T::ONE,
+        a: T::ONE,
+    };
     pub fn black() -> Self {
         Self::new(T::ZERO, T::ZERO, T::ZERO, T::ONE)
     }
@@ -36,7 +46,12 @@ impl Pixel for Rgba<f16> {
         let a = self.a.to_f32();
         if a > 0.0 {
             let inv = 1.0 / a;
-            [self.r.to_f32() * inv, self.g.to_f32() * inv, self.b.to_f32() * inv, a]
+            [
+                self.r.to_f32() * inv,
+                self.g.to_f32() * inv,
+                self.b.to_f32() * inv,
+                a,
+            ]
         } else {
             [0.0, 0.0, 0.0, 0.0]
         }
@@ -47,11 +62,21 @@ impl Pixel for Rgba<f16> {
         let b: [f32; 4] = bb.into();
         let a: [f32; 4] = aa.into();
         for i in 0..4 {
-            out[i] = Rgba { r: f16::from_f32(r[i]), g: f16::from_f32(g[i]), b: f16::from_f32(b[i]), a: f16::from_f32(a[i]) };
+            out[i] = Rgba {
+                r: f16::from_f32(r[i]),
+                g: f16::from_f32(g[i]),
+                b: f16::from_f32(b[i]),
+                a: f16::from_f32(a[i]),
+            };
         }
     }
     fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self {
-        Rgba { r: f16::from_f32(rgba[0]), g: f16::from_f32(rgba[1]), b: f16::from_f32(rgba[2]), a: f16::from_f32(rgba[3]) }
+        Rgba {
+            r: f16::from_f32(rgba[0]),
+            g: f16::from_f32(rgba[1]),
+            b: f16::from_f32(rgba[2]),
+            a: f16::from_f32(rgba[3]),
+        }
     }
 }
 
@@ -71,11 +96,21 @@ impl Pixel for Rgba<f32> {
         let b: [f32; 4] = bb.into();
         let a: [f32; 4] = aa.into();
         for i in 0..4 {
-            out[i] = Rgba { r: r[i], g: g[i], b: b[i], a: a[i] };
+            out[i] = Rgba {
+                r: r[i],
+                g: g[i],
+                b: b[i],
+                a: a[i],
+            };
         }
     }
     fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self {
-        Rgba { r: rgba[0], g: rgba[1], b: rgba[2], a: rgba[3] }
+        Rgba {
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+            a: rgba[3],
+        }
     }
 }
 
