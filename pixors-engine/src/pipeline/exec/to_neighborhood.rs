@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::container::{EdgeCondition, Neighborhood, Tile};
-use crate::pipeline::egraph::emitter::Emitter;
-use crate::pipeline::egraph::item::Item;
-use crate::pipeline::egraph::runner::OperationRunner;
-use crate::pipeline::egraph::stage::{Device, Stage};
+use crate::pipeline::exec_graph::emitter::Emitter;
+use crate::pipeline::exec_graph::item::Item;
+use crate::pipeline::exec_graph::runner::OperationRunner;
+use super::{Device, Stage};
 use crate::error::Error;
 use crate::debug_stopwatch;
 

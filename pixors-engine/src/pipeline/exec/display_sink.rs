@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::egraph::stage::{Device, Stage};
+use super::{Device, Stage, StageRole};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplaySink;
@@ -14,5 +14,8 @@ impl Stage for DisplaySink {
     }
     fn allocates_output(&self) -> bool {
         true
+    }
+    fn role(&self) -> StageRole {
+        StageRole::Sink
     }
 }

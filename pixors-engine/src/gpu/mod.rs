@@ -8,5 +8,5 @@ pub mod kernels;
 #[cfg(test)]
 mod tests;
 
-pub use buffer::GpuBuffer;
+pub use buffer::{Buffer, GpuBuffer};
 pub use context::{GpuContext, gpu_available, try_init};

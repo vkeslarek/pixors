@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::egraph::item::Item;
-use crate::pipeline::egraph::runner::SinkRunner;
-use crate::pipeline::egraph::stage::{Device, Stage};
+use crate::pipeline::exec_graph::item::Item;
+use crate::pipeline::exec_graph::runner::SinkRunner;
+use super::{Device, Stage, StageRole};
 use crate::error::Error;
-use crate::storage::Buffer;
+use crate::gpu::Buffer;
 use crate::debug_stopwatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +22,7 @@ impl Stage for PngEncoder {
     fn kind(&self) -> &'static str { "png_encoder" }
     fn device(&self) -> Device { Device::Cpu }
     fn allocates_output(&self) -> bool { true }
+    fn role(&self) -> StageRole { StageRole::Sink }
     fn sink_runner(&self) -> Result<Box<dyn SinkRunner>, Error> {
         Ok(Box::new(PngEncoderRunner::new(self.path.clone())))
     }

@@ -2,14 +2,14 @@
 mod tests {
     use crate::container::meta::PixelMeta;
     use crate::container::{EdgeCondition, Neighborhood, Tile, TileCoord};
-    use crate::pipeline::egraph::emitter::Emitter;
-    use crate::pipeline::egraph::item::Item;
-    use crate::pipeline::egraph::runner::OperationRunner;
+    use crate::pipeline::exec_graph::emitter::Emitter;
+    use crate::pipeline::exec_graph::item::Item;
+    use crate::pipeline::exec_graph::runner::OperationRunner;
     use crate::pipeline::exec::{
         blur_kernel, download, upload,
     };
     use crate::pixel::{AlphaPolicy, PixelFormat};
-    use crate::storage::Buffer;
+    use crate::gpu::Buffer;
 
     /// GPU smoke test: blur a 32×32 RGBA8 tile via Upload → BlurKernelGpu →
     /// Download and check the result against the CPU kernel within ±1 per

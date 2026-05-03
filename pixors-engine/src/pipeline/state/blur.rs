@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::egraph::stage::Device;
-use crate::pipeline::egraph::stage::ExecStage;
+use crate::pipeline::exec::Device;
+use crate::pipeline::exec::ExecNode;
 use crate::pipeline::exec;
-use crate::pipeline::sgraph::node::{ExpandCtx, ExpansionOption};
-use crate::pipeline::sgraph::ports::{PortSpec, PortType};
+use super::{ExpandCtx, ExpansionOption};
+use crate::pipeline::state_graph::ports::{PortSpec, PortType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blur {
     pub radius: u32,
 }
 
-impl crate::pipeline::sgraph::node::StateNodeTrait for Blur {
+impl super::StateNodeTrait for Blur {
     fn kind(&self) -> &'static str {
         "blur"
     }
@@ -26,10 +26,10 @@ impl crate::pipeline::sgraph::node::StateNodeTrait for Blur {
             device: Device::Cpu,
             prefer: 1,
             stages: vec![
-                ExecStage::NeighborhoodAgg(exec::NeighborhoodAgg {
+                ExecNode::NeighborhoodAgg(exec::NeighborhoodAgg {
                     radius: self.radius,
                 }),
-                ExecStage::BlurKernel(exec::BlurKernel {
+                ExecNode::BlurKernel(exec::BlurKernel {
                     radius: self.radius,
                 }),
             ],
@@ -41,10 +41,10 @@ impl crate::pipeline::sgraph::node::StateNodeTrait for Blur {
                     device: Device::Gpu,
                     prefer: 100,
                     stages: vec![
-                        ExecStage::NeighborhoodAgg(exec::NeighborhoodAgg {
+                        ExecNode::NeighborhoodAgg(exec::NeighborhoodAgg {
                             radius: self.radius,
                         }),
-                        ExecStage::BlurKernelGpu(exec::BlurKernelGpu {
+                        ExecNode::BlurKernelGpu(exec::BlurKernelGpu {
                             radius: self.radius,
                         }),
                     ],

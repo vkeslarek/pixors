@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::egraph::stage::Device;
-use crate::pipeline::egraph::stage::ExecStage;
+use crate::pipeline::exec::Device;
+use crate::pipeline::exec::ExecNode;
 use crate::pipeline::exec;
-use crate::pipeline::sgraph::node::{ExpandCtx, ExpansionOption};
-use crate::pipeline::sgraph::ports::{PortSpec, PortType};
+use super::{ExpandCtx, ExpansionOption};
+use crate::pipeline::state_graph::ports::{PortSpec, PortType};
 
 const DEFAULT_TILE_SIZE: u32 = 512;
 const WORKING_COLOR_SPACE: &str = "ACEScg_f16";
@@ -16,7 +16,7 @@ pub struct FileImage {
     pub path: PathBuf,
 }
 
-impl crate::pipeline::sgraph::node::StateNodeTrait for FileImage {
+impl super::StateNodeTrait for FileImage {
     fn kind(&self) -> &'static str {
         "file_image"
     }
@@ -31,13 +31,13 @@ impl crate::pipeline::sgraph::node::StateNodeTrait for FileImage {
             device: Device::Cpu,
             prefer: 1,
             stages: vec![
-                ExecStage::FileDecoder(exec::FileDecoder {
+                ExecNode::FileDecoder(exec::FileDecoder {
                     path: self.path.clone(),
                 }),
-                ExecStage::ScanLineAccumulator(exec::ScanLineAccumulator {
+                ExecNode::ScanLineAccumulator(exec::ScanLineAccumulator {
                     tile_size: DEFAULT_TILE_SIZE,
                 }),
-                ExecStage::ColorConvert(exec::ColorConvert {
+                ExecNode::ColorConvert(exec::ColorConvert {
                     target: WORKING_COLOR_SPACE.into(),
                 }),
             ],

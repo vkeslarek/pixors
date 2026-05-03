@@ -4,13 +4,13 @@ use serde::{Deserialize, Serialize};
 use wgpu::util::DeviceExt;
 
 use crate::container::Tile;
-use crate::pipeline::egraph::emitter::Emitter;
-use crate::pipeline::egraph::item::Item;
-use crate::pipeline::egraph::runner::OperationRunner;
-use crate::pipeline::egraph::stage::{Device, Stage};
+use crate::pipeline::exec_graph::emitter::Emitter;
+use crate::pipeline::exec_graph::item::Item;
+use crate::pipeline::exec_graph::runner::OperationRunner;
+use super::{Device, Stage};
 use crate::error::Error;
 use crate::gpu;
-use crate::storage::{Buffer, GpuBuffer};
+use crate::gpu::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

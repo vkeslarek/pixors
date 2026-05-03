@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::egraph::stage::Device;
-use crate::pipeline::egraph::stage::ExecStage;
+use crate::pipeline::exec::Device;
+use crate::pipeline::exec::ExecNode;
 use crate::pipeline::exec;
-use crate::pipeline::sgraph::node::{ExpandCtx, ExpansionOption, ExportFormat};
-use crate::pipeline::sgraph::ports::{PortSpec, PortType};
+use super::{ExpandCtx, ExpansionOption, ExportFormat};
+use crate::pipeline::state_graph::ports::{PortSpec, PortType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Export {
@@ -14,7 +14,7 @@ pub struct Export {
     pub format: ExportFormat,
 }
 
-impl crate::pipeline::sgraph::node::StateNodeTrait for Export {
+impl super::StateNodeTrait for Export {
     fn kind(&self) -> &'static str {
         "export"
     }
@@ -29,8 +29,8 @@ impl crate::pipeline::sgraph::node::StateNodeTrait for Export {
             device: Device::Cpu,
             prefer: 1,
             stages: vec![
-                ExecStage::TileToScanline(exec::TileToScanline),
-                ExecStage::PngEncoder(exec::PngEncoder {
+                ExecNode::TileToScanline(exec::TileToScanline),
+                ExecNode::PngEncoder(exec::PngEncoder {
                     path: self.path.clone(),
                 }),
             ],

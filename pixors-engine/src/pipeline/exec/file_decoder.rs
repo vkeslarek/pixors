@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use crate::color::ColorSpace;
 use crate::container::ScanLine;
 use crate::container::meta::PixelMeta;
-use crate::pipeline::egraph::emitter::Emitter;
-use crate::pipeline::egraph::item::Item;
-use crate::pipeline::egraph::runner::SourceRunner;
-use crate::pipeline::egraph::stage::{Device, Stage};
+use crate::pipeline::exec_graph::emitter::Emitter;
+use crate::pipeline::exec_graph::item::Item;
+use crate::pipeline::exec_graph::runner::SourceRunner;
+use super::{Device, Stage, StageRole};
 use crate::error::Error;
 use crate::pixel::{AlphaPolicy, PixelFormat};
-use crate::storage::Buffer;
+use crate::gpu::Buffer;
 use crate::debug_stopwatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +25,7 @@ impl Stage for FileDecoder {
     fn kind(&self) -> &'static str { "file_decoder" }
     fn device(&self) -> Device { Device::Cpu }
     fn allocates_output(&self) -> bool { true }
+    fn role(&self) -> StageRole { StageRole::Source }
     fn source_runner(&self) -> Result<Box<dyn SourceRunner>, Error> {
         Ok(Box::new(FileDecoderRunner::new(self.path.clone())))
     }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::egraph::stage::{Device, Stage};
+use super::{Device, Stage};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheReader {

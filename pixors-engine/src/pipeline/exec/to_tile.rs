@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::container::meta::PixelMeta;
 use crate::container::{Tile, TileCoord};
-use crate::pipeline::egraph::emitter::Emitter;
-use crate::pipeline::egraph::item::Item;
-use crate::pipeline::egraph::runner::OperationRunner;
-use crate::pipeline::egraph::stage::{Device, Stage};
+use crate::pipeline::exec_graph::emitter::Emitter;
+use crate::pipeline::exec_graph::item::Item;
+use crate::pipeline::exec_graph::runner::OperationRunner;
+use super::{Device, Stage};
 use crate::error::Error;
-use crate::storage::Buffer;
+use crate::gpu::Buffer;
 use crate::debug_stopwatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

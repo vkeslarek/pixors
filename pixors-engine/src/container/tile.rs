@@ -1,5 +1,5 @@
 use crate::container::meta::PixelMeta;
-use crate::storage::Buffer;
+use crate::gpu::Buffer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileCoord {
