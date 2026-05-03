@@ -17,6 +17,10 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
 
     let (w, h) = probe_dimensions(&path)?;
 
+    // Signal new image dimensions to the render thread
+    *pending.realloc.lock().unwrap() = Some((w, h));
+    *pending.new_img.lock().unwrap() = Some((w, h));
+
     // Install tile sink → pushes tiles to pending_writes for the GPU render thread
     let p = pending.clone();
     install_tile_sink(Box::new(move |px, py, tw, th, bytes| {
@@ -37,7 +41,7 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
         .operation(StateNode::Blur(Blur { radius: 8 }))
         .operation(StateNode::Blur(Blur { radius: 8 }))
         .sink(StateNode::DisplayCache(DisplayCache { generation: 0 }))
-        .run(ExecutionMode::Apply { force_cpu: true })
+        .run(ExecutionMode::Apply { force_cpu: false })
         .map_err(|e| format!("Pipeline error: {e:?}"))?;
 
     Ok((w, h, path))

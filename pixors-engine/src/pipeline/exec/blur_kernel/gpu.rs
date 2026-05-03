@@ -13,7 +13,6 @@ use crate::gpu::{self, GpuContext};
 use crate::gpu::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 use pixors_shader::kernel::{BindAccess, BindElem, DispatchShape, GpuKernel, KernelClass, KernelSig, ParamDecl, ParamType, ResourceDecl};
-use pixors_shader::scheduler::Scheduler;
 
 const BATCH_SIZE: usize = 16;
 
@@ -196,17 +195,13 @@ impl OperationRunner for BlurKernelGpuRunner {
             radius: r,
             _pad: 0,
         };
-        let param_buf = pool.acquire(16, wgpu::BufferUsages::UNIFORM).arc();
+        let param_buf = pool.acquire(16, wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST).arc();
         ctx.queue()
             .write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
-        let kernel = BlurKernel {
-            radius: self.radius,
-        };
-        let sched = ctx.scheduler();
         let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blur-gpu-bg"),
-            layout: &sched.bind_group_layout(&BLUR_SIG).unwrap(),
+            layout: &ctx.scheduler().bind_group_layout(&BLUR_SIG).unwrap(),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -259,7 +254,7 @@ impl OperationRunner for BlurKernelGpuRunner {
             }
         }
 
-        let pipeline = sched.compute_pipeline(&BLUR_SIG).unwrap();
+        let pipeline = ctx.scheduler().compute_pipeline(&BLUR_SIG).unwrap();
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("blur-gpu-pass"),
