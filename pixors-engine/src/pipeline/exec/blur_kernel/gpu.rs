@@ -12,52 +12,8 @@ use crate::error::Error;
 use crate::gpu::{self, GpuContext};
 use crate::gpu::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
-use pixors_shader::kernel::{BindAccess, BindElem, DispatchShape, GpuKernel, KernelClass, KernelSig, ParamDecl, ParamType, ResourceDecl};
-
-const BATCH_SIZE: usize = 16;
 
 const BLUR_SPIRV: &[u8] = include_bytes!("../../../../../pixors-shader/src/kernels/blur.spv");
-
-static BLUR_SIG: KernelSig = KernelSig {
-    name: "blur",
-    entry: "cs_blur",
-    inputs: &[ResourceDecl {
-        name: "src",
-        elem: BindElem::PixelRgba8U32,
-        access: BindAccess::Read,
-    }],
-    outputs: &[ResourceDecl {
-        name: "dst",
-        elem: BindElem::PixelRgba8U32,
-        access: BindAccess::ReadWrite,
-    }],
-    params: &[
-        ParamDecl {
-            name: "width",
-            ty: ParamType::U32,
-        },
-        ParamDecl {
-            name: "height",
-            ty: ParamType::U32,
-        },
-        ParamDecl {
-            name: "radius",
-            ty: ParamType::U32,
-        },
-        ParamDecl {
-            name: "_pad",
-            ty: ParamType::U32,
-        },
-    ],
-    workgroup: (8, 8, 1),
-    dispatch: DispatchShape::PerPixel,
-    class: KernelClass::Stencil { radius: 0 },
-    body: BLUR_SPIRV,
-};
-
-pub struct BlurKernel {
-    pub radius: u32,
-}
 
 impl GpuKernel for BlurKernel {
     fn sig(&self) -> &KernelSig {
@@ -200,23 +156,81 @@ impl OperationRunner for BlurKernelGpuRunner {
         ctx.queue()
             .write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
-        let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("blur-gpu-bg"),
-            layout: &ctx.scheduler().bind_group_layout(&BLUR_SIG).unwrap(),
+        // Slang SPIR-V layout: group 0 = src@0 + dst@1, group 1 = params@0
+        let bgl_g0 = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blur_bgl_g0"),
             entries: &[
-                wgpu::BindGroupEntry {
+                wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    resource: param_buf.as_entire_binding(),
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                wgpu::BindGroupEntry {
+                wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    resource: src_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: dst_buf.as_entire_binding(),
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
             ],
+        });
+        let bgl_g1 = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blur_bgl_g1"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let bg0 = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blur_bg0"),
+            layout: &bgl_g0,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: src_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: dst_buf.as_entire_binding() },
+            ],
+        });
+        let bg1 = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blur_bg1"),
+            layout: &bgl_g1,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: param_buf.as_entire_binding() }],
+        });
+
+        let pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blur_layout"),
+            bind_group_layouts: &[&bgl_g0, &bgl_g1],
+            push_constant_ranges: &[],
+        });
+
+        let mut words: Vec<u32> = vec![0u32; BLUR_SPIRV.len() / 4];
+        unsafe {
+            std::ptr::copy_nonoverlapping(BLUR_SPIRV.as_ptr(), words.as_mut_ptr() as *mut u8, BLUR_SPIRV.len());
+        }
+        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blur"),
+            source: wgpu::ShaderSource::SpirV(std::borrow::Cow::Owned(words)),
+        });
+        let pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("blur"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: "cs_blur",
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
         let encoder = self.encoder.get_or_insert_with(|| {
@@ -255,14 +269,14 @@ impl OperationRunner for BlurKernelGpuRunner {
             }
         }
 
-        let pipeline = ctx.scheduler().compute_pipeline(&BLUR_SIG).unwrap();
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("blur-gpu-pass"),
                 timestamp_writes: None,
             });
             pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, &bg0, &[]);
+            pass.set_bind_group(1, &bg1, &[]);
             let gx = rw.div_ceil(8);
             let gy = rh.div_ceil(8);
             pass.dispatch_workgroups(gx, gy, 1);

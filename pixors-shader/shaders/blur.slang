@@ -1,5 +1,6 @@
 // pixors-shader/shaders/blur.slang
 // Box blur using pixors standard library.
+// D3D layout: everything in register space 0 (single descriptor set).
 
 import lib.pixel;
 import lib.neighborhood;

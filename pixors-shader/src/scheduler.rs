@@ -236,8 +236,11 @@ fn build_pipeline(
     );
 
     let spirv = sig.body; // SPIR-V binary
-    let words: &[u32] = bytemuck::cast_slice(spirv);
-    let source = wgpu::ShaderSource::SpirV(std::borrow::Cow::Borrowed(words));
+    let mut words: Vec<u32> = vec![0u32; spirv.len() / 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(spirv.as_ptr(), words.as_mut_ptr() as *mut u8, spirv.len());
+    }
+    let source = wgpu::ShaderSource::SpirV(std::borrow::Cow::Owned(words));
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(sig.name),
         source,

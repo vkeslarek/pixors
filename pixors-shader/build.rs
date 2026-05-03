@@ -26,6 +26,7 @@ fn main() {
                 .arg("shaders")
                 .arg("-target")
                 .arg("spirv")
+                .arg("-fvk-use-entrypoint-name")
                 .output()
                 .map(|o| {
                     if o.status.success() && !o.stderr.is_empty() {
