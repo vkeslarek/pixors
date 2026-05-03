@@ -21,12 +21,17 @@ float4 box_blur(Neighborhood nbhd, uint2 center_padded, uint radius)
 [numthreads(8, 8, 1)]
 void cs_blur(uint3 gid : SV_DispatchThreadID)
 {
-    if (gid.x >= params.width || gid.y >= params.height) return;
-
+    // params.width/height are **padded** dimensions (center + 2*radius).
+    // Derive center (output) dimensions from them.
     Neighborhood nbhd = Neighborhood::bind(src, params.width, params.height, int(params.radius));
+
+    // Bounds-check against the center (output) size, not padded.
+    if (gid.x >= nbhd.center_size.x || gid.y >= nbhd.center_size.y) return;
+
     uint2 center = nbhd.center_offset + gid.xy;
     float4 result = box_blur(nbhd, center, params.radius);
 
-    uint idx = gid.y * params.width + gid.x;
+    // Output buffer has center-sized stride.
+    uint idx = gid.y * nbhd.center_size.x + gid.x;
     dst[idx] = rgba8_pack(result);
 }

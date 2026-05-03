@@ -56,9 +56,10 @@ impl Stage for Blur {
                     crate::graph::item::Item::Neighborhood(n) => n,
                     _ => return,
                 };
+                // Shader expects **padded** dimensions (center + 2*radius).
                 let params = BlurParams {
-                    width: nbhd.center.width,
-                    height: nbhd.center.height,
+                    width: nbhd.center.width + 2 * radius,
+                    height: nbhd.center.height + 2 * radius,
                     radius,
                     _pad: 0,
                 };
@@ -78,10 +79,12 @@ pub struct BlurParams {
 }
 
 impl Blur {
+    /// `width`/`height` are the **center** tile dimensions; we convert to
+    /// padded dimensions here because the shader expects padded.
     pub fn write_params(&self, width: u32, height: u32, destination: &mut [u8]) {
         let params = BlurParams {
-            width,
-            height,
+            width: width + 2 * self.radius,
+            height: height + 2 * self.radius,
             radius: self.radius,
             _pad: 0,
         };

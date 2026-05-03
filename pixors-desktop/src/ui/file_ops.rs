@@ -16,7 +16,7 @@ use pixors_executor::stage::StageNode;
 use crate::viewport::program::{PendingTile, PendingTileWrites};
 
 const TILE_SIZE: u32 = 256;
-const BLUR_RADIUS: u32 = 4;
+const BLUR_RADIUS: u32 = 32;
 
 /// Install the tile-sink callback once. Subsequent calls are no-ops (OnceLock).
 fn ensure_tile_sink_installed(pending: &Arc<PendingTileWrites>) {
