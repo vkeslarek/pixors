@@ -11,7 +11,7 @@ use crate::data::Device;
 use crate::stage::Stage;
 use crate::error::Error;
 use crate::gpu::{self, GpuContext};
-use crate::gpu::{Buffer, GpuBuffer};
+use crate::data::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 
 const BLUR_SPIRV: &[u8] = include_bytes!("../../../kernels/blur.spv");

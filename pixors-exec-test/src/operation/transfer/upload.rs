@@ -8,7 +8,7 @@ use crate::data::Device;
 use crate::stage::Stage;
 use crate::error::Error;
 use crate::gpu;
-use crate::gpu::{Buffer, GpuBuffer};
+use crate::data::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

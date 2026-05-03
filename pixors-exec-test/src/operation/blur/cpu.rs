@@ -7,7 +7,7 @@ use crate::graph::runner::OperationRunner;
 use crate::data::Device;
 use crate::stage::Stage;
 use crate::error::Error;
-use crate::gpu::Buffer;
+use crate::data::Buffer;
 use crate::debug_stopwatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

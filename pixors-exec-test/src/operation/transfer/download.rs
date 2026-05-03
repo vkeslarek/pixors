@@ -12,7 +12,7 @@ use crate::data::Device;
 use crate::stage::Stage;
 use crate::error::Error;
 use crate::gpu::{self, GpuContext};
-use crate::gpu::Buffer;
+use crate::data::Buffer;
 use crate::debug_stopwatch;
 
 /// How many tiles to accumulate before flushing (1 submit + 1

@@ -12,7 +12,7 @@ use crate::data::Device;
 use crate::stage::{ExecNode, Stage};
 use crate::error::Error;
 use crate::gpu::{self, GpuContext};
-use crate::gpu::{Buffer, GpuBuffer};
+use crate::data::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 
 const BATCH_SIZE: usize = 16;

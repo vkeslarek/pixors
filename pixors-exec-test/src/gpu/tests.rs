@@ -9,7 +9,7 @@ mod tests {
         blur_kernel, download, upload,
     };
     use crate::model::pixel::{AlphaPolicy, PixelFormat};
-    use crate::gpu::Buffer;
+    use crate::data::Buffer;
 
     /// GPU smoke test: blur a 32×32 RGBA8 tile via Upload → BlurKernelGpu →
     /// Download and check the result against the CPU kernel within ±1 per

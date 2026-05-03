@@ -61,8 +61,8 @@ impl SinkRunner for TileSinkRunner {
         match item {
             Item::Tile(tile) => {
                 let src: &[u8] = match &tile.data {
-                    crate::gpu::Buffer::Cpu(v) => v.as_slice(),
-                    crate::gpu::Buffer::Gpu(_) => {
+                    crate::data::Buffer::Cpu(v) => v.as_slice(),
+                    crate::data::Buffer::Gpu(_) => {
                         return Err(Error::internal("GPU tile not supported in tile_sink"))
                     }
                 };
