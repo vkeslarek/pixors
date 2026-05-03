@@ -25,7 +25,7 @@ impl super::StateNodeTrait for DisplayCache {
         vec![ExpansionOption {
             device: Device::Cpu,
             prefer: 1,
-            stages: vec![ExecNode::DisplaySink(exec::DisplaySink)],
+            stages: vec![ExecNode::TileSink(exec::TileSink)],
         }]
     }
 }

@@ -1,5 +1,4 @@
 mod ui;
-mod engine;
 mod viewport;
 
 use ui::app::App;

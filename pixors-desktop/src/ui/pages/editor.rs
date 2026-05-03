@@ -1,17 +1,24 @@
+use std::sync::{Arc, Mutex};
+
 use iced::widget::{container, pane_grid, row};
 use iced::{Background, Element, Length};
 
 use crate::ui::app::{App, Msg, PaneKind};
 use crate::ui::theme::BG_SURFACE;
+use crate::viewport::tiled_texture::TiledTexture;
 
-pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
+pub fn view<'a>(
+    app: &'a App,
+    tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
+) -> Element<'a, Msg> {
     row![
         app.tools.view().map(Msg::Toolbar),
         crate::ui::components::viewport::view(
             app.tabs.view().map(Msg::TabBar),
             app.status.canvas_w,
             app.status.canvas_h,
-            app.gpu_buffer.as_ref(),
+            app.pending_writes.clone(),
+            tiled_texture,
         ),
         crate::ui::components::sidebar_grid::view(
             &app.panes,

@@ -6,7 +6,7 @@ use iced::widget::{column, container, row, text};
 use iced::{Background, Element, Length, Subscription};
 
 use pixors_engine::io;
-use pixors_engine::pipeline::exec::display_sink::{self, GpuBufferState};
+use pixors_engine::pipeline::exec::tile_sink::install_tile_sink;
 
 use crate::ui::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
@@ -14,6 +14,8 @@ use crate::ui::components::{
 };
 use crate::ui::components::toolbar::Tool;
 use crate::ui::theme::BG_SURFACE;
+use crate::viewport::program::PendingTileWrites;
+use crate::viewport::tiled_texture::TiledTexture;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -37,7 +39,6 @@ pub enum Msg {
     Tick,
 }
 
-#[derive(Debug)]
 pub struct App {
     pub panes: pane_grid::State<PaneKind>,
     pub workspace: workspace_bar::State,
@@ -50,7 +51,8 @@ pub struct App {
     pub progress: f32,
     pub progress_dir: f32,
     pub errors: Vec<(String, std::time::Instant)>,
-    pub gpu_buffer: Option<Arc<Mutex<GpuBufferState>>>,
+    pub pending_writes: Arc<PendingTileWrites>,
+    pub tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
 }
 
 impl Default for App {
@@ -75,7 +77,11 @@ impl Default for App {
             progress: 0.0,
             progress_dir: 1.0,
             errors: Vec::new(),
-            gpu_buffer: None,
+            pending_writes: Arc::new(PendingTileWrites {
+                queue: Mutex::new(Vec::new()),
+                realloc: Mutex::new(None),
+            }),
+            tiled_texture: None,
         }
     }
 }
@@ -145,9 +151,8 @@ impl App {
     fn handle_keyboard(&mut self, event: keyboard::Event) {
         if let keyboard::Event::KeyPressed { key, modifiers, .. } = event {
             if modifiers.contains(keyboard::Modifiers::CTRL) {
-                match key.as_ref() {
-                    Key::Character("o") => self.open_file_dialog(),
-                    _ => {}
+                if let Key::Character("o") = key.as_ref() {
+                    self.open_file_dialog();
                 }
             } else {
                 match key.as_ref() {
@@ -191,18 +196,53 @@ impl App {
                             let h = buf.desc.height;
                             let rgba = image_buffer_to_rgba8(buf);
 
-                            let gpu = display_sink::init_buffer(w, h);
-                            {
-                                let mut state = gpu.lock().unwrap();
-                                state.pixels.copy_from_slice(&rgba);
-                                state.dirty = true;
-                            }
-
-                            self.gpu_buffer = Some(gpu);
                             self.status.canvas_w = w;
                             self.status.canvas_h = h;
-                            self.loading = false;
+                            self.tiled_texture = None;
 
+                            // Signal reallocation and enqueue all tiles
+                            {
+                                let mut realloc = self.pending_writes.realloc.lock().unwrap();
+                                *realloc = Some((w, h));
+                            }
+
+                            let tile_size = 256u32;
+                            {
+                                let mut queue = self.pending_writes.queue.lock().unwrap();
+                                queue.clear();
+
+                                for ty in 0..h.div_ceil(tile_size) {
+                                for tx in 0..w.div_ceil(tile_size) {
+                                    let px = tx * tile_size;
+                                    let py = ty * tile_size;
+                                    let tw = ((w - px).min(tile_size)) as usize;
+                                    let th = ((h - py).min(tile_size)) as usize;
+                                    let mut tile_bytes =
+                                        vec![0u8; tw * th * 4];
+                                    let stride = w as usize * 4;
+                                    for row in 0..th {
+                                        let src =
+                                            (py as usize + row) * stride + px as usize * 4;
+                                        let dst = row * tw * 4;
+                                        tile_bytes[dst..dst + tw * 4]
+                                            .copy_from_slice(
+                                                &rgba[src..src + tw * 4],
+                                            );
+                                    }
+                                    queue.push(
+                                        crate::viewport::program::PendingTile {
+                                            px: px,
+                                            py: py,
+                                            tile_w: tw as u32,
+                                            tile_h: th as u32,
+                                            bytes: tile_bytes,
+                                        },
+                                    );
+                                }
+                            }
+                            } // drop queue
+
+                            self.loading = false;
                             self.push_error(format!(
                                 "Loaded {}×{} — {}",
                                 w,
@@ -214,7 +254,7 @@ impl App {
                             return;
                         }
                         Err(e) => {
-                            self.push_error(format!("Failed to load: {e:?}"));
+                            self.push_error(format!("Failed: {e:?}"));
                             self.loading = false;
                             return;
                         }
@@ -281,7 +321,9 @@ impl App {
 
     pub fn view(&self) -> Element<'_, Msg> {
         let active_page = match self.workspace.active {
-            workspace_bar::Workspace::Editor => crate::ui::pages::editor::view(self),
+            workspace_bar::Workspace::Editor => {
+                crate::ui::pages::editor::view(self, self.tiled_texture.clone())
+            }
             workspace_bar::Workspace::Library => crate::ui::pages::library::view(),
             workspace_bar::Workspace::Darkroom => crate::ui::pages::darkroom::view(),
         };
