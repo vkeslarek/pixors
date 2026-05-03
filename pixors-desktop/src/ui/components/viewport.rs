@@ -1,11 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use iced::widget::{column, container, shader as shader_widget, stack};
 use iced::{Background, Color, Element, Length};
 
-use crate::viewport::pipeline::ViewportPipeline;
 use crate::viewport::program::{PendingTileWrites, ViewportProgram};
-use crate::viewport::tiled_texture::TiledTexture;
 use crate::ui::widgets::pill;
 
 pub fn view<'a, Msg: 'a>(
@@ -13,20 +11,8 @@ pub fn view<'a, Msg: 'a>(
     canvas_w: u32,
     canvas_h: u32,
     pending_writes: Arc<PendingTileWrites>,
-    tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
 ) -> Element<'a, Msg> {
-    let camera = Arc::new(Mutex::new(
-        crate::viewport::camera::Camera::new(
-            canvas_w.max(1) as f32,
-            canvas_h.max(1) as f32,
-        ),
-    ));
-
-    let program = ViewportProgram {
-        tiled_texture,
-        pending_writes,
-        camera: camera.clone(),
-    };
+    let program = ViewportProgram { pending_writes };
 
     let canvas_bg = shader_widget(program)
         .width(Length::Fill)

@@ -5,19 +5,77 @@ use iced::{Event, Point, Rectangle, Size};
 use iced::mouse;
 
 use crate::viewport::camera::Camera;
-use crate::viewport::pipeline::{ViewportPipeline, ViewportPrimitive};
-use crate::viewport::tiled_texture::TiledTexture;
+use crate::viewport::pipeline::ViewportPrimitive;
 
 pub struct ViewportProgram {
-    pub tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
     pub pending_writes: Arc<PendingTileWrites>,
-    pub camera: Arc<Mutex<Camera>>,
 }
 
-/// Buffers tile writes between `App` (UI thread) and `prepare` (render thread).
 pub struct PendingTileWrites {
     pub queue: Mutex<Vec<PendingTile>>,
     pub realloc: Mutex<Option<(u32, u32)>>,
+    pub new_img: Mutex<Option<(u32, u32)>>,
+}
+
+impl PendingTileWrites {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            queue: Mutex::new(Vec::new()),
+            realloc: Mutex::new(None),
+            new_img: Mutex::new(None),
+        })
+    }
+
+    pub fn signal_realloc(&self, w: u32, h: u32) {
+        *self.realloc.lock().unwrap() = Some((w, h));
+    }
+
+    pub(super) fn take_new_img(&self) -> Option<(u32, u32)> {
+        self.new_img.lock().unwrap().take()
+    }
+
+    pub fn push_tile(&self, tile: PendingTile) {
+        self.queue.lock().unwrap().push(tile);
+    }
+
+    /// Takes the pending realloc dimensions if any.
+    pub(super) fn take_realloc(&self) -> Option<(u32, u32)> {
+        self.realloc.lock().unwrap().take()
+    }
+
+    /// Drains all queued tiles. Lock is released before the Vec is returned.
+    pub(super) fn drain_tiles(&self) -> Vec<PendingTile> {
+        self.queue.lock().unwrap().drain(..).collect()
+    }
+
+    /// Tile an RGBA8 image and enqueue all tiles for GPU upload.
+    pub fn load_image(&self, rgba: &[u8], w: u32, h: u32) {
+        const TILE: u32 = 256;
+        self.signal_realloc(w, h);
+        *self.new_img.lock().unwrap() = Some((w, h));
+        let stride = w as usize * 4;
+        for ty in 0..h.div_ceil(TILE) {
+            for tx in 0..w.div_ceil(TILE) {
+                let px = tx * TILE;
+                let py = ty * TILE;
+                let tw = (w - px).min(TILE) as usize;
+                let th = (h - py).min(TILE) as usize;
+                let mut bytes = vec![0u8; tw * th * 4];
+                for row in 0..th {
+                    let src = (py as usize + row) * stride + px as usize * 4;
+                    let dst = row * tw * 4;
+                    bytes[dst..dst + tw * 4].copy_from_slice(&rgba[src..src + tw * 4]);
+                }
+                self.push_tile(PendingTile {
+                    px,
+                    py,
+                    tile_w: tw as u32,
+                    tile_h: th as u32,
+                    bytes,
+                });
+            }
+        }
+    }
 }
 
 pub struct PendingTile {
@@ -39,7 +97,8 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         _bounds: Rectangle,
     ) -> Self::Primitive {
         ViewportPrimitive {
-            camera: state.camera_uniform,
+            camera: state.camera.to_uniform(),
+            pending_writes: self.pending_writes.clone(),
         }
     }
 
@@ -50,21 +109,24 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<shader::Action<Msg>> {
-        let mut cam = self.camera.lock().unwrap();
-        let size = Size::new(bounds.width, bounds.height);
+        // New image loaded — update camera dims and re-fit regardless of bounds change.
+        if let Some((img_w, img_h)) = self.pending_writes.take_new_img() {
+            state.camera.img_w = img_w as f32;
+            state.camera.img_h = img_h as f32;
+            state.camera.fit();
+        }
 
-        if state.last_bounds.map_or(true, |s| s != size) {
+        let size = Size::new(bounds.width, bounds.height);
+        if state.last_bounds != Some(size) {
+            state.camera.resize(size.width, size.height);
             if !state.fitted {
-                cam.resize(size.width, size.height);
-                cam.fit();
+                state.camera.fit();
                 state.fitted = true;
-            } else {
-                cam.resize(size.width, size.height);
             }
             state.last_bounds = Some(size);
         }
 
-        let action = match event {
+        match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if cursor.position_in(bounds).is_some() {
                     state.dragging = true;
@@ -83,9 +145,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 if state.dragging {
                     if let Some(curr) = cursor.position_in(bounds) {
                         if let Some(last) = state.last_pos {
-                            let dx = curr.x - last.x;
-                            let dy = curr.y - last.y;
-                            cam.pan(dx, dy);
+                            state.camera.pan(curr.x - last.x, curr.y - last.y);
                         }
                         state.last_pos = Some(curr);
                     }
@@ -96,30 +156,21 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 if cursor.position_in(bounds).is_some() {
-                    let dy = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => y * 24.0,
-                        mouse::ScrollDelta::Pixels { y, .. } => *y,
+                    // Normalize to "steps": 1 mouse wheel click = 1 step, trackpad pixels / 16.
+                    let steps = match delta {
+                        mouse::ScrollDelta::Lines { y, .. } => *y,
+                        mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
                     };
-                    let factor = if dy > 0.0 {
-                        1.1_f32.powf(dy)
-                    } else {
-                        1.0 / 1.1_f32.powf(-dy)
-                    };
-                    let pos = cursor
-                        .position_in(bounds)
-                        .unwrap_or(Point::new(0.0, 0.0));
-                    cam.zoom_at(factor, pos.x, pos.y);
+                    let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
+                    let pos = cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
+                    state.camera.zoom_at(factor, pos.x, pos.y);
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
                     None
                 }
             }
             _ => None,
-        };
-
-        state.camera_uniform = cam.to_uniform();
-        drop(cam);
-        action
+        }
     }
 
     fn mouse_interaction(
@@ -137,7 +188,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 }
 
 pub struct ViewportState {
-    camera_uniform: crate::viewport::camera::CameraUniform,
+    pub(super) camera: Camera,
     dragging: bool,
     fitted: bool,
     last_pos: Option<Point>,
@@ -147,7 +198,7 @@ pub struct ViewportState {
 impl Default for ViewportState {
     fn default() -> Self {
         Self {
-            camera_uniform: Camera::new(2048.0, 1536.0).to_uniform(),
+            camera: Camera::new(1.0, 1.0),
             dragging: false,
             fitted: false,
             last_pos: None,

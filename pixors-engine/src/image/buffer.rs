@@ -458,4 +458,27 @@ impl ImageBuffer {
         }
         self.desc.planes[plane_idx].read_sample(&self.data, x, y)
     }
+
+    /// Convert to packed RGBA8 (sRGB, u8). Alpha defaults to 255 for RGB buffers.
+    pub fn to_rgba8(&self) -> Vec<u8> {
+        let w = self.desc.width as usize;
+        let h = self.desc.height as usize;
+        let channels = self.desc.planes.len();
+
+        if channels == 4 {
+            return self.data.clone();
+        }
+
+        let bpp = channels * self.desc.planes[0].encoding.byte_size();
+        let mut out = vec![0u8; w * h * 4];
+        for i in 0..w * h {
+            let src = i * bpp;
+            let dst = i * 4;
+            for c in 0..channels.min(3) {
+                out[dst + c] = self.data[src + c];
+            }
+            out[dst + 3] = if channels >= 4 { self.data[src + 3] } else { 255 };
+        }
+        out
+    }
 }

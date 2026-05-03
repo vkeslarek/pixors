@@ -3,14 +3,15 @@ use std::sync::{Arc, Mutex};
 use iced::widget::shader;
 
 use crate::viewport::camera::CameraUniform;
+use crate::viewport::program::PendingTileWrites;
 use crate::viewport::tiled_texture::TiledTexture;
 
 pub struct ViewportPipeline {
-    pub pipeline: iced::wgpu::RenderPipeline,
-    pub camera_buffer: iced::wgpu::Buffer,
-    pub bind_group: iced::wgpu::BindGroup,
-    pub bgl: iced::wgpu::BindGroupLayout,
-    pub tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
+    pipeline: iced::wgpu::RenderPipeline,
+    camera_buffer: iced::wgpu::Buffer,
+    bind_group: iced::wgpu::BindGroup,
+    bgl: iced::wgpu::BindGroupLayout,
+    tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
     texture_dims: Option<(u32, u32)>,
 }
 
@@ -42,9 +43,7 @@ impl shader::Pipeline for ViewportPipeline {
                     binding: 1,
                     visibility: iced::wgpu::ShaderStages::FRAGMENT,
                     ty: iced::wgpu::BindingType::Texture {
-                        sample_type: iced::wgpu::TextureSampleType::Float {
-                            filterable: true,
-                        },
+                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: iced::wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -102,46 +101,30 @@ impl shader::Pipeline for ViewportPipeline {
             mapped_at_creation: false,
         });
 
-        // Placeholder 1×1 texture for initial bind group
+        // Placeholder 1×1 texture so the bind group is valid before an image is opened.
         let dummy_tex = device.create_texture(&iced::wgpu::TextureDescriptor {
             label: Some("dummy"),
-            size: iced::wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
+            size: iced::wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: iced::wgpu::TextureDimension::D2,
             format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING
-                | iced::wgpu::TextureUsages::COPY_DST,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let dummy_view = dummy_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
         let dummy_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor::default());
 
-        let bind_group = ViewportPipeline::build_bind_group(
-            device,
-            &bgl,
-            &camera_buffer,
-            &dummy_view,
-            &dummy_sampler,
+        let bind_group = Self::make_bind_group(
+            device, &bgl, &camera_buffer, &dummy_view, &dummy_sampler,
         );
 
-        Self {
-            pipeline,
-            camera_buffer,
-            bind_group,
-            bgl,
-            tiled_texture: None,
-            texture_dims: None,
-        }
+        Self { pipeline, camera_buffer, bind_group, bgl, tiled_texture: None, texture_dims: None }
     }
 }
 
 impl ViewportPipeline {
-    fn build_bind_group(
+    fn make_bind_group(
         device: &iced::wgpu::Device,
         layout: &iced::wgpu::BindGroupLayout,
         camera: &iced::wgpu::Buffer,
@@ -168,42 +151,30 @@ impl ViewportPipeline {
         })
     }
 
-    pub fn update_camera(&self, queue: &iced::wgpu::Queue, camera: &CameraUniform) {
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(camera));
-    }
-
-    pub fn maybe_rebind(
-        &mut self,
-        device: &iced::wgpu::Device,
-        _queue: &iced::wgpu::Queue,
-    ) -> bool {
-        let Some(tex) = &self.tiled_texture else {
-            return false;
-        };
+    fn rebind_if_needed(&mut self, device: &iced::wgpu::Device) {
+        let Some(tex) = &self.tiled_texture else { return };
         let guard = tex.lock().unwrap();
         let dims = guard.dims();
-        let dims_changed = self.texture_dims != Some(dims);
-        drop(guard);
-
-        if dims_changed {
-            let guard = tex.lock().unwrap();
-            self.bind_group = Self::build_bind_group(
-                device,
-                &self.bgl,
-                &self.camera_buffer,
-                guard.view(),
-                guard.sampler(),
-            );
-            self.texture_dims = Some(dims);
-            return true;
+        if self.texture_dims == Some(dims) {
+            return;
         }
-        false
+        self.bind_group = Self::make_bind_group(
+            device, &self.bgl, &self.camera_buffer, guard.view(), guard.sampler(),
+        );
+        self.texture_dims = Some(dims);
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct ViewportPrimitive {
-    pub camera: CameraUniform,
+    pub(super) camera: CameraUniform,
+    pub(super) pending_writes: Arc<PendingTileWrites>,
+}
+
+impl std::fmt::Debug for ViewportPrimitive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ViewportPrimitive").field("camera", &self.camera).finish_non_exhaustive()
+    }
 }
 
 impl shader::Primitive for ViewportPrimitive {
@@ -217,8 +188,22 @@ impl shader::Primitive for ViewportPrimitive {
         _bounds: &iced::Rectangle,
         _viewport: &iced::widget::shader::Viewport,
     ) {
-        pipeline.update_camera(queue, &self.camera);
-        pipeline.maybe_rebind(device, queue);
+        if let Some((w, h)) = self.pending_writes.take_realloc() {
+            pipeline.tiled_texture = Some(Arc::new(Mutex::new(TiledTexture::new(device, w, h, 256))));
+            pipeline.texture_dims = None;
+            tracing::debug!("[pixors] viewport: reallocated texture {}×{}", w, h);
+        }
+
+        let tiles = self.pending_writes.drain_tiles();
+        if let (false, Some(tex_arc)) = (tiles.is_empty(), &pipeline.tiled_texture) {
+            let tex = tex_arc.lock().unwrap();
+            for t in &tiles {
+                tex.write_tile_cpu(queue, t.px, t.py, t.tile_w, t.tile_h, &t.bytes);
+            }
+        }
+
+        pipeline.rebind_if_needed(device);
+        queue.write_buffer(&pipeline.camera_buffer, 0, bytemuck::bytes_of(&self.camera));
     }
 
     fn render(
@@ -257,14 +242,10 @@ impl shader::Primitive for ViewportPrimitive {
 
 const SHADER: &str = r#"
 struct Camera {
-    vp_w:  f32,
-    vp_h:  f32,
-    img_w: f32,
-    img_h: f32,
-    pan_x: f32,
-    pan_y: f32,
-    zoom:  f32,
-    _pad:  f32,
+    vp_w: f32, vp_h: f32,
+    img_w: f32, img_h: f32,
+    pan_x: f32, pan_y: f32,
+    zoom:  f32, _pad: f32,
 }
 @group(0) @binding(0) var<uniform> cam: Camera;
 @group(0) @binding(1) var t: texture_2d<f32>;
@@ -289,11 +270,9 @@ fn vs(@builtin(vertex_index) i: u32) -> VsOut {
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let screen = in.uv * vec2<f32>(cam.vp_w, cam.vp_h);
     let img_xy = screen / cam.zoom + vec2<f32>(cam.pan_x, cam.pan_y);
-    if (img_xy.x < 0.0 || img_xy.y < 0.0
-        || img_xy.x >= cam.img_w || img_xy.y >= cam.img_h) {
+    if img_xy.x < 0.0 || img_xy.y < 0.0 || img_xy.x >= cam.img_w || img_xy.y >= cam.img_h {
         return vec4<f32>(0.067, 0.067, 0.075, 1.0);
     }
-    let uv = img_xy / vec2<f32>(cam.img_w, cam.img_h);
-    return textureSample(t, s, uv);
+    return textureSample(t, s, img_xy / vec2<f32>(cam.img_w, cam.img_h));
 }
 "#;

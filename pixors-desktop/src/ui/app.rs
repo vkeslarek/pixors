@@ -1,21 +1,16 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Element, Length, Subscription};
 
-use pixors_engine::io;
-use pixors_engine::pipeline::exec::tile_sink::install_tile_sink;
-
 use crate::ui::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
     workspace_bar,
 };
 use crate::ui::components::toolbar::Tool;
-use crate::ui::theme::BG_SURFACE;
 use crate::viewport::program::PendingTileWrites;
-use crate::viewport::tiled_texture::TiledTexture;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -52,7 +47,6 @@ pub struct App {
     pub progress_dir: f32,
     pub errors: Vec<(String, std::time::Instant)>,
     pub pending_writes: Arc<PendingTileWrites>,
-    pub tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
 }
 
 impl Default for App {
@@ -77,11 +71,7 @@ impl Default for App {
             progress: 0.0,
             progress_dir: 1.0,
             errors: Vec::new(),
-            pending_writes: Arc::new(PendingTileWrites {
-                queue: Mutex::new(Vec::new()),
-                realloc: Mutex::new(None),
-            }),
-            tiled_texture: None,
+            pending_writes: PendingTileWrites::new(),
         }
     }
 }
@@ -178,92 +168,22 @@ impl App {
     }
 
     fn open_file_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
-            .pick_file()
-        {
-            self.loading = true;
-            self.progress = 0.0;
-            self.progress_dir = 1.0;
-
-            let readers = io::all_readers();
-            for reader in readers {
-                if reader.can_handle(&path) {
-                    match reader.load_layer(&path, 0) {
-                        Ok(layer) => {
-                            let buf = &layer.buffer;
-                            let w = buf.desc.width;
-                            let h = buf.desc.height;
-                            let rgba = image_buffer_to_rgba8(buf);
-
-                            self.status.canvas_w = w;
-                            self.status.canvas_h = h;
-                            self.tiled_texture = None;
-
-                            // Signal reallocation and enqueue all tiles
-                            {
-                                let mut realloc = self.pending_writes.realloc.lock().unwrap();
-                                *realloc = Some((w, h));
-                            }
-
-                            let tile_size = 256u32;
-                            {
-                                let mut queue = self.pending_writes.queue.lock().unwrap();
-                                queue.clear();
-
-                                for ty in 0..h.div_ceil(tile_size) {
-                                for tx in 0..w.div_ceil(tile_size) {
-                                    let px = tx * tile_size;
-                                    let py = ty * tile_size;
-                                    let tw = ((w - px).min(tile_size)) as usize;
-                                    let th = ((h - py).min(tile_size)) as usize;
-                                    let mut tile_bytes =
-                                        vec![0u8; tw * th * 4];
-                                    let stride = w as usize * 4;
-                                    for row in 0..th {
-                                        let src =
-                                            (py as usize + row) * stride + px as usize * 4;
-                                        let dst = row * tw * 4;
-                                        tile_bytes[dst..dst + tw * 4]
-                                            .copy_from_slice(
-                                                &rgba[src..src + tw * 4],
-                                            );
-                                    }
-                                    queue.push(
-                                        crate::viewport::program::PendingTile {
-                                            px: px,
-                                            py: py,
-                                            tile_w: tw as u32,
-                                            tile_h: th as u32,
-                                            bytes: tile_bytes,
-                                        },
-                                    );
-                                }
-                            }
-                            } // drop queue
-
-                            self.loading = false;
-                            self.push_error(format!(
-                                "Loaded {}×{} — {}",
-                                w,
-                                h,
-                                path.file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy()
-                            ));
-                            return;
-                        }
-                        Err(e) => {
-                            self.push_error(format!("Failed: {e:?}"));
-                            self.loading = false;
-                            return;
-                        }
-                    }
-                }
+        self.loading = true;
+        match crate::ui::file_ops::open_and_run(&self.pending_writes) {
+            Ok((w, h, path)) => {
+                self.status.canvas_w = w;
+                self.status.canvas_h = h;
+                self.push_error(format!(
+                    "OK {}×{} — {}",
+                    w,
+                    h,
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                ));
             }
-            self.push_error(format!("No reader for: {}", path.display()));
-            self.loading = false;
+            Err(e) if e == "cancelled" => {}
+            Err(e) => self.push_error(e),
         }
+        self.loading = false;
     }
 
     fn handle_tick(&mut self) {
@@ -322,7 +242,7 @@ impl App {
     pub fn view(&self) -> Element<'_, Msg> {
         let active_page = match self.workspace.active {
             workspace_bar::Workspace::Editor => {
-                crate::ui::pages::editor::view(self, self.tiled_texture.clone())
+                crate::ui::pages::editor::view(self)
             }
             workspace_bar::Workspace::Library => crate::ui::pages::library::view(),
             workspace_bar::Workspace::Darkroom => crate::ui::pages::darkroom::view(),
@@ -421,31 +341,3 @@ impl App {
     }
 }
 
-fn image_buffer_to_rgba8(buf: &pixors_engine::image::ImageBuffer) -> Vec<u8> {
-    let w = buf.desc.width as usize;
-    let h = buf.desc.height as usize;
-    let channels = buf.desc.planes.len();
-
-    if channels == 4 {
-        return buf.data.clone();
-    }
-
-    let mut rgba = vec![0u8; w * h * 4];
-    let bytes_per_pixel = channels * buf.desc.planes[0].encoding.byte_size();
-
-    for y in 0..h {
-        for x in 0..w {
-            let src_off = (y * w + x) * bytes_per_pixel;
-            let dst_off = (y * w + x) * 4;
-            for c in 0..channels.min(3) {
-                rgba[dst_off + c] = buf.data[src_off + c];
-            }
-            rgba[dst_off + 3] = if channels >= 4 {
-                buf.data[src_off + 3]
-            } else {
-                255
-            };
-        }
-    }
-    rgba
-}

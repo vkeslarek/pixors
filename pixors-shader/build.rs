@@ -15,7 +15,7 @@ fn main() {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().map_or(false, |e| e == "slang") {
+        if path.extension().is_some_and(|e| e == "slang") {
             let stem = path.file_stem().unwrap().to_str().unwrap();
             let dest_path = dest.join(format!("{}.wgsl", stem));
 

@@ -63,14 +63,14 @@ impl State {
                 }
             }
             Msg::DragDrop => {
-                if let (Some(from), Some(to)) = (self.drag_from, self.drag_over) {
-                    if from != to {
-                        self.tabs.swap(from, to);
-                        if self.active == from {
-                            self.active = to;
-                        } else if self.active == to {
-                            self.active = from;
-                        }
+                if let (Some(from), Some(to)) = (self.drag_from, self.drag_over)
+                    && from != to
+                {
+                    self.tabs.swap(from, to);
+                    if self.active == from {
+                        self.active = to;
+                    } else if self.active == to {
+                        self.active = from;
                     }
                 }
                 self.drag_from = None;

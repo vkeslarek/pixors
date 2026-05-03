@@ -1,135 +1,84 @@
-use std::collections::HashSet;
+use iced::wgpu;
 
-/// Manages a tiled GPU texture for the viewport.
-/// MIP chain is deferred (mip_level_count = 1 until storage texture support is available).
 pub struct TiledTexture {
-    pub texture: iced::wgpu::Texture,
-    pub full_view: iced::wgpu::TextureView,
-    pub sampler: iced::wgpu::Sampler,
-    pub width: u32,
-    pub height: u32,
-    pub tile_size: u32,
-    pub dirty_tiles: HashSet<(u32, u32)>,
+    texture: wgpu::Texture,
+    full_view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    width: u32,
+    height: u32,
+    tile_size: u32,
 }
 
 impl TiledTexture {
-    pub fn new(device: &iced::wgpu::Device, width: u32, height: u32, tile_size: u32) -> Self {
-        let texture = device.create_texture(&iced::wgpu::TextureDescriptor {
+    pub fn new(device: &wgpu::Device, width: u32, height: u32, tile_size: u32) -> Self {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("viewport_tiled_texture"),
-            size: iced::wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
-            dimension: iced::wgpu::TextureDimension::D2,
-            format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING
-                | iced::wgpu::TextureUsages::COPY_DST,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-
-        let full_view = texture.create_view(&iced::wgpu::TextureViewDescriptor::default());
-
-        let sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor {
-            address_mode_u: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_v: iced::wgpu::AddressMode::ClampToEdge,
-            address_mode_w: iced::wgpu::AddressMode::ClampToEdge,
-            mag_filter: iced::wgpu::FilterMode::Linear,
-            min_filter: iced::wgpu::FilterMode::Linear,
+        let full_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-
-        Self {
-            texture,
-            full_view,
-            sampler,
-            width,
-            height,
-            tile_size,
-            dirty_tiles: HashSet::new(),
-        }
+        Self { texture, full_view, sampler, width, height, tile_size }
     }
 
+    /// Upload one tile from a CPU byte slice. `bytes` is packed `tile_w * tile_h * 4` RGBA8.
     pub fn write_tile_cpu(
-        &mut self,
-        device: &iced::wgpu::Device,
-        queue: &iced::wgpu::Queue,
+        &self,
+        queue: &wgpu::Queue,
         px: u32,
         py: u32,
         tile_w: u32,
         tile_h: u32,
         bytes: &[u8],
     ) {
-        let pad = (256 - (tile_w * 4) % 256) % 256;
-        let row_pitch = tile_w * 4 + pad;
-        let padded_len = (row_pitch * tile_h) as usize;
-        let mut padded = vec![0u8; padded_len];
+        let bpr = tile_w * 4;
+        let aligned_bpr = bpr.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
-        for y in 0..tile_h as usize {
-            let src = y * tile_w as usize * 4;
-            let dst = y * row_pitch as usize;
-            let len = (tile_w as usize * 4).min(bytes.len().saturating_sub(src));
-            padded[dst..dst + len].copy_from_slice(&bytes[src..src + len]);
-        }
+        // wgpu requires bytes_per_row to be aligned to COPY_BYTES_PER_ROW_ALIGNMENT (256).
+        // For 256-wide tiles (bpr = 1024) alignment is free; edge tiles need padding.
+        let data: std::borrow::Cow<[u8]> = if aligned_bpr == bpr {
+            std::borrow::Cow::Borrowed(bytes)
+        } else {
+            let mut padded = vec![0u8; (aligned_bpr * tile_h) as usize];
+            for y in 0..tile_h as usize {
+                let row = bpr as usize;
+                padded[y * aligned_bpr as usize..y * aligned_bpr as usize + row]
+                    .copy_from_slice(&bytes[y * row..(y + 1) * row]);
+            }
+            std::borrow::Cow::Owned(padded)
+        };
 
-        let staging = device.create_buffer(&iced::wgpu::BufferDescriptor {
-            label: Some("tile_staging"),
-            size: padded_len as u64,
-            usage: iced::wgpu::BufferUsages::COPY_SRC | iced::wgpu::BufferUsages::MAP_WRITE,
-            mapped_at_creation: true,
-        });
-        staging.slice(..).get_mapped_range_mut()[..padded_len].copy_from_slice(&padded);
-        staging.unmap();
-
-        let mut encoder =
-            device.create_command_encoder(&iced::wgpu::CommandEncoderDescriptor {
-                label: Some("tile_upload"),
-            });
-
-        encoder.copy_buffer_to_texture(
-            iced::wgpu::TexelCopyBufferInfo {
-                buffer: &staging,
-                layout: iced::wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(row_pitch),
-                    rows_per_image: Some(tile_h),
-                },
-            },
-            iced::wgpu::TexelCopyTextureInfo {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
                 mip_level: 0,
-                origin: iced::wgpu::Origin3d {
-                    x: px,
-                    y: py,
-                    z: 0,
-                },
-                aspect: iced::wgpu::TextureAspect::All,
+                origin: wgpu::Origin3d { x: px, y: py, z: 0 },
+                aspect: wgpu::TextureAspect::All,
             },
-            iced::wgpu::Extent3d {
-                width: tile_w,
-                height: tile_h,
-                depth_or_array_layers: 1,
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(aligned_bpr),
+                rows_per_image: Some(tile_h),
             },
+            wgpu::Extent3d { width: tile_w, height: tile_h, depth_or_array_layers: 1 },
         );
-
-        queue.submit(std::iter::once(encoder.finish()));
-
-        let tx = px / self.tile_size;
-        let ty = py / self.tile_size;
-        self.dirty_tiles.insert((tx, ty));
     }
 
-    pub fn view(&self) -> &iced::wgpu::TextureView {
-        &self.full_view
-    }
-
-    pub fn sampler(&self) -> &iced::wgpu::Sampler {
-        &self.sampler
-    }
-
-    pub fn dims(&self) -> (u32, u32) {
-        (self.width, self.height)
-    }
+    pub fn view(&self) -> &wgpu::TextureView { &self.full_view }
+    pub fn sampler(&self) -> &wgpu::Sampler { &self.sampler }
+    pub fn dims(&self) -> (u32, u32) { (self.width, self.height) }
 }

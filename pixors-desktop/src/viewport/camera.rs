@@ -56,7 +56,10 @@ impl Camera {
     pub fn zoom_at(&mut self, factor: f32, anchor_x: f32, anchor_y: f32) {
         let a_img_x = anchor_x / self.zoom + self.pan_x;
         let a_img_y = anchor_y / self.zoom + self.pan_y;
-        self.zoom = (self.zoom * factor).clamp(0.02, 64.0);
+        // Min zoom: image never smaller than ~20% of viewport. Max zoom: 64× (pixel-peep).
+        let fit = f32::min(self.vp_w / self.img_w, self.vp_h / self.img_h);
+        let min_zoom = (fit * 0.2).max(1.0 / 512.0);
+        self.zoom = (self.zoom * factor).clamp(min_zoom, 64.0);
         self.pan_x = a_img_x - anchor_x / self.zoom;
         self.pan_y = a_img_y - anchor_y / self.zoom;
     }
