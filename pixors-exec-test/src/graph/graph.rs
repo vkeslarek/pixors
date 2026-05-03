@@ -11,7 +11,7 @@ pub type StageId = NodeIndex<u32>;
 /// for forward-compatibility with multi-output stages (e.g. tee, channel
 /// split).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ExecEdgePorts {
+pub struct EdgePorts {
     pub from_port: u16,
     pub to_port: u16,
 }
@@ -22,7 +22,7 @@ pub struct ExecEdgePorts {
 /// rewrites and the executor can run topological sort + traversal directly
 /// on the graph.
 pub struct ExecGraph {
-    pub graph: StableDiGraph<ExecNode, ExecEdgePorts>,
+    pub graph: StableDiGraph<ExecNode, EdgePorts>,
     pub outputs: Vec<(StageId, u16)>,
 }
 
@@ -38,7 +38,7 @@ impl ExecGraph {
         self.graph.add_node(stage)
     }
 
-    pub fn add_edge(&mut self, from: StageId, to: StageId, ports: ExecEdgePorts) {
+    pub fn add_edge(&mut self, from: StageId, to: StageId, ports: EdgePorts) {
         self.graph.add_edge(from, to, ports);
     }
 

@@ -6,8 +6,7 @@ pub mod file;
 pub mod transfer;
 mod data;
 
-pub use blur::{BlurKernel, BlurKernelGpu, BlurKernelGpuRunner, BlurKernelRunner,
-               FusedGpuKernel, FusedGpuKernelRunner};
+pub use blur::{BlurKernel, BlurKernelGpu, BlurKernelGpuRunner, BlurKernelRunner};
 pub use cache::CacheReader;
 pub use cache::CacheWriter;
 pub use color::ColorConvert;

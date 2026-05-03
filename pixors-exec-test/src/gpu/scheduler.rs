@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use crate::gpu::kernel::{GpuKernel, KernelSig};
+use crate::gpu::kernel::{GpuKernel, KernelSignature};
 use crate::gpu::pool::BufferPool;
 
 const BATCH_SIZE: usize = 16;
@@ -58,8 +58,8 @@ impl Scheduler {
         dispatch_x: u32,
         dispatch_y: u32,
     ) -> Result<Arc<wgpu::Buffer>, String> {
-        let sig = kernel.sig();
-        let sig_hash = hash_sig(sig);
+        let sig = kernel.signature();
+        let sig_hash = hash_signature(sig);
 
         let cached = {
             let mut cache = self.cache.lock().unwrap();
@@ -139,9 +139,9 @@ impl Scheduler {
 
     pub fn compute_pipeline(
         &self,
-        sig: &KernelSig,
+        sig: &KernelSignature,
     ) -> Result<Arc<wgpu::ComputePipeline>, String> {
-        let sig_hash = hash_sig(sig);
+        let sig_hash = hash_signature(sig);
         let mut cache = self.cache.lock().unwrap();
         let entry = cache.entry(sig_hash).or_insert_with(|| {
             build_pipeline(&self.device, sig).expect("failed to build pipeline")
@@ -151,9 +151,9 @@ impl Scheduler {
 
     pub fn bind_group_layout(
         &self,
-        sig: &KernelSig,
+        sig: &KernelSignature,
     ) -> Result<Arc<wgpu::BindGroupLayout>, String> {
-        let sig_hash = hash_sig(sig);
+        let sig_hash = hash_signature(sig);
         let mut cache = self.cache.lock().unwrap();
         let entry = cache.entry(sig_hash).or_insert_with(|| {
             build_pipeline(&self.device, sig).expect("failed to build pipeline")
@@ -162,20 +162,20 @@ impl Scheduler {
     }
 }
 
-fn compute_param_size(sig: &KernelSig) -> u64 {
+fn compute_param_size(sig: &KernelSignature) -> u64 {
     sig.params
         .iter()
-        .map(|p| match p.ty {
-            crate::gpu::kernel::ParamType::U32 => 4u64,
-            crate::gpu::kernel::ParamType::I32 => 4u64,
-            crate::gpu::kernel::ParamType::F32 => 4u64,
+        .map(|p| match p.kind {
+            crate::gpu::kernel::ParameterType::U32 => 4u64,
+            crate::gpu::kernel::ParameterType::I32 => 4u64,
+            crate::gpu::kernel::ParameterType::F32 => 4u64,
         })
         .sum()
 }
 
 fn build_pipeline(
     device: &wgpu::Device,
-    sig: &KernelSig,
+    sig: &KernelSignature,
 ) -> Result<CachedPipeline, String> {
     let has_params = !sig.params.is_empty();
     let num_inputs = sig.inputs.len() as u32;
@@ -310,7 +310,7 @@ fn build_bind_group(
     }))
 }
 
-fn hash_sig(sig: &KernelSig) -> u64 {
+fn hash_signature(sig: &KernelSignature) -> u64 {
     let mut h = DefaultHasher::new();
     sig.name.hash(&mut h);
     sig.body.hash(&mut h);

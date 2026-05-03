@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::graph::runner::{OperationRunner, SinkRunner, SourceRunner};
 use crate::operation::{
     BlurKernel, BlurKernelGpu, CacheReader, CacheWriter, ColorConvert, Download,
-    FileDecoder, FusedGpuKernel, NeighborhoodAgg, PngEncoder, ScanLineAccumulator,
+    FileDecoder, NeighborhoodAgg, PngEncoder, ScanLineAccumulator,
     TileToScanline, Upload,
 };
 use crate::sink::TileSink;
@@ -45,7 +45,6 @@ pub enum ExecNode {
     NeighborhoodAgg,
     BlurKernel,
     BlurKernelGpu,
-    FusedGpuKernel,
     Upload,
     Download,
     CacheReader,
