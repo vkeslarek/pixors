@@ -250,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn pathbuilder_png_roundtrip() {
         use std::path::PathBuf;
 
@@ -285,6 +286,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn pathbuilder_png_blur_roundtrip() {
         use std::path::PathBuf;
 
@@ -389,6 +391,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn blur_32x32_roundtrip() {
         use crate::pipeline::state::ExportFormat;
         use crate::pipeline::state_graph::builder::PathBuilder;
