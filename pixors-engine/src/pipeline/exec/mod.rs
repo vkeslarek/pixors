@@ -16,6 +16,7 @@ pub use cache_reader::CacheReader;
 pub use cache_writer::CacheWriter;
 pub use color_convert::ColorConvert;
 pub use display_sink::DisplaySink;
+pub use display_sink::{GpuBufferState, display_buffer, init_buffer};
 pub use download::Download;
 pub use file_decoder::FileDecoder;
 pub use png_encoder::PngEncoder;

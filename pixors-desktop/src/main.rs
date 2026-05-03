@@ -1,4 +1,3 @@
-mod pipeline;
 mod ui;
 mod engine;
 mod viewport;

@@ -1,7 +1,12 @@
+use std::sync::{Arc, Mutex};
+
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Element, Length, Subscription};
+
+use pixors_engine::io;
+use pixors_engine::pipeline::exec::display_sink::{self, GpuBufferState};
 
 use crate::ui::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
@@ -45,6 +50,7 @@ pub struct App {
     pub progress: f32,
     pub progress_dir: f32,
     pub errors: Vec<(String, std::time::Instant)>,
+    pub gpu_buffer: Option<Arc<Mutex<GpuBufferState>>>,
 }
 
 impl Default for App {
@@ -69,6 +75,7 @@ impl Default for App {
             progress: 0.0,
             progress_dir: 1.0,
             errors: Vec::new(),
+            gpu_buffer: None,
         }
     }
 }
@@ -137,38 +144,29 @@ impl App {
 
     fn handle_keyboard(&mut self, event: keyboard::Event) {
         if let keyboard::Event::KeyPressed { key, modifiers, .. } = event {
-            let ctrl = modifiers.contains(keyboard::Modifiers::CTRL);
-            match key.as_ref() {
-                Key::Character("v") if !ctrl => self.tools.select(Tool::Move),
-                Key::Character("m") if !ctrl => self.tools.select(Tool::Select),
-                Key::Character("l") if !ctrl => self.tools.select(Tool::Lasso),
-                Key::Character("w") if !ctrl => self.tools.select(Tool::Wand),
-                Key::Character("c") if !ctrl => self.tools.select(Tool::Crop),
-                Key::Character("i") if !ctrl => self.tools.select(Tool::Eyedropper),
-                Key::Character("b") if !ctrl => self.tools.select(Tool::Brush),
-                Key::Character("e") if !ctrl => self.tools.select(Tool::Eraser),
-                Key::Character("j") if !ctrl => self.tools.select(Tool::Heal),
-                Key::Character("g") if !ctrl => self.tools.select(Tool::Gradient),
-                Key::Character("t") if !ctrl => self.tools.select(Tool::Text),
-                Key::Character("u") if !ctrl => self.tools.select(Tool::Shape),
-                Key::Character("h") if !ctrl => self.tools.select(Tool::Hand),
-                Key::Character("z") if !ctrl => self.tools.select(Tool::Zoom),
-                Key::Character("o") if ctrl => {
-                    self.push_error("File dialog would open here (rfd)".into());
+            if modifiers.contains(keyboard::Modifiers::CTRL) {
+                match key.as_ref() {
+                    Key::Character("o") => self.open_file_dialog(),
+                    _ => {}
                 }
-                Key::Character("=") if ctrl => {
-                    self.push_error("Zoom in (Ctrl+=)".into());
+            } else {
+                match key.as_ref() {
+                    Key::Character("v") => self.tools.select(Tool::Move),
+                    Key::Character("m") => self.tools.select(Tool::Select),
+                    Key::Character("l") => self.tools.select(Tool::Lasso),
+                    Key::Character("w") => self.tools.select(Tool::Wand),
+                    Key::Character("c") => self.tools.select(Tool::Crop),
+                    Key::Character("i") => self.tools.select(Tool::Eyedropper),
+                    Key::Character("b") => self.tools.select(Tool::Brush),
+                    Key::Character("e") => self.tools.select(Tool::Eraser),
+                    Key::Character("j") => self.tools.select(Tool::Heal),
+                    Key::Character("g") => self.tools.select(Tool::Gradient),
+                    Key::Character("t") => self.tools.select(Tool::Text),
+                    Key::Character("u") => self.tools.select(Tool::Shape),
+                    Key::Character("h") => self.tools.select(Tool::Hand),
+                    Key::Character("z") => self.tools.select(Tool::Zoom),
+                    _ => {}
                 }
-                Key::Character("-") if ctrl => {
-                    self.push_error("Zoom out (Ctrl+-)".into());
-                }
-                Key::Character("0") if ctrl => {
-                    self.push_error("Fit to screen (Ctrl+0)".into());
-                }
-                Key::Character("1") if ctrl => {
-                    self.push_error("Actual size (Ctrl+1)".into());
-                }
-                _ => {}
             }
             self.status.active_tool = self.tools.active_tool;
         }
@@ -179,10 +177,52 @@ impl App {
             .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
             .pick_file()
         {
-            self.push_error(format!("Opening: {}", path.display()));
             self.loading = true;
             self.progress = 0.0;
             self.progress_dir = 1.0;
+
+            let readers = io::all_readers();
+            for reader in readers {
+                if reader.can_handle(&path) {
+                    match reader.load_layer(&path, 0) {
+                        Ok(layer) => {
+                            let buf = &layer.buffer;
+                            let w = buf.desc.width;
+                            let h = buf.desc.height;
+                            let rgba = image_buffer_to_rgba8(buf);
+
+                            let gpu = display_sink::init_buffer(w, h);
+                            {
+                                let mut state = gpu.lock().unwrap();
+                                state.pixels.copy_from_slice(&rgba);
+                                state.dirty = true;
+                            }
+
+                            self.gpu_buffer = Some(gpu);
+                            self.status.canvas_w = w;
+                            self.status.canvas_h = h;
+                            self.loading = false;
+
+                            self.push_error(format!(
+                                "Loaded {}×{} — {}",
+                                w,
+                                h,
+                                path.file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                            ));
+                            return;
+                        }
+                        Err(e) => {
+                            self.push_error(format!("Failed to load: {e:?}"));
+                            self.loading = false;
+                            return;
+                        }
+                    }
+                }
+            }
+            self.push_error(format!("No reader for: {}", path.display()));
+            self.loading = false;
         }
     }
 
@@ -337,4 +377,33 @@ impl App {
         .align_y(iced::alignment::Vertical::Top)
         .into()
     }
+}
+
+fn image_buffer_to_rgba8(buf: &pixors_engine::image::ImageBuffer) -> Vec<u8> {
+    let w = buf.desc.width as usize;
+    let h = buf.desc.height as usize;
+    let channels = buf.desc.planes.len();
+
+    if channels == 4 {
+        return buf.data.clone();
+    }
+
+    let mut rgba = vec![0u8; w * h * 4];
+    let bytes_per_pixel = channels * buf.desc.planes[0].encoding.byte_size();
+
+    for y in 0..h {
+        for x in 0..w {
+            let src_off = (y * w + x) * bytes_per_pixel;
+            let dst_off = (y * w + x) * 4;
+            for c in 0..channels.min(3) {
+                rgba[dst_off + c] = buf.data[src_off + c];
+            }
+            rgba[dst_off + 3] = if channels >= 4 {
+                buf.data[src_off + 3]
+            } else {
+                255
+            };
+        }
+    }
+    rgba
 }

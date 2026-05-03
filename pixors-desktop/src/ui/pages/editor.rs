@@ -11,6 +11,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             app.tabs.view().map(Msg::TabBar),
             app.status.canvas_w,
             app.status.canvas_h,
+            app.gpu_buffer.as_ref(),
         ),
         crate::ui::components::sidebar_grid::view(
             &app.panes,
