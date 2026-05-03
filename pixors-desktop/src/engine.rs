@@ -153,6 +153,7 @@ pub struct EnginePipeline {
     bind_group: iced::wgpu::BindGroup,
     texture: Option<TextureResources>,
     texture_dims: Option<(u32, u32)>,
+    format: iced::wgpu::TextureFormat,
 }
 
 struct TextureResources {
@@ -320,7 +321,7 @@ impl EnginePipeline {
                     module: &shader,
                     entry_point: Some("fs"),
                     targets: &[Some(iced::wgpu::ColorTargetState {
-                        format: iced::wgpu::TextureFormat::Bgra8UnormSrgb,
+                        format: self.format,
                         blend: Some(iced::wgpu::BlendState::REPLACE),
                         write_mask: iced::wgpu::ColorWrites::ALL,
                     })],
@@ -501,6 +502,7 @@ impl shader::Pipeline for EnginePipeline {
                 sampler: dummy_sampler,
             }),
             texture_dims: Some((1, 1)),
+            format,
         }
     }
 }
