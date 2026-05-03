@@ -1,7 +1,7 @@
 use petgraph::stable_graph::{NodeIndex, StableDiGraph};
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{ExecNode, Stage};
+use crate::stage::{StageNode, Stage};
 
 /// Stable handle to a stage in an `ExecGraph`.
 pub type StageId = NodeIndex<u32>;
@@ -22,7 +22,7 @@ pub struct EdgePorts {
 /// rewrites and the executor can run topological sort + traversal directly
 /// on the graph.
 pub struct ExecGraph {
-    pub graph: StableDiGraph<ExecNode, EdgePorts>,
+    pub graph: StableDiGraph<StageNode, EdgePorts>,
     pub outputs: Vec<(StageId, u16)>,
 }
 
@@ -34,7 +34,7 @@ impl ExecGraph {
         }
     }
 
-    pub fn add_stage(&mut self, stage: ExecNode) -> StageId {
+    pub fn add_stage(&mut self, stage: StageNode) -> StageId {
         self.graph.add_node(stage)
     }
 

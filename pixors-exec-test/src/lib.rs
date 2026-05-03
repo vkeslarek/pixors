@@ -4,6 +4,7 @@ pub mod gpu;
 pub mod graph;
 pub mod model;
 pub mod operation;
+pub mod runtime;
 pub mod sink;
 pub mod source;
 pub mod stage;

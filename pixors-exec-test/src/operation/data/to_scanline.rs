@@ -6,22 +6,34 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::{ScanLine, Tile};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::OperationRunner;
-use crate::data::Device;
-use crate::stage::Stage;
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::data::Buffer;
 use crate::debug_stopwatch;
+
+static TS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static TS_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static TS_PORTS: PortSpec = PortSpec { inputs: TS_INPUTS, outputs: TS_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToScanline;
 
 impl Stage for TileToScanline {
     fn kind(&self) -> &'static str { "tile_to_scanline" }
-    fn device(&self) -> Device { Device::Cpu }
-    fn allocates_output(&self) -> bool { true }
-    fn op_runner(&self) -> Result<Box<dyn OperationRunner>, Error> {
-        Ok(Box::new(TileToScanlineRunner::new()))
+
+    fn ports(&self) -> &'static PortSpec {
+        &TS_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(TileToScanlineRunner::new()))
     }
 }
 
@@ -48,7 +60,7 @@ impl TileToScanlineRunner {
     }
 }
 
-impl OperationRunner for TileToScanlineRunner {
+impl CpuKernel for TileToScanlineRunner {
     fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_to_scanline");
         let tile = match item {

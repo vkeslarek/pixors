@@ -6,13 +6,16 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::SinkRunner;
-use crate::data::Device;
-use crate::stage::{Stage, StageRole};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::data::Buffer;
 use crate::debug_stopwatch;
+
+static PE_INPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static PE_OUTPUTS: &[PortDecl] = &[];
+static PE_PORTS: PortSpec = PortSpec { inputs: PE_INPUTS, outputs: PE_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PngEncoder {
@@ -21,11 +24,20 @@ pub struct PngEncoder {
 
 impl Stage for PngEncoder {
     fn kind(&self) -> &'static str { "png_encoder" }
-    fn device(&self) -> Device { Device::Cpu }
-    fn allocates_output(&self) -> bool { true }
-    fn role(&self) -> StageRole { StageRole::Sink }
-    fn sink_runner(&self) -> Result<Box<dyn SinkRunner>, Error> {
-        Ok(Box::new(PngEncoderRunner::new(self.path.clone())))
+
+    fn ports(&self) -> &'static PortSpec {
+        &PE_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadOnly,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(PngEncoderRunner::new(self.path.clone())))
     }
 }
 
@@ -43,8 +55,8 @@ impl PngEncoderRunner {
     }
 }
 
-impl SinkRunner for PngEncoderRunner {
-    fn consume(&mut self, item: Item) -> Result<(), Error> {
+impl CpuKernel for PngEncoderRunner {
+    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:consume");
         let scanline = match item {
             Item::ScanLine(s) => s,
@@ -64,7 +76,7 @@ impl SinkRunner for PngEncoderRunner {
         Ok(())
     }
 
-    fn finish(&mut self) -> Result<(), Error> {
+    fn finish(&mut self, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:finish");
         let bpp = self.bpp as usize;
         if bpp == 0 { return Err(Error::internal("no data received")); }

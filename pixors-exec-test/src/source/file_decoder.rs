@@ -9,13 +9,15 @@ use crate::data::ScanLine;
 use crate::model::pixel::meta::PixelMeta;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::SourceRunner;
-use crate::data::Device;
-use crate::stage::{Stage, StageRole};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
 use crate::data::Buffer;
 use crate::debug_stopwatch;
+
+static FD_INPUTS: &[PortDecl] = &[];
+static FD_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static FD_PORTS: PortSpec = PortSpec { inputs: FD_INPUTS, outputs: FD_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDecoder {
@@ -24,11 +26,20 @@ pub struct FileDecoder {
 
 impl Stage for FileDecoder {
     fn kind(&self) -> &'static str { "file_decoder" }
-    fn device(&self) -> Device { Device::Cpu }
-    fn allocates_output(&self) -> bool { true }
-    fn role(&self) -> StageRole { StageRole::Source }
-    fn source_runner(&self) -> Result<Box<dyn SourceRunner>, Error> {
-        Ok(Box::new(FileDecoderRunner::new(self.path.clone())))
+
+    fn ports(&self) -> &'static PortSpec {
+        &FD_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadOnly,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(FileDecoderRunner::new(self.path.clone())))
     }
 }
 
@@ -42,8 +53,8 @@ impl FileDecoderRunner {
     }
 }
 
-impl SourceRunner for FileDecoderRunner {
-    fn run(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+impl CpuKernel for FileDecoderRunner {
+    fn process(&mut self, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("file_decoder");
         let file = File::open(&self.path)?;
         let mut decoder = png::Decoder::new(BufReader::new(file));

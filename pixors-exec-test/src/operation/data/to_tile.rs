@@ -4,12 +4,14 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::{Tile, TileCoord};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::OperationRunner;
-use crate::data::Device;
-use crate::stage::Stage;
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::data::Buffer;
 use crate::debug_stopwatch;
+
+static SA_INPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static SA_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static SA_PORTS: PortSpec = PortSpec { inputs: SA_INPUTS, outputs: SA_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanLineAccumulator {
@@ -18,10 +20,20 @@ pub struct ScanLineAccumulator {
 
 impl Stage for ScanLineAccumulator {
     fn kind(&self) -> &'static str { "scanline_accumulator" }
-    fn device(&self) -> Device { Device::Cpu }
-    fn allocates_output(&self) -> bool { true }
-    fn op_runner(&self) -> Result<Box<dyn OperationRunner>, Error> {
-        Ok(Box::new(ScanLineAccumulatorRunner::new(self.tile_size)))
+
+    fn ports(&self) -> &'static PortSpec {
+        &SA_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(ScanLineAccumulatorRunner::new(self.tile_size)))
     }
 }
 
@@ -49,7 +61,7 @@ impl ScanLineAccumulatorRunner {
     }
 }
 
-impl OperationRunner for ScanLineAccumulatorRunner {
+impl CpuKernel for ScanLineAccumulatorRunner {
     fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("scanline_accumulator");
         let scanline = match &item {

@@ -7,13 +7,15 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::tile::TileCoord;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::OperationRunner;
-use crate::data::Device;
-use crate::stage::Stage;
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::gpu::{self, GpuContext};
 use crate::data::Buffer;
 use crate::debug_stopwatch;
+
+static DL_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static DL_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static DL_PORTS: PortSpec = PortSpec { inputs: DL_INPUTS, outputs: DL_OUTPUTS };
 
 /// How many tiles to accumulate before flushing (1 submit + 1
 /// `device.poll(Wait)` per chunk). Caps peak staging memory.
@@ -30,10 +32,20 @@ pub struct Download;
 
 impl Stage for Download {
     fn kind(&self) -> &'static str { "download" }
-    fn device(&self) -> Device { Device::Cpu }
-    fn allocates_output(&self) -> bool { true }
-    fn op_runner(&self) -> Result<Box<dyn OperationRunner>, Error> {
-        Ok(Box::new(DownloadRunner::new()))
+
+    fn ports(&self) -> &'static PortSpec {
+        &DL_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(DownloadRunner::new()))
     }
 }
 
@@ -116,7 +128,7 @@ impl DownloadRunner {
     }
 }
 
-impl OperationRunner for DownloadRunner {
+impl CpuKernel for DownloadRunner {
     fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("download");
         let tile = match item {

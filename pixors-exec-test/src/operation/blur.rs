@@ -1,46 +1,109 @@
+use std::sync::Arc;
+
+use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
-use crate::data::Tile;
+use crate::data::{Buffer, Tile};
+use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::OperationRunner;
-use crate::data::Device;
-use crate::stage::Stage;
-use crate::error::Error;
-use crate::data::Buffer;
-use crate::debug_stopwatch;
+use crate::stage::{
+    BufferAccess, CpuKernel, DataKind, GpuInputBinding, GpuKernelDescriptor, PortDecl, PortSpec,
+    Stage, StageHints,
+};
+
+const BLUR_SPIRV: &[u8] = include_bytes!("../../kernels/blur.spv");
+
+static BLUR_INPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
+static BLUR_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static BLUR_PORTS: PortSpec = PortSpec { inputs: BLUR_INPUTS, outputs: BLUR_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlurKernel {
+pub struct Blur {
     pub radius: u32,
 }
 
-impl Stage for BlurKernel {
+impl Stage for Blur {
     fn kind(&self) -> &'static str {
         "blur"
     }
-    fn device(&self) -> Device {
-        Device::Cpu
+
+    fn ports(&self) -> &'static PortSpec {
+        &BLUR_PORTS
     }
-    fn allocates_output(&self) -> bool {
-        true
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: true,
+        }
     }
-    fn op_runner(&self) -> Result<Box<dyn OperationRunner>, Error> {
-        Ok(Box::new(BlurKernelRunner::new(self.radius)))
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(BlurCpuRunner::new(self.radius)))
+    }
+
+    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
+        let radius = self.radius;
+        Some(GpuKernelDescriptor {
+            spirv: BLUR_SPIRV,
+            entry_point: "cs_blur",
+            input_binding: GpuInputBinding::Neighborhood,
+            workgroup: (8, 8),
+            param_size: 16,
+            write_params: Some(Arc::new(move |item, dst| {
+                let nbhd = match item {
+                    crate::graph::item::Item::Neighborhood(n) => n,
+                    _ => return,
+                };
+                let params = BlurParams {
+                    width: nbhd.center.width,
+                    height: nbhd.center.height,
+                    radius,
+                    _pad: 0,
+                };
+                dst.copy_from_slice(bytemuck::bytes_of(&params));
+            })),
+        })
     }
 }
 
-pub struct BlurKernelRunner {
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct BlurParams {
+    pub width: u32,
+    pub height: u32,
+    pub radius: u32,
+    pub _pad: u32,
+}
+
+impl Blur {
+    pub fn write_params(&self, width: u32, height: u32, destination: &mut [u8]) {
+        let params = BlurParams {
+            width,
+            height,
+            radius: self.radius,
+            _pad: 0,
+        };
+        destination.copy_from_slice(bytemuck::bytes_of(&params));
+    }
+}
+
+// ── CPU Kernel ───────────────────────────────────────────────────────────────
+
+use crate::debug_stopwatch;
+
+pub struct BlurCpuRunner {
     radius: u32,
 }
 
-impl BlurKernelRunner {
+impl BlurCpuRunner {
     pub fn new(radius: u32) -> Self {
         Self { radius }
     }
 }
 
-impl OperationRunner for BlurKernelRunner {
+impl CpuKernel for BlurCpuRunner {
     fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("blur");
         let nbhd = match item {

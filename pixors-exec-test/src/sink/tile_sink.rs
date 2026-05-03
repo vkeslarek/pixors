@@ -2,10 +2,9 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::Device;
-use crate::stage::{Stage, StageRole};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::SinkRunner;
 use crate::error::Error;
 use crate::debug_stopwatch;
 
@@ -22,6 +21,10 @@ pub fn tile_sink() -> Option<Arc<TileCommitFn>> {
     TILE_SINK.get().cloned()
 }
 
+static TS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static TS_OUTPUTS: &[PortDecl] = &[];
+static TS_PORTS: PortSpec = PortSpec { inputs: TS_INPUTS, outputs: TS_OUTPUTS };
+
 // ── Stage ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,21 +34,21 @@ impl Stage for TileSink {
     fn kind(&self) -> &'static str {
         "tile_sink"
     }
-    fn device(&self) -> Device {
-        Device::Cpu
+
+    fn ports(&self) -> &'static PortSpec {
+        &TS_PORTS
     }
-    fn allocates_output(&self) -> bool {
-        false
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadOnly,
+            prefers_gpu: false,
+        }
     }
-    fn role(&self) -> StageRole {
-        StageRole::Sink
-    }
-    fn sink_runner(&self) -> Result<Box<dyn SinkRunner>, Error> {
-        let cb = TILE_SINK
-            .get()
-            .cloned()
-            .ok_or_else(|| Error::internal("tile sink not installed"))?;
-        Ok(Box::new(TileSinkRunner { cb }))
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        let cb = TILE_SINK.get().cloned()?;
+        Some(Box::new(TileSinkRunner { cb }))
     }
 }
 
@@ -55,8 +58,8 @@ pub struct TileSinkRunner {
     cb: Arc<TileCommitFn>,
 }
 
-impl SinkRunner for TileSinkRunner {
-    fn consume(&mut self, item: Item) -> Result<(), Error> {
+impl CpuKernel for TileSinkRunner {
+    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_sink:consume");
         match item {
             Item::Tile(tile) => {

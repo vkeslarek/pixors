@@ -3,23 +3,35 @@ use serde::{Deserialize, Serialize};
 use crate::data::Tile;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::OperationRunner;
-use crate::data::Device;
-use crate::stage::Stage;
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::gpu;
 use crate::data::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
+
+static UP_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static UP_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static UP_PORTS: PortSpec = PortSpec { inputs: UP_INPUTS, outputs: UP_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Upload;
 
 impl Stage for Upload {
     fn kind(&self) -> &'static str { "upload" }
-    fn device(&self) -> Device { Device::Gpu }
-    fn allocates_output(&self) -> bool { true }
-    fn op_runner(&self) -> Result<Box<dyn OperationRunner>, Error> {
-        Ok(Box::new(UploadRunner::new()))
+
+    fn ports(&self) -> &'static PortSpec {
+        &UP_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(UploadRunner::new()))
     }
 }
 
@@ -31,7 +43,7 @@ impl UploadRunner {
     }
 }
 
-impl OperationRunner for UploadRunner {
+impl CpuKernel for UploadRunner {
     fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("upload");
         let tile = match item {
@@ -51,7 +63,7 @@ impl OperationRunner for UploadRunner {
             | wgpu::BufferUsages::COPY_DST;
 
         let pool = &ctx.scheduler().pool();
-        let mut buf = pool.acquire(size, usage);
+        let buf = pool.acquire(size, usage);
         let buf_arc = buf.arc();
         ctx.queue().write_buffer(&buf_arc, 0, bytes);
 

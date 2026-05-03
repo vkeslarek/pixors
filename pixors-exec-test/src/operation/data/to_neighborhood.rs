@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 use crate::data::{EdgeCondition, Neighborhood, Tile};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::graph::runner::OperationRunner;
-use crate::data::Device;
-use crate::stage::Stage;
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
 use crate::error::Error;
 use crate::debug_stopwatch;
+
+static NA_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static NA_OUTPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
+static NA_PORTS: PortSpec = PortSpec { inputs: NA_INPUTS, outputs: NA_OUTPUTS };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeighborhoodAgg {
@@ -18,10 +20,20 @@ pub struct NeighborhoodAgg {
 
 impl Stage for NeighborhoodAgg {
     fn kind(&self) -> &'static str { "neighborhood_agg" }
-    fn device(&self) -> Device { Device::Cpu }
-    fn allocates_output(&self) -> bool { true }
-    fn op_runner(&self) -> Result<Box<dyn OperationRunner>, Error> {
-        Ok(Box::new(NeighborhoodAggRunner::new(self.radius)))
+
+    fn ports(&self) -> &'static PortSpec {
+        &NA_PORTS
+    }
+
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: false,
+        }
+    }
+
+    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+        Some(Box::new(NeighborhoodAggRunner::new(self.radius)))
     }
 }
 
@@ -115,7 +127,7 @@ impl NeighborhoodAggRunner {
     }
 }
 
-impl OperationRunner for NeighborhoodAggRunner {
+impl CpuKernel for NeighborhoodAggRunner {
     fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("neighborhood_agg");
         let tile = match item {
