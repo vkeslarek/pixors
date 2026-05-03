@@ -1,9 +1,9 @@
 mod approx;
-pub mod color;
-pub mod container;
-pub mod egraph;
 pub mod error;
-mod image;
+pub mod utils;
 pub mod pixel;
-pub mod sgraph;
+pub mod color;
+pub mod gpu;
 pub mod storage;
+pub mod container;
+pub mod pipeline;

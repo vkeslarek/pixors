@@ -66,14 +66,12 @@ mod gray;
 mod pack;
 mod rgb;
 mod rgba;
-pub mod xyz;
 
 pub use accumulator::PixelAccumulator;
 pub use format::PixelFormat;
 pub use gray::{Gray, GrayAlpha};
 pub use rgb::Rgb;
 pub use rgba::Rgba;
-pub use xyz::{Xyy, Xyz};
 
 // ---------------------------------------------------------------------------
 // Tests

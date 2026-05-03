@@ -1,3 +1,3 @@
 mod buffer;
 
-pub use buffer::{Buffer, GpuHandle};
+pub use buffer::{Buffer, GpuBuffer};

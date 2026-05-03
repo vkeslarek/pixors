@@ -3,7 +3,7 @@
 use crate::color::Matrix3x3;
 use crate::color::{ColorSpace, TransferFn};
 use crate::error::Error;
-use crate::image::meta::SampleFormat;
+use crate::color::SampleFormat;
 use crate::pixel::{AlphaPolicy, Pixel};
 use wide::f32x4;
 
@@ -246,7 +246,6 @@ pub fn apply_mode_one(linear: [f32; 3], a: f32, mode: AlphaPolicy) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::image::meta::AlphaMode;
     use crate::pixel::{AlphaPolicy, Rgba};
     use half::f16;
 
