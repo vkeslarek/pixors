@@ -1,26 +1,34 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
-use crate::error::Error;
-use crate::gpu::buffer::GpuBuffer;
-use crate::gpu::kernel::{GpuKernel, KernelSig};
-use crate::gpu::pool::BufferPool;
-use crate::gpu::GpuContext;
-
-static SCHEDULER: OnceLock<Arc<Scheduler>> = OnceLock::new();
+use crate::kernel::{GpuKernel, KernelSig};
+use crate::pool::BufferPool;
 
 const BATCH_SIZE: usize = 16;
 
 struct CachedPipeline {
     pipeline: Arc<wgpu::ComputePipeline>,
     bgl: Arc<wgpu::BindGroupLayout>,
-    num_bindings: u32,
     has_params: bool,
 }
 
+/// Reference-counted GPU buffer with known byte size.
+#[derive(Clone, Debug)]
+pub struct GpuBuffer {
+    pub buffer: Arc<wgpu::Buffer>,
+    pub size: u64,
+}
+
+impl GpuBuffer {
+    pub fn new(buffer: Arc<wgpu::Buffer>, size: u64) -> Self {
+        Self { buffer, size }
+    }
+}
+
 pub struct Scheduler {
-    ctx: Arc<GpuContext>,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     pool: Arc<BufferPool>,
     cache: Mutex<HashMap<u64, CachedPipeline>>,
     encoder: Mutex<Option<wgpu::CommandEncoder>>,
@@ -29,22 +37,17 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn init(ctx: Arc<GpuContext>) -> Arc<Self> {
-        let pool = BufferPool::new(ctx.clone());
-        let sched = Arc::new(Self {
-            ctx,
+    pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) -> Arc<Self> {
+        let pool = BufferPool::new(device.clone());
+        Arc::new(Self {
+            device,
+            queue,
             pool,
             cache: Mutex::new(HashMap::new()),
             encoder: Mutex::new(None),
             keepalive: Mutex::new(Vec::new()),
             in_flight: Mutex::new(0),
-        });
-        let _ = SCHEDULER.set(sched.clone());
-        sched
-    }
-
-    pub fn global() -> &'static Arc<Scheduler> {
-        SCHEDULER.get().expect("scheduler not initialized")
+        })
     }
 
     pub fn dispatch_one(
@@ -54,14 +57,14 @@ impl Scheduler {
         out_size: u64,
         dispatch_x: u32,
         dispatch_y: u32,
-    ) -> Result<Arc<wgpu::Buffer>, Error> {
+    ) -> Result<Arc<wgpu::Buffer>, String> {
         let sig = kernel.sig();
         let sig_hash = hash_sig(sig);
 
         let cached = {
             let mut cache = self.cache.lock().unwrap();
             cache.entry(sig_hash).or_insert_with(|| {
-                build_pipeline(&self.ctx, sig).expect("failed to build pipeline")
+                build_pipeline(&self.device, sig).expect("failed to build pipeline")
             });
             cache.get(&sig_hash).unwrap().clone_arcs()
         };
@@ -78,10 +81,10 @@ impl Scheduler {
         );
         let mut params = vec![0u8; param_size as usize];
         kernel.write_params(&mut params);
-        self.ctx.queue.write_buffer(&param_buf, 0, &params);
+        self.queue.write_buffer(&param_buf, 0, &params);
 
         let bind_group = build_bind_group(
-            &self.ctx,
+            &self.device,
             &cached.bgl,
             cached.has_params,
             inputs,
@@ -92,8 +95,7 @@ impl Scheduler {
         {
             let mut enc_guard = self.encoder.lock().unwrap();
             let encoder = enc_guard.get_or_insert_with(|| {
-                self.ctx
-                    .device
+                self.device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("scheduler_batch"),
                     })
@@ -119,20 +121,13 @@ impl Scheduler {
             self.flush();
         }
 
-        tracing::debug!(
-            "[pixors] gpu::scheduler: dispatched '{}' tile {} of batch",
-            sig.name,
-            *self.in_flight.lock().unwrap()
-        );
-
         Ok(out_arc)
     }
 
     pub fn flush(&self) {
         let mut enc_guard = self.encoder.lock().unwrap();
         if let Some(encoder) = enc_guard.take() {
-            self.ctx.queue.submit(std::iter::once(encoder.finish()));
-            tracing::debug!("[pixors] gpu::scheduler: flushed batch");
+            self.queue.submit(std::iter::once(encoder.finish()));
         }
         self.keepalive.lock().unwrap().clear();
         *self.in_flight.lock().unwrap() = 0;
@@ -145,11 +140,11 @@ impl Scheduler {
     pub fn compute_pipeline(
         &self,
         sig: &KernelSig,
-    ) -> Result<Arc<wgpu::ComputePipeline>, Error> {
+    ) -> Result<Arc<wgpu::ComputePipeline>, String> {
         let sig_hash = hash_sig(sig);
         let mut cache = self.cache.lock().unwrap();
         let entry = cache.entry(sig_hash).or_insert_with(|| {
-            build_pipeline(&self.ctx, sig).expect("failed to build pipeline")
+            build_pipeline(&self.device, sig).expect("failed to build pipeline")
         });
         Ok(entry.pipeline.clone())
     }
@@ -157,11 +152,11 @@ impl Scheduler {
     pub fn bind_group_layout(
         &self,
         sig: &KernelSig,
-    ) -> Result<Arc<wgpu::BindGroupLayout>, Error> {
+    ) -> Result<Arc<wgpu::BindGroupLayout>, String> {
         let sig_hash = hash_sig(sig);
         let mut cache = self.cache.lock().unwrap();
         let entry = cache.entry(sig_hash).or_insert_with(|| {
-            build_pipeline(&self.ctx, sig).expect("failed to build pipeline")
+            build_pipeline(&self.device, sig).expect("failed to build pipeline")
         });
         Ok(entry.bgl.clone())
     }
@@ -171,21 +166,20 @@ fn compute_param_size(sig: &KernelSig) -> u64 {
     sig.params
         .iter()
         .map(|p| match p.ty {
-            crate::gpu::kernel::ParamType::U32 => 4u64,
-            crate::gpu::kernel::ParamType::I32 => 4u64,
-            crate::gpu::kernel::ParamType::F32 => 4u64,
+            crate::kernel::ParamType::U32 => 4u64,
+            crate::kernel::ParamType::I32 => 4u64,
+            crate::kernel::ParamType::F32 => 4u64,
         })
         .sum()
 }
 
 fn build_pipeline(
-    ctx: &GpuContext,
+    device: &wgpu::Device,
     sig: &KernelSig,
-) -> Result<CachedPipeline, Error> {
+) -> Result<CachedPipeline, String> {
     let has_params = !sig.params.is_empty();
     let num_inputs = sig.inputs.len() as u32;
     let num_outputs = sig.outputs.len() as u32;
-    let num_bindings = if has_params { 1 + num_inputs + num_outputs } else { num_inputs + num_outputs };
 
     let mut entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::new();
     let mut binding: u32 = 0;
@@ -232,58 +226,54 @@ fn build_pipeline(
         binding += 1;
     }
 
+    let _ = num_inputs + num_outputs;
+
     let bgl = Arc::new(
-        ctx.device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some(sig.name),
-                entries: &entries,
-            }),
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(sig.name),
+            entries: &entries,
+        }),
     );
 
     let wgsl = assemble_wgsl(sig);
-    let shader = ctx
-        .device
-        .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(sig.name),
-            source: wgpu::ShaderSource::Wgsl(wgsl.into()),
-        });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(sig.name),
+        source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+    });
 
-    let pipeline_layout = ctx
-        .device
-        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("kernel_layout"),
             bind_group_layouts: &[&bgl],
             push_constant_ranges: &[],
         });
 
-        let pipeline = Arc::new(
-            ctx.device
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some(sig.name),
-                    layout: Some(&pipeline_layout),
-                    module: &shader,
-                    entry_point: "entry",
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    cache: None,
-                }),
-        );
+    let pipeline = Arc::new(
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(sig.name),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: "entry",
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        }),
+    );
 
     Ok(CachedPipeline {
         pipeline,
         bgl,
-        num_bindings,
         has_params,
     })
 }
 
 fn build_bind_group(
-    ctx: &GpuContext,
+    device: &wgpu::Device,
     bgl: &wgpu::BindGroupLayout,
     has_params: bool,
     inputs: &[&GpuBuffer],
     params: &wgpu::Buffer,
     output: &wgpu::Buffer,
-) -> Result<wgpu::BindGroup, Error> {
+) -> Result<wgpu::BindGroup, String> {
     let mut entries: Vec<wgpu::BindGroupEntry> = Vec::new();
     let mut binding: u32 = 0;
 
@@ -308,7 +298,7 @@ fn build_bind_group(
         resource: output.as_entire_binding(),
     });
 
-    Ok(ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+    Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("kernel_bind_group"),
         layout: bgl,
         entries: &entries,
@@ -335,9 +325,9 @@ fn assemble_wgsl(sig: &KernelSig) -> String {
         wgsl.push_str("struct Params {\n");
         for p in sig.params {
             let ty = match p.ty {
-                crate::gpu::kernel::ParamType::U32 => "u32",
-                crate::gpu::kernel::ParamType::I32 => "i32",
-                crate::gpu::kernel::ParamType::F32 => "f32",
+                crate::kernel::ParamType::U32 => "u32",
+                crate::kernel::ParamType::I32 => "i32",
+                crate::kernel::ParamType::F32 => "f32",
             };
             wgsl.push_str(&format!("    {}: {},\n", p.name, ty));
         }
@@ -354,7 +344,8 @@ fn assemble_wgsl(sig: &KernelSig) -> String {
     }
 
     for (i, out) in sig.outputs.iter().enumerate() {
-        let b = sig.inputs.len() as u32 + if sig.params.is_empty() { i as u32 } else { i as u32 + 1 };
+        let b = sig.inputs.len() as u32
+            + if sig.params.is_empty() { i as u32 } else { i as u32 + 1 };
         wgsl.push_str(&format!(
             "@group(0) @binding({}) var<storage, read_write> {}: array<u32>;\n",
             b, out.name
@@ -363,7 +354,6 @@ fn assemble_wgsl(sig: &KernelSig) -> String {
 
     wgsl.push_str(sig.body_wgsl);
     wgsl.push('\n');
-
     wgsl
 }
 
@@ -372,7 +362,6 @@ impl CachedPipeline {
         Self {
             pipeline: self.pipeline.clone(),
             bgl: self.bgl.clone(),
-            num_bindings: self.num_bindings,
             has_params: self.has_params,
         }
     }

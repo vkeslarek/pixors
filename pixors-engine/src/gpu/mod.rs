@@ -1,12 +1,11 @@
 //! GPU runtime backed by wgpu. The engine is CPU-first; this module is
 //! optional and silently disabled when no adapter is available.
+//!
+//! Kernel definitions, buffer pool, and scheduling moved to `pixors-shader`.
 
 pub mod buffer;
 pub mod context;
-pub mod kernel;
 pub mod kernels;
-pub mod pool;
-pub mod scheduler;
 
 #[cfg(test)]
 mod tests;

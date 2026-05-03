@@ -2,17 +2,15 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
-use crate::gpu::GpuContext;
-
 pub struct BufferPool {
-    ctx: Arc<GpuContext>,
+    device: Arc<wgpu::Device>,
     free: Mutex<HashMap<(u64, wgpu::BufferUsages), Vec<Arc<wgpu::Buffer>>>>,
 }
 
 impl BufferPool {
-    pub fn new(ctx: Arc<GpuContext>) -> Arc<Self> {
+    pub fn new(device: Arc<wgpu::Device>) -> Arc<Self> {
         Arc::new(Self {
-            ctx,
+            device,
             free: Mutex::new(HashMap::new()),
         })
     }
@@ -22,7 +20,6 @@ impl BufferPool {
         let key = (class_size, usage);
         let mut free_map = self.free.lock().unwrap();
         if let Some(buf) = free_map.get_mut(&key).and_then(|v| v.pop()) {
-            tracing::debug!("[pixors] gpu::pool: reuse buffer {} bytes {:?}", buf.size(), usage);
             return PooledBuffer {
                 pool: None,
                 buf: Some(buf),
@@ -31,17 +28,12 @@ impl BufferPool {
         }
         drop(free_map);
 
-        let buf = Arc::new(self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        let buf = Arc::new(self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pooled"),
             size: class_size,
             usage,
             mapped_at_creation: false,
         }));
-        tracing::debug!(
-            "[pixors] gpu::pool: allocate buffer {} bytes {:?}",
-            class_size,
-            usage
-        );
         PooledBuffer {
             pool: None,
             buf: Some(buf),

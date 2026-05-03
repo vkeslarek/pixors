@@ -10,14 +10,14 @@ use crate::pipeline::exec_graph::runner::OperationRunner;
 use crate::pipeline::exec::{Device, Stage};
 use crate::error::Error;
 use crate::gpu::{self, GpuContext};
-use crate::gpu::kernel::{BindAccess, BindElem, DispatchShape, GpuKernel, KernelClass, KernelSig, ParamDecl, ParamType, ResourceDecl};
-use crate::gpu::scheduler::Scheduler;
 use crate::gpu::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
+use pixors_shader::kernel::{BindAccess, BindElem, DispatchShape, GpuKernel, KernelClass, KernelSig, ParamDecl, ParamType, ResourceDecl};
+use pixors_shader::scheduler::Scheduler;
 
 const BATCH_SIZE: usize = 16;
 
-const BLUR_BODY: &str = include_str!("../../../gpu/kernels/blur.wgsl");
+const BLUR_BODY: &str = pixors_shader::wgsl::BLUR;
 
 static BLUR_SIG: KernelSig = KernelSig {
     name: "blur",
@@ -126,18 +126,16 @@ impl BlurKernelGpuRunner {
         }
         let c = gpu::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
         self.ctx = Some(c.clone());
-        Scheduler::init(c.clone());
-        self.ctx = Some(c);
-        self.ctx.clone().ok_or_else(|| Error::internal("GPU init failed"))
+        Ok(c)
     }
 
     fn submit_chunk(&mut self) {
         let Some(ctx) = self.ctx.clone() else {
             return;
         };
-        Scheduler::global().flush();
+        ctx.scheduler().flush();
         if let Some(encoder) = self.encoder.take() {
-            ctx.queue.submit(std::iter::once(encoder.finish()));
+            ctx.queue().submit(std::iter::once(encoder.finish()));
         }
         self.keepalive.clear();
         if self.in_flight > 0 {
@@ -187,7 +185,7 @@ impl OperationRunner for BlurKernelGpuRunner {
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;
 
-        let pool = &Scheduler::global().pool();
+        let pool = &ctx.scheduler().pool();
         let src_buf = pool.acquire(src_size, scratch_usage).arc();
         let dst_buf = pool.acquire(src_size, scratch_usage).arc();
         let out_buf = pool.acquire(out_size, scratch_usage).arc();
@@ -199,14 +197,14 @@ impl OperationRunner for BlurKernelGpuRunner {
             _pad: 0,
         };
         let param_buf = pool.acquire(16, wgpu::BufferUsages::UNIFORM).arc();
-        ctx.queue
+        ctx.queue()
             .write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
         let kernel = BlurKernel {
             radius: self.radius,
         };
-        let sched = Scheduler::global();
-        let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let sched = ctx.scheduler();
+        let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blur-gpu-bg"),
             layout: &sched.bind_group_layout(&BLUR_SIG).unwrap(),
             entries: &[
@@ -226,7 +224,7 @@ impl OperationRunner for BlurKernelGpuRunner {
         });
 
         let encoder = self.encoder.get_or_insert_with(|| {
-            ctx.device
+            ctx.device()
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("blur-gpu-batch"),
                 })

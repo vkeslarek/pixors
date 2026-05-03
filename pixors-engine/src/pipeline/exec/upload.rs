@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
 
 use crate::container::Tile;
@@ -9,7 +7,6 @@ use crate::pipeline::exec_graph::runner::OperationRunner;
 use super::{Device, Stage};
 use crate::error::Error;
 use crate::gpu;
-use crate::gpu::scheduler::Scheduler;
 use crate::gpu::{Buffer, GpuBuffer};
 use crate::debug_stopwatch;
 
@@ -25,9 +22,6 @@ impl Stage for Upload {
     }
 }
 
-/// CPU → GPU. Receives `Tile`s with `Buffer::Cpu`, uploads to a fresh wgpu
-/// storage buffer, emits `Tile`s with `Buffer::Gpu`. Tiles already on GPU
-/// pass through unchanged.
 pub struct UploadRunner;
 
 impl UploadRunner {
@@ -55,12 +49,10 @@ impl OperationRunner for UploadRunner {
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST;
 
-        // Use pool for buffer allocation
-        let _ = Scheduler::init(ctx.clone());
-        let pool = &Scheduler::global().pool();
+        let pool = &ctx.scheduler().pool();
         let mut buf = pool.acquire(size, usage);
         let buf_arc = buf.arc();
-        ctx.queue.write_buffer(&buf_arc, 0, bytes);
+        ctx.queue().write_buffer(&buf_arc, 0, bytes);
 
         let gbuf = GpuBuffer::new(buf_arc, size);
         emit.emit(Item::Tile(Tile::new(tile.coord, tile.meta, Buffer::Gpu(gbuf))));

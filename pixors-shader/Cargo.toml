@@ -1,0 +1,10 @@
+[package]
+name = "pixors-shader"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+wgpu = { version = "22.1", default-features = false, features = ["wgsl"] }
+
+[lints]
+workspace = true

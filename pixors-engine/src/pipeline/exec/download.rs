@@ -76,7 +76,7 @@ impl DownloadRunner {
             .ok_or_else(|| Error::internal("download flush without ctx"))?
             .clone();
         if let Some(encoder) = self.encoder.take() {
-            ctx.queue.submit(std::iter::once(encoder.finish()));
+            ctx.queue().submit(std::iter::once(encoder.finish()));
         }
         let pending = std::mem::take(&mut self.pending);
         let n = pending.len();
@@ -89,7 +89,7 @@ impl DownloadRunner {
             });
         }
         drop(tx);
-        ctx.device.poll(wgpu::Maintain::Wait);
+        ctx.device().poll(wgpu::Maintain::Wait);
 
         let mut errors: Vec<Option<Result<(), wgpu::BufferAsyncError>>> =
             (0..n).map(|_| None).collect();
@@ -129,14 +129,14 @@ impl OperationRunner for DownloadRunner {
         let ctx = self.ctx()?;
         let gbuf = tile.data.as_gpu().unwrap().clone();
         let size = gbuf.size;
-        let staging = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        let staging = ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("download-staging"),
             size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let encoder = self.encoder.get_or_insert_with(|| {
-            ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("download-batch"),
             })
         });
