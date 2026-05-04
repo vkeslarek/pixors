@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::data::Device;
 use crate::stage::{CpuKernel, PortSpec, Stage, StageHints};
 
-use cache_reader::CacheReader;
-use file_decoder::FileDecoder;
+pub use cache_reader::{CacheReader, TileRange};
+pub use file_decoder::FileDecoder;
 pub use image_file_source::ImageFileSource;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

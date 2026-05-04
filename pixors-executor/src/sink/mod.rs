@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::data::Device;
 use crate::stage::{CpuKernel, PortSpec, Stage, StageHints};
 
-use cache_writer::CacheWriter;
+pub use cache_writer::CacheWriter;
 use png_encoder::PngEncoder;
 use tile_sink::TileSink;
 use viewport::ViewportSink;

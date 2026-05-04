@@ -173,7 +173,7 @@ impl App {
 
     fn open_file_dialog(&mut self) {
         self.loading = true;
-        match crate::ui::file_ops::open_and_run(&self.pending_writes) {
+        match crate::ui::file_ops::open_and_run(&self.pending_writes, None) {
             Ok((w, h, path)) => {
                 self.status.canvas_w = w;
                 self.status.canvas_h = h;

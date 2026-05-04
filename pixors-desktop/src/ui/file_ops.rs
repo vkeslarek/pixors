@@ -12,6 +12,7 @@ use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
 use pixors_executor::operation::OperationNode;
 use pixors_executor::runtime::pipeline::Pipeline;
+use pixors_executor::sink::cache_writer::CacheWriter;
 use pixors_executor::sink::tile_sink::{install_tile_sink, TileSink};
 use pixors_executor::sink::SinkNode;
 use pixors_executor::source::SourceNode;
@@ -36,7 +37,10 @@ fn ensure_tile_sink_installed(pending: &Arc<PendingTileWrites>) {
     }));
 }
 
-pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathBuf), String> {
+pub fn open_and_run(
+    pending: &Arc<PendingTileWrites>,
+    cache_dir: Option<PathBuf>,
+) -> Result<(u32, u32, PathBuf), String> {
     let path = rfd::FileDialog::new()
         .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
         .pick_file()
@@ -45,6 +49,10 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
     let image = ImageFile::open(&path).map_err(|e| e.to_string())?;
     let w = image.width;
     let h = image.height;
+
+    let cache_dir = cache_dir.unwrap_or_else(|| {
+        path.with_extension("pixors_cache")
+    });
 
     // Signal viewport realloc before the pipeline starts emitting tiles.
     pending.signal_realloc(w, h);
@@ -58,8 +66,8 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
     //   → NeighborhoodAgg(Neighborhood)
     //   → Blur(Tile)
     //   → MipDownsample(Tile) — generates all MIP levels internally
-    //   → MipFilter(Tile, mip=0)
-    //   → TileSink
+    //   → CacheWriter — write all MIP tiles to disk
+    //   → MipFilter(Tile, mip=0) → TileSink
     let mut graph = ExecGraph::new();
     let src    = graph.add_stage(StageNode::Source(SourceNode::ImageFile(image.source(0))));
     let acc    = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
@@ -74,6 +82,9 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
     let mip    = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
         MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
     )));
+    let cache  = graph.add_stage(StageNode::Sink(SinkNode::CacheWriter(
+        CacheWriter { cache_dir },
+    )));
     let filter = graph.add_stage(StageNode::Operation(OperationNode::MipFilter(
         MipFilter { mip_level: 0 },
     )));
@@ -83,6 +94,7 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
     graph.add_edge(acc,    nbhd,   EdgePorts::default());
     graph.add_edge(nbhd,   blur,   EdgePorts::default());
     graph.add_edge(blur,   mip,    EdgePorts::default());
+    graph.add_edge(mip,    cache,  EdgePorts::default());
     graph.add_edge(mip,    filter, EdgePorts::default());
     graph.add_edge(filter, sink,   EdgePorts::default());
     graph.outputs.push((sink, 0));
