@@ -1,12 +1,12 @@
+pub mod tile_to_tile_block;
 pub mod to_neighborhood;
 pub mod to_scanline;
 pub mod to_tile;
-pub mod to_tile_block;
 
+pub use tile_to_tile_block::TileToTileBlock;
 pub use to_neighborhood::NeighborhoodAgg;
 pub use to_scanline::TileToScanline;
 pub use to_tile::ScanLineAccumulator;
-pub use to_tile_block::TileBlockToTile;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ pub enum DataTransformNode {
     NeighborhoodAgg(NeighborhoodAgg),
     ScanLineAccumulator(ScanLineAccumulator),
     TileToScanline(TileToScanline),
-    TileBlockToTile(TileBlockToTile),
+    TileToTileBlock(TileToTileBlock),
 }
 
 impl Stage for DataTransformNode {
@@ -27,7 +27,7 @@ impl Stage for DataTransformNode {
             Self::NeighborhoodAgg(s) => s.kind(),
             Self::ScanLineAccumulator(s) => s.kind(),
             Self::TileToScanline(s) => s.kind(),
-            Self::TileBlockToTile(s) => s.kind(),
+            Self::TileToTileBlock(s) => s.kind(),
         }
     }
 
@@ -36,7 +36,7 @@ impl Stage for DataTransformNode {
             Self::NeighborhoodAgg(s) => s.ports(),
             Self::ScanLineAccumulator(s) => s.ports(),
             Self::TileToScanline(s) => s.ports(),
-            Self::TileBlockToTile(s) => s.ports(),
+            Self::TileToTileBlock(s) => s.ports(),
         }
     }
 
@@ -45,7 +45,7 @@ impl Stage for DataTransformNode {
             Self::NeighborhoodAgg(s) => s.hints(),
             Self::ScanLineAccumulator(s) => s.hints(),
             Self::TileToScanline(s) => s.hints(),
-            Self::TileBlockToTile(s) => s.hints(),
+            Self::TileToTileBlock(s) => s.hints(),
         }
     }
 
@@ -56,7 +56,7 @@ impl Stage for DataTransformNode {
             Self::NeighborhoodAgg(s) => s.cpu_kernel(),
             Self::ScanLineAccumulator(s) => s.cpu_kernel(),
             Self::TileToScanline(s) => s.cpu_kernel(),
-            Self::TileBlockToTile(s) => s.cpu_kernel(),
+            Self::TileToTileBlock(s) => s.cpu_kernel(),
         }
     }
 }
