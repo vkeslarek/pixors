@@ -3,6 +3,7 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::data::Device;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::error::Error;
@@ -39,6 +40,7 @@ impl Stage for ViewportSink {
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
     }
+    fn device(&self) -> Device { Device::Either }
     fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
         Some(Box::new(ViewportSinkRunner { width: self.width, height: self.height }))
     }

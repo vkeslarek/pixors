@@ -1,5 +1,7 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use crate::data::Device;
+use crate::data_transform::DataTransformNode;
 use crate::error::Error;
 use crate::source::SourceNode;
 use crate::sink::SinkNode;
@@ -10,6 +12,7 @@ use crate::operation::OperationNode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataKind {
     Tile,
+    TileBlock,
     Neighborhood,
     ScanLine,
 }
@@ -98,6 +101,10 @@ pub trait Stage {
     fn kind(&self) -> &'static str;
     fn ports(&self) -> &'static PortSpec;
     fn hints(&self) -> StageHints;
+    /// Tells the pipeline compiler which device this stage runs on and what
+    /// input data it accepts. Stages override this to control Upload/Download
+    /// insertion.
+    fn device(&self) -> Device { Device::Cpu }
     fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
         None
     }
@@ -113,6 +120,7 @@ pub enum StageNode {
     Source(SourceNode),
     Sink(SinkNode),
     Operation(OperationNode),
+    DataTransform(DataTransformNode),
 }
 
 impl Stage for StageNode {
@@ -121,6 +129,7 @@ impl Stage for StageNode {
             Self::Source(n) => n.kind(),
             Self::Sink(n) => n.kind(),
             Self::Operation(n) => n.kind(),
+            Self::DataTransform(n) => n.kind(),
         }
     }
 
@@ -129,6 +138,7 @@ impl Stage for StageNode {
             Self::Source(n) => n.ports(),
             Self::Sink(n) => n.ports(),
             Self::Operation(n) => n.ports(),
+            Self::DataTransform(n) => n.ports(),
         }
     }
 
@@ -137,6 +147,16 @@ impl Stage for StageNode {
             Self::Source(n) => n.hints(),
             Self::Sink(n) => n.hints(),
             Self::Operation(n) => n.hints(),
+            Self::DataTransform(n) => n.hints(),
+        }
+    }
+
+    fn device(&self) -> Device {
+        match self {
+            Self::Source(n) => n.device(),
+            Self::Sink(n) => n.device(),
+            Self::Operation(n) => n.device(),
+            Self::DataTransform(n) => n.device(),
         }
     }
 
@@ -145,6 +165,7 @@ impl Stage for StageNode {
             Self::Source(n) => n.cpu_kernel(),
             Self::Sink(n) => n.cpu_kernel(),
             Self::Operation(n) => n.cpu_kernel(),
+            Self::DataTransform(n) => n.cpu_kernel(),
         }
     }
 

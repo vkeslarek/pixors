@@ -4,8 +4,8 @@ use std::thread;
 
 use pixors_executor::model::image::ImageFile;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
+use pixors_executor::data_transform::{NeighborhoodAgg, ScanLineAccumulator, DataTransformNode};
 use pixors_executor::operation::blur::Blur;
-use pixors_executor::operation::{NeighborhoodAgg, ScanLineAccumulator};
 use pixors_executor::operation::OperationNode;
 use pixors_executor::runtime::pipeline::Pipeline;
 use pixors_executor::sink::tile_sink::{install_tile_sink, TileSink};
@@ -58,16 +58,16 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
     //   → TileSink
     let mut graph = ExecGraph::new();
     let src   = graph.add_stage(StageNode::Source(SourceNode::ImageFile(image.source(0))));
-    let acc   = graph.add_stage(StageNode::Operation(OperationNode::ScanLineAccumulator(
+    let acc   = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
         ScanLineAccumulator { tile_size: TILE_SIZE },
     )));
-    let nbhd1 = graph.add_stage(StageNode::Operation(OperationNode::NeighborhoodAgg(
+    let nbhd1 = graph.add_stage(StageNode::DataTransform(DataTransformNode::NeighborhoodAgg(
         NeighborhoodAgg { radius: BLUR_RADIUS },
     )));
     let blur1 = graph.add_stage(StageNode::Operation(OperationNode::Blur(
         Blur { radius: BLUR_RADIUS },
     )));
-    let nbhd2 = graph.add_stage(StageNode::Operation(OperationNode::NeighborhoodAgg(
+    let nbhd2 = graph.add_stage(StageNode::DataTransform(DataTransformNode::NeighborhoodAgg(
         NeighborhoodAgg { radius: BLUR_RADIUS },
     )));
     let blur2 = graph.add_stage(StageNode::Operation(OperationNode::Blur(

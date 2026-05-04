@@ -8,7 +8,10 @@ const SPACE_MONO_400: &[u8] = include_bytes!("../assets/space-mono-400-latin.ttf
 const SPACE_MONO_700: &[u8] = include_bytes!("../assets/space-mono-700-latin.ttf");
 
 fn main() -> iced::Result {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
     iced::application(App::default, App::update, App::view)
         .title("Pixors Ultra Test")
         .window_size((1280.0, 720.0))

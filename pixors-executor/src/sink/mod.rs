@@ -5,6 +5,7 @@ pub mod viewport;
 
 use serde::{Deserialize, Serialize};
 
+use crate::data::Device;
 use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
 
 use cache_writer::CacheWriter;
@@ -45,6 +46,15 @@ impl Stage for SinkNode {
             Self::TileSink(s) => s.hints(),
             Self::PngEncoder(s) => s.hints(),
             Self::CacheWriter(s) => s.hints(),
+        }
+    }
+
+    fn device(&self) -> Device {
+        match self {
+            Self::Viewport(s) => s.device(),
+            Self::TileSink(s) => s.device(),
+            Self::PngEncoder(s) => s.device(),
+            Self::CacheWriter(s) => s.device(),
         }
     }
 

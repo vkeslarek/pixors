@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Buffer, Tile};
+use crate::data::{Buffer, Device, Tile};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
@@ -38,6 +38,8 @@ impl Stage for Blur {
             prefers_gpu: true,
         }
     }
+
+    fn device(&self) -> Device { Device::Gpu }
 
     fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
         Some(Box::new(BlurCpuRunner::new(self.radius)))

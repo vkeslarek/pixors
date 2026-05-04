@@ -4,6 +4,7 @@ pub mod image_file_source;
 
 use serde::{Deserialize, Serialize};
 
+use crate::data::Device;
 use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
 
 use cache_reader::CacheReader;
@@ -39,6 +40,14 @@ impl Stage for SourceNode {
             Self::ImageFile(s) => s.hints(),
             Self::FileDecoder(s) => s.hints(),
             Self::CacheReader(s) => s.hints(),
+        }
+    }
+
+    fn device(&self) -> Device {
+        match self {
+            Self::ImageFile(s) => s.device(),
+            Self::FileDecoder(s) => s.device(),
+            Self::CacheReader(s) => s.device(),
         }
     }
 
