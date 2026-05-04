@@ -86,7 +86,6 @@ impl Stage for OperationNode {
     fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
         match self {
             Self::Blur(s) => s.gpu_kernel_descriptor(),
-            Self::MipDownsample(s) => s.gpu_kernel_descriptor(),
             _ => None,
         }
     }

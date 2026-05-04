@@ -1,14 +1,25 @@
-// mip_downsample.slang — 2×2 box filter downsample
-// Reads 4 input tiles (top-left, top-right, bottom-left, bottom-right)
-// and writes 1 output tile at half resolution, averaging 4→1 pixels.
+// mip_downsample.slang — 2×2 box filter downsample from 4 tile quadrants
+//
+// Input:  4 buffers (TL, TR, BL, BR) forming a 2×2 tile block.
+// Output: 1 buffer at half resolution.
+//
+// Each output pixel (ox, oy) averages a 2×2 region from the combined
+// source image. The quadrant boundary is at (w0, h0) — the TL tile size.
 
-struct MipParams { uint out_width; uint out_height; uint in00_width; uint in00_height; uint in01_width; uint in01_height; uint in10_width; uint in10_height; uint in11_width; uint in11_height; };
+struct MipParams {
+    uint out_width;
+    uint out_height;
+    uint w0; uint h0;   // TL tile dimensions (= quadrant boundary)
+    uint w1; uint h1;   // TR tile dimensions
+    uint w2; uint h2;   // BL tile dimensions
+    uint w3; uint h3;   // BR tile dimensions
+};
 ParameterBlock<MipParams> params;
 
-StructuredBuffer<uint> src00;
-StructuredBuffer<uint> src01;
-StructuredBuffer<uint> src10;
-StructuredBuffer<uint> src11;
+StructuredBuffer<uint> src_tl;
+StructuredBuffer<uint> src_tr;
+StructuredBuffer<uint> src_bl;
+StructuredBuffer<uint> src_br;
 RWStructuredBuffer<uint> dst;
 
 uint4 unpack_rgba8(uint packed)
@@ -21,11 +32,31 @@ uint pack_rgba8(uint4 c)
     return c.r | (c.g << 8) | (c.b << 16) | (c.a << 24);
 }
 
-uint4 clamp_sample(StructuredBuffer<uint> src, uint x, uint y, uint w, uint h)
+/// Read a pixel from the combined 2×2 block at absolute coordinates (sx, sy).
+/// Routes to the correct tile quadrant and clamps within tile bounds.
+uint4 read_combined(uint sx, uint sy)
 {
-    x = min(x, w - 1u);
-    y = min(y, h - 1u);
-    return unpack_rgba8(src[y * w + x]);
+    if (sy < params.h0) {
+        if (sx < params.w0) {
+            uint cx = min(sx, params.w0 - 1u);
+            uint cy = min(sy, params.h0 - 1u);
+            return unpack_rgba8(src_tl[cy * params.w0 + cx]);
+        } else {
+            uint cx = min(sx - params.w0, params.w1 - 1u);
+            uint cy = min(sy, params.h1 - 1u);
+            return unpack_rgba8(src_tr[cy * params.w1 + cx]);
+        }
+    } else {
+        if (sx < params.w0) {
+            uint cx = min(sx, params.w2 - 1u);
+            uint cy = min(sy - params.h0, params.h2 - 1u);
+            return unpack_rgba8(src_bl[cy * params.w2 + cx]);
+        } else {
+            uint cx = min(sx - params.w0, params.w3 - 1u);
+            uint cy = min(sy - params.h0, params.h3 - 1u);
+            return unpack_rgba8(src_br[cy * params.w3 + cx]);
+        }
+    }
 }
 
 [numthreads(8, 8, 1)]
@@ -33,16 +64,14 @@ void cs_mip_downsample(uint3 gid : SV_DispatchThreadID)
 {
     if (gid.x >= params.out_width || gid.y >= params.out_height) return;
 
-    uint ox = gid.x;
-    uint oy = gid.y;
-    uint sx = ox * 2u;
-    uint sy = oy * 2u;
+    uint sx = gid.x * 2u;
+    uint sy = gid.y * 2u;
 
-    uint4 c00 = clamp_sample(src00, sx, sy, params.in00_width, params.in00_height);
-    uint4 c01 = clamp_sample(src01, sx, sy, params.in01_width, params.in01_height);
-    uint4 c10 = clamp_sample(src10, sx, sy, params.in10_width, params.in10_height);
-    uint4 c11 = clamp_sample(src11, sx, sy, params.in11_width, params.in11_height);
+    uint4 c00 = read_combined(sx,     sy    );
+    uint4 c10 = read_combined(sx + 1u, sy    );
+    uint4 c01 = read_combined(sx,     sy + 1u);
+    uint4 c11 = read_combined(sx + 1u, sy + 1u);
 
-    uint4 avg = (c00 + c01 + c10 + c11) / 4u;
-    dst[oy * params.out_width + ox] = pack_rgba8(avg);
+    uint4 avg = (c00 + c10 + c01 + c11) / 4u;
+    dst[gid.y * params.out_width + gid.x] = pack_rgba8(avg);
 }

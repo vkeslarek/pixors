@@ -4,8 +4,12 @@ use std::thread;
 
 use pixors_executor::model::image::ImageFile;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
-use pixors_executor::data_transform::{NeighborhoodAgg, ScanLineAccumulator, DataTransformNode};
+use pixors_executor::data_transform::{
+    NeighborhoodAgg, ScanLineAccumulator, DataTransformNode,
+};
 use pixors_executor::operation::blur::Blur;
+use pixors_executor::operation::mip_filter::MipFilter;
+use pixors_executor::operation::mip_downsample::MipDownsample;
 use pixors_executor::operation::OperationNode;
 use pixors_executor::runtime::pipeline::Pipeline;
 use pixors_executor::sink::tile_sink::{install_tile_sink, TileSink};
@@ -53,34 +57,34 @@ pub fn open_and_run(pending: &Arc<PendingTileWrites>) -> Result<(u32, u32, PathB
     //   → ScanLineAccumulator(Tile)
     //   → NeighborhoodAgg(Neighborhood)
     //   → Blur(Tile)
-    //   → NeighborhoodAgg(Neighborhood)
-    //   → Blur(Tile)
+    //   → MipDownsample(Tile) — generates all MIP levels internally
+    //   → MipFilter(Tile, mip=0)
     //   → TileSink
     let mut graph = ExecGraph::new();
-    let src   = graph.add_stage(StageNode::Source(SourceNode::ImageFile(image.source(0))));
-    let acc   = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
+    let src    = graph.add_stage(StageNode::Source(SourceNode::ImageFile(image.source(0))));
+    let acc    = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
         ScanLineAccumulator { tile_size: TILE_SIZE },
     )));
-    let nbhd1 = graph.add_stage(StageNode::DataTransform(DataTransformNode::NeighborhoodAgg(
+    let nbhd   = graph.add_stage(StageNode::DataTransform(DataTransformNode::NeighborhoodAgg(
         NeighborhoodAgg { radius: BLUR_RADIUS },
     )));
-    let blur1 = graph.add_stage(StageNode::Operation(OperationNode::Blur(
+    let blur   = graph.add_stage(StageNode::Operation(OperationNode::Blur(
         Blur { radius: BLUR_RADIUS },
     )));
-    let nbhd2 = graph.add_stage(StageNode::DataTransform(DataTransformNode::NeighborhoodAgg(
-        NeighborhoodAgg { radius: BLUR_RADIUS },
+    let mip    = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
+        MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
     )));
-    let blur2 = graph.add_stage(StageNode::Operation(OperationNode::Blur(
-        Blur { radius: BLUR_RADIUS },
+    let filter = graph.add_stage(StageNode::Operation(OperationNode::MipFilter(
+        MipFilter { mip_level: 0 },
     )));
-    let sink  = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
+    let sink   = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
 
-    graph.add_edge(src,   acc,   EdgePorts::default());
-    graph.add_edge(acc,   nbhd1, EdgePorts::default());
-    graph.add_edge(nbhd1, blur1, EdgePorts::default());
-    graph.add_edge(blur1, nbhd2, EdgePorts::default());
-    graph.add_edge(nbhd2, blur2, EdgePorts::default());
-    graph.add_edge(blur2, sink,  EdgePorts::default());
+    graph.add_edge(src,    acc,    EdgePorts::default());
+    graph.add_edge(acc,    nbhd,   EdgePorts::default());
+    graph.add_edge(nbhd,   blur,   EdgePorts::default());
+    graph.add_edge(blur,   mip,    EdgePorts::default());
+    graph.add_edge(mip,    filter, EdgePorts::default());
+    graph.add_edge(filter, sink,   EdgePorts::default());
     graph.outputs.push((sink, 0));
 
     let pipeline = Pipeline::compile(&graph).map_err(|e| e.to_string())?;

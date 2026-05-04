@@ -65,6 +65,12 @@ pub trait CpuKernel: Send {
     ) -> Result<(), Error> {
         Ok(())
     }
+    /// When true, the GPU chain runner will NOT download GPU items to CPU
+    /// before calling `process()`. The kernel is responsible for handling
+    /// both GPU and CPU buffers internally.
+    fn handles_gpu_items(&self) -> bool {
+        false
+    }
 }
 
 // ── GpuKernelDescriptor ────────────────────────────────────────────────────────

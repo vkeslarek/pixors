@@ -89,8 +89,9 @@ fn run_chain(
                 }
             }
             ChainStep::Cpu(kernel) => {
+                let needs_cpu = !kernel.handles_gpu_items();
                 for it in current {
-                    let it = ensure_cpu(it, ctx)?;
+                    let it = if needs_cpu { ensure_cpu(it, ctx)? } else { it };
                     let mut emit = Emitter::new();
                     kernel.process(it, &mut emit)?;
                     next.extend(emit.into_items());
