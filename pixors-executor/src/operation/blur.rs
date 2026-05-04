@@ -12,7 +12,8 @@ use crate::stage::{
     Stage, StageHints,
 };
 
-const BLUR_SPIRV: &[u8] = include_bytes!("../../kernels/blur.spv");
+const BLUR_SPIRV: &[u8] =
+    include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
 
 static BLUR_INPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
 static BLUR_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
@@ -58,11 +59,12 @@ impl Stage for Blur {
                     crate::graph::item::Item::Neighborhood(n) => n,
                     _ => return,
                 };
-                // Shader expects **padded** dimensions (center + 2*radius).
+                let mip_level = nbhd.center.mip_level;
+                let effective_radius = radius >> mip_level;
                 let params = BlurParams {
-                    width: nbhd.center.width + 2 * radius,
-                    height: nbhd.center.height + 2 * radius,
-                    radius,
+                    width: nbhd.center.width + 2 * effective_radius,
+                    height: nbhd.center.height + 2 * effective_radius,
+                    radius: effective_radius,
                     _pad: 0,
                 };
                 dst.copy_from_slice(bytemuck::bytes_of(&params));
@@ -116,12 +118,23 @@ impl CpuKernel for BlurCpuRunner {
             _ => return Err(Error::internal("expected Neighborhood")),
         };
 
+        let mip_level = nbhd.center.mip_level;
+        let effective_radius = self.radius >> mip_level;
+
         let cx = nbhd.center.px;
         let cy = nbhd.center.py;
         let cw = nbhd.center.width;
         let ch = nbhd.center.height;
-        let r = self.radius;
+        let r = effective_radius;
         let bpp = 4usize;
+
+        if r == 0 {
+            if let Some(center_tile) = nbhd.tile_at(nbhd.center.tx, nbhd.center.ty) {
+                let data = center_tile.data.as_cpu_slice().unwrap();
+                emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, Buffer::cpu(data.to_vec()))));
+            }
+            return Ok(());
+        }
 
         let rw = (cw + 2 * r) as usize;
         let rh = (ch + 2 * r) as usize;

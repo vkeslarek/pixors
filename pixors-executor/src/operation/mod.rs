@@ -1,6 +1,7 @@
 pub mod blur;
 pub mod color;
 pub mod composition;
+pub mod mip_filter;
 pub mod transfer;
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
 
 use blur::Blur;
 use color::ColorConvert;
+use mip_filter::MipFilter;
 use transfer::Download;
 use transfer::Upload;
 
@@ -18,6 +20,7 @@ use transfer::Upload;
 pub enum OperationNode {
     Blur(Blur),
     ColorConvert(ColorConvert),
+    MipFilter(MipFilter),
     Upload(Upload),
     Download(Download),
 }
@@ -27,6 +30,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.kind(),
             Self::ColorConvert(s) => s.kind(),
+            Self::MipFilter(s) => s.kind(),
             Self::Upload(s) => s.kind(),
             Self::Download(s) => s.kind(),
         }
@@ -36,6 +40,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.ports(),
             Self::ColorConvert(s) => s.ports(),
+            Self::MipFilter(s) => s.ports(),
             Self::Upload(s) => s.ports(),
             Self::Download(s) => s.ports(),
         }
@@ -45,6 +50,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.hints(),
             Self::ColorConvert(s) => s.hints(),
+            Self::MipFilter(s) => s.hints(),
             Self::Upload(s) => s.hints(),
             Self::Download(s) => s.hints(),
         }
@@ -54,6 +60,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.device(),
             Self::ColorConvert(s) => s.device(),
+            Self::MipFilter(s) => s.device(),
             Self::Upload(s) => s.device(),
             Self::Download(s) => s.device(),
         }
@@ -63,6 +70,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.cpu_kernel(),
             Self::ColorConvert(s) => s.cpu_kernel(),
+            Self::MipFilter(s) => s.cpu_kernel(),
             Self::Upload(s) => s.cpu_kernel(),
             Self::Download(s) => s.cpu_kernel(),
         }
