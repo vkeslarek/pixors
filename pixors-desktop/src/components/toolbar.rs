@@ -1,4 +1,4 @@
-use crate::ui::theme::{
+use crate::theme::{
     ACCENT, ACCENT_DIM, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY,
     TEXT_SECONDARY, TOOLBAR_W,
 };
@@ -100,7 +100,7 @@ fn tool_btn(t: Tool, active: bool) -> Element<'static, Msg> {
     let inner = container(
         text(t.icon())
             .size(18)
-            .font(crate::ui::icons::LUCIDE)
+            .font(crate::icons::LUCIDE)
             .color(icon_color)
             .center(),
     )
@@ -123,7 +123,7 @@ fn tool_btn(t: Tool, active: bool) -> Element<'static, Msg> {
                         Color::TRANSPARENT
                     };
                     let border_color = if active {
-                        crate::ui::theme::ACCENT_GLOW
+                        crate::theme::ACCENT_GLOW
                     } else {
                         Color::TRANSPARENT
                     };
@@ -142,7 +142,7 @@ fn tool_btn(t: Tool, active: bool) -> Element<'static, Msg> {
     )
     .width(Length::Shrink);
 
-    crate::ui::widgets::tooltip(btn, t.label(), iced::widget::tooltip::Position::Right)
+    crate::widgets::tooltip(btn, t.label(), iced::widget::tooltip::Position::Right)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -185,7 +185,7 @@ impl Tool {
     }
 
     pub fn icon(&self) -> &'static str {
-        use crate::ui::icons;
+        use crate::icons;
         match self {
             Tool::Move => icons::MOVE,
             Tool::Select => icons::SQUARE,

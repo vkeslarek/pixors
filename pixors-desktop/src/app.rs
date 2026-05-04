@@ -1,16 +1,18 @@
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Element, Length, Subscription};
+use pixors_executor::source::TileRange;
 
-use crate::ui::components::{
+use crate::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
     workspace_bar,
 };
-use crate::ui::components::toolbar::Tool;
-use crate::viewport::program::PendingTileWrites;
+use crate::components::toolbar::Tool;
+use crate::viewport::tile_cache::ViewportCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -46,10 +48,12 @@ pub struct App {
     pub progress: f32,
     pub progress_dir: f32,
     pub errors: Vec<(String, std::time::Instant)>,
-    pub pending_writes: Arc<PendingTileWrites>,
-    /// Incremented each tick while tiles are arriving. Forces Iced to
-    /// re-evaluate the view so the shader's prepare() drains and uploads them.
+    pub cache: Option<Arc<Mutex<ViewportCache>>>,
     pub tile_generation: u64,
+    /// Written by ViewportProgram when MIP changes; read here to trigger disk fetch.
+    pub mip_fetch_signal: Arc<Mutex<Option<(u32, TileRange)>>>,
+    pub cache_dir: Option<PathBuf>,
+    pub image_dims: Option<(u32, u32)>,
 }
 
 impl Default for App {
@@ -74,8 +78,11 @@ impl Default for App {
             progress: 0.0,
             progress_dir: 1.0,
             errors: Vec::new(),
-            pending_writes: PendingTileWrites::new(),
+            cache: Some(ViewportCache::new()),
             tile_generation: 0,
+            mip_fetch_signal: Arc::new(Mutex::new(None)),
+            cache_dir: None,
+            image_dims: None,
         }
     }
 }
@@ -173,10 +180,12 @@ impl App {
 
     fn open_file_dialog(&mut self) {
         self.loading = true;
-        match crate::ui::file_ops::open_and_run(&self.pending_writes, None) {
+        match crate::file_ops::open_and_run(self.cache.clone()) {
             Ok((w, h, path)) => {
                 self.status.canvas_w = w;
                 self.status.canvas_h = h;
+                self.cache_dir = Some(path.with_extension("pixors_cache"));
+                self.image_dims = Some((w, h));
                 self.push_error(format!(
                     "OK {}×{} — {}",
                     w,
@@ -206,12 +215,16 @@ impl App {
         }
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        // If tiles are queued by the background pipeline, bump tile_generation
-        // so Iced sees a state change and re-renders, causing prepare() to drain
-        // and upload the new tiles to the GPU texture.
-        use std::sync::atomic::Ordering;
-        if self.pending_writes.has_pending.load(Ordering::Relaxed) {
-            self.tile_generation = self.tile_generation.wrapping_add(1);
+        if let Some(ref cache) = self.cache {
+            if cache.lock().map_or(false, |g| g.has_pending()) {
+                self.tile_generation = self.tile_generation.wrapping_add(1);
+            }
+        }
+
+        if let Ok(mut sig) = self.mip_fetch_signal.lock() {
+            if let Some((mip, range)) = sig.take() {
+                self.fetch_mip_from_cache(mip, range);
+            }
         }
     }
 
@@ -247,6 +260,28 @@ impl App {
         }
     }
 
+    fn fetch_mip_from_cache(&self, mip: u32, range: TileRange) {
+        let Some(ref cache_dir) = self.cache_dir else { return; };
+        let Some((img_w, img_h)) = self.image_dims else { return; };
+        let Some(ref vp_cache) = self.cache else { return; };
+
+        // Skip fetch if all visible tiles are already in RAM.
+        if let Ok(guard) = vp_cache.lock() {
+            if guard.has_mip(mip) {
+                return;
+            }
+        }
+
+        crate::file_ops::fetch_mip(
+            cache_dir,
+            mip,
+            range,
+            img_w,
+            img_h,
+            vp_cache.clone(),
+        );
+    }
+
     fn push_error(&mut self, msg: String) {
         self.errors.push((msg, std::time::Instant::now()));
     }
@@ -254,10 +289,10 @@ impl App {
     pub fn view(&self) -> Element<'_, Msg> {
         let active_page = match self.workspace.active {
             workspace_bar::Workspace::Editor => {
-                crate::ui::pages::editor::view(self)
+                crate::pages::editor::view(self)
             }
-            workspace_bar::Workspace::Library => crate::ui::pages::library::view(),
-            workspace_bar::Workspace::Darkroom => crate::ui::pages::darkroom::view(),
+            workspace_bar::Workspace::Library => crate::pages::library::view(),
+            workspace_bar::Workspace::Darkroom => crate::pages::darkroom::view(),
         };
 
         let content = column![
@@ -288,14 +323,14 @@ impl App {
                     .width(Length::FillPortion(pct))
                     .height(Length::Fill)
                     .style(|_| container::Style {
-                        background: Some(Background::Color(crate::ui::theme::OK_GREEN)),
+                        background: Some(Background::Color(crate::theme::OK_GREEN)),
                         ..Default::default()
                     }),
             )
             .width(Length::Fill)
             .height(3)
             .style(|_| container::Style {
-                background: Some(Background::Color(crate::ui::theme::BG_BASE)),
+                background: Some(Background::Color(crate::theme::BG_BASE)),
                 ..Default::default()
             })
             .into()
@@ -317,19 +352,19 @@ impl App {
                     row![
                         iced::widget::text("\u{26a0}")
                             .size(14)
-                            .color(crate::ui::theme::ACCENT),
+                            .color(crate::theme::ACCENT),
                         iced::widget::text(msg.as_str())
                             .size(11)
-                            .color(crate::ui::theme::TEXT_SECONDARY),
+                            .color(crate::theme::TEXT_SECONDARY),
                     ]
                     .spacing(8)
                     .align_y(iced::Alignment::Center),
                 )
                 .padding([8, 12])
                 .style(|_| container::Style {
-                    background: Some(Background::Color(crate::ui::theme::BG_ELEVATED)),
+                    background: Some(Background::Color(crate::theme::BG_ELEVATED)),
                     border: iced::Border {
-                        color: crate::ui::theme::ACCENT_DIM,
+                        color: crate::theme::ACCENT_DIM,
                         width: 1.0,
                         radius: 6.0.into(),
                     },

@@ -2,7 +2,7 @@ use iced::border::Radius;
 use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::theme::{
+use crate::theme::{
     ACCENT, BG_BASE, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE,
     TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
@@ -141,9 +141,9 @@ fn tab_view<'a>(
         .color(if is_active { TEXT_PRIMARY } else { TEXT_MUTED });
 
     let close = button(
-        text(crate::ui::icons::X)
+        text(crate::icons::X)
             .size(12)
-            .font(crate::ui::icons::LUCIDE)
+            .font(crate::icons::LUCIDE)
             .color(TEXT_SECONDARY)
             .center(),
     )
@@ -183,9 +183,9 @@ fn tab_view<'a>(
             } else if is_dragged {
                 Color::from_rgba(ACCENT.r, ACCENT.g, ACCENT.b, 0.10)
             } else if is_active {
-                crate::ui::theme::BG_ACTIVE
+                crate::theme::BG_ACTIVE
             } else if is_hovered {
-                crate::ui::theme::BG_HOVER
+                crate::theme::BG_HOVER
             } else {
                 Color::TRANSPARENT
             };

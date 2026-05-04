@@ -1,7 +1,7 @@
 use iced::widget::{container, pane_grid, row};
 use iced::{Background, Border, Color, Length};
 
-use crate::ui::theme::{ACCENT, BG_BASE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY};
+use crate::theme::{ACCENT, BG_BASE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY};
 
 pub fn title_bar<'a, Msg: Clone + 'a>(
     title: &'a str,
@@ -9,9 +9,9 @@ pub fn title_bar<'a, Msg: Clone + 'a>(
 ) -> pane_grid::TitleBar<'a, Msg> {
     let header = container(
         row![
-            iced::widget::text(crate::ui::icons::GRIP_VERTICAL)
+            iced::widget::text(crate::icons::GRIP_VERTICAL)
                 .size(12)
-                .font(crate::ui::icons::LUCIDE)
+                .font(crate::icons::LUCIDE)
                 .color(TEXT_MUTED),
             iced::widget::text(title).size(11).color(ACCENT),
         ]
@@ -21,12 +21,12 @@ pub fn title_bar<'a, Msg: Clone + 'a>(
     )
     .align_y(iced::alignment::Vertical::Center);
 
-    let header = crate::ui::widgets::ghost_width::GhostWidth::new(header);
+    let header = crate::widgets::ghost_width::GhostWidth::new(header);
 
     let close = iced::widget::button(
-        iced::widget::text(crate::ui::icons::X)
+        iced::widget::text(crate::icons::X)
             .size(12)
-            .font(crate::ui::icons::LUCIDE)
+            .font(crate::icons::LUCIDE)
             .color(TEXT_MUTED),
     )
     .on_press(on_close)

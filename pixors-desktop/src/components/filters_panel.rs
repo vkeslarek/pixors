@@ -1,10 +1,10 @@
 use iced::widget::{button, column, container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::theme::{
+use crate::theme::{
     ACCENT, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY,
 };
-use crate::ui::widgets::panel_header;
+use crate::widgets::panel_header;
 
 #[derive(Debug, Clone)]
 pub enum Msg {

@@ -6,7 +6,7 @@ use iced_aw::style::menu_bar::primary;
 use iced_aw::style::status::Status;
 use iced_aw::{menu_bar, menu_items};
 
-use crate::ui::theme::{
+use crate::theme::{
     ACCENT, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE, MENUBAR_H,
     TEXT_PRIMARY, TEXT_SECONDARY,
 };
@@ -126,7 +126,7 @@ fn item(
     } else {
         row![
             text(label).size(12).color(TEXT_SECONDARY).width(Length::Fill),
-            text(shortcut).size(11).color(crate::ui::theme::TEXT_MUTED),
+            text(shortcut).size(11).color(crate::theme::TEXT_MUTED),
         ]
         .align_y(iced::Alignment::Center)
         .into()

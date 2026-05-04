@@ -1,7 +1,7 @@
 use iced::widget::{button, column, container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::theme::{ACCENT, BG_ELEVATED, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY};
+use crate::theme::{ACCENT, BG_ELEVATED, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY};
 
 #[derive(Debug, Clone)]
 pub enum Msg {

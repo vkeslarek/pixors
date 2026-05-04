@@ -9,13 +9,13 @@ pub fn tooltip<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     iced::widget::tooltip(
         content,
-        container(text(tip.into()).size(10).color(crate::ui::theme::TEXT_PRIMARY))
+        container(text(tip.into()).size(10).color(crate::theme::TEXT_PRIMARY))
             .padding([3, 6])
             .style(|_| container::Style {
-                background: Some(Background::Color(crate::ui::theme::BG_ELEVATED)),
+                background: Some(Background::Color(crate::theme::BG_ELEVATED)),
                 border: Border {
                     radius: 4.0.into(),
-                    color: crate::ui::theme::BORDER,
+                    color: crate::theme::BORDER,
                     width: 1.0,
                 },
                 ..Default::default()

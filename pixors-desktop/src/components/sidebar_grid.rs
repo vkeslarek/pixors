@@ -1,8 +1,8 @@
 use iced::widget::{container, pane_grid, PaneGrid};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::app::{Msg, PaneKind};
-use crate::ui::theme::{ACCENT, BG_SURFACE, BORDER_SUBTLE, SIDEBAR_W};
+use crate::app::{Msg, PaneKind};
+use crate::theme::{ACCENT, BG_SURFACE, BORDER_SUBTLE, SIDEBAR_W};
 
 pub fn view<'a>(
     panes: &'a pane_grid::State<PaneKind>,

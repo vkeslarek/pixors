@@ -1,15 +1,15 @@
 use iced::widget::{container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::theme::{BG_BASE, BORDER_SUBTLE, PANEL_HEADER_H, TEXT_MUTED, TEXT_SECONDARY};
+use crate::theme::{BG_BASE, BORDER_SUBTLE, PANEL_HEADER_H, TEXT_MUTED, TEXT_SECONDARY};
 
 pub fn panel_header<'a, Msg: 'a + Clone>(
     title: &'a str,
     on_close: Option<Msg>,
 ) -> Element<'a, Msg> {
-    let drag = text(crate::ui::icons::GRIP_VERTICAL)
+    let drag = text(crate::icons::GRIP_VERTICAL)
         .size(12)
-        .font(crate::ui::icons::LUCIDE)
+        .font(crate::icons::LUCIDE)
         .color(TEXT_MUTED);
     let title_el = text(title.to_uppercase())
         .size(11)
@@ -19,9 +19,9 @@ pub fn panel_header<'a, Msg: 'a + Clone>(
 
     if let Some(msg) = on_close {
         let close = iced::widget::button(
-            text(crate::ui::icons::X)
+            text(crate::icons::X)
                 .size(12)
-                .font(crate::ui::icons::LUCIDE)
+                .font(crate::icons::LUCIDE)
                 .color(TEXT_MUTED),
         )
             .on_press(msg)

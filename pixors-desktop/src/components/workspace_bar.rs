@@ -1,7 +1,7 @@
 use iced::widget::{button, column, container, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::theme::{
+use crate::theme::{
     self, ACCENT, BG_BASE, BG_HOVER, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY,
     WORKSPACE_BAR_W,
 };
@@ -36,8 +36,8 @@ impl State {
             .collect();
 
         let footer_items: Vec<Element<Msg>> = vec![
-            footer_btn(crate::ui::icons::SETTINGS),
-            footer_btn(crate::ui::icons::HELP),
+            footer_btn(crate::icons::SETTINGS),
+            footer_btn(crate::icons::HELP),
         ];
 
         let layout = column![
@@ -74,7 +74,7 @@ fn ws_btn(ws: Workspace, is_active: bool) -> Element<'static, Msg> {
     };
     let icon = text(ws.icon())
         .size(20)
-        .font(crate::ui::icons::LUCIDE)
+        .font(crate::icons::LUCIDE)
         .color(icon_color)
         .center();
 
@@ -116,7 +116,7 @@ fn footer_btn(label: &'static str) -> Element<'static, Msg> {
         container(
             text(label)
                 .size(16)
-                .font(crate::ui::icons::LUCIDE)
+                .font(crate::icons::LUCIDE)
                 .color(TEXT_MUTED)
                 .center(),
         )
@@ -157,7 +157,7 @@ impl Workspace {
     }
 
     pub fn icon(&self) -> &'static str {
-        use crate::ui::icons;
+        use crate::icons;
         match self {
             Workspace::Library => icons::IMAGES,
             Workspace::Darkroom => icons::SUN,

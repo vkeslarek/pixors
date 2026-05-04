@@ -1,20 +1,21 @@
 use iced::widget::{container, pane_grid, row};
 use iced::{Background, Element, Length};
 
-use crate::ui::app::{App, Msg, PaneKind};
-use crate::ui::theme::BG_SURFACE;
+use crate::app::{App, Msg, PaneKind};
+use crate::theme::BG_SURFACE;
 
 pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     row![
         app.tools.view().map(Msg::Toolbar),
-        crate::ui::components::viewport::view(
+        crate::components::viewport::view(
             app.tabs.view().map(Msg::TabBar),
             app.status.canvas_w,
             app.status.canvas_h,
-            app.pending_writes.clone(),
+            app.cache.clone(),
             app.tile_generation,
+            app.mip_fetch_signal.clone(),
         ),
-        crate::ui::components::sidebar_grid::view(
+        crate::components::sidebar_grid::view(
             &app.panes,
             |pane, kind| pane_content(app, pane, kind)
         ),
@@ -37,7 +38,7 @@ fn pane_content<'a>(
         PaneKind::Filters => "FILTERS",
     };
 
-    let title_bar = crate::ui::components::panel::title_bar(label, Msg::ClosePane(pane));
+    let title_bar = crate::components::panel::title_bar(label, Msg::ClosePane(pane));
 
     let body = container(body)
         .width(Length::Fill)

@@ -1,19 +1,23 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use iced::widget::{column, container, shader as shader_widget, stack};
 use iced::{Background, Color, Element, Length};
 
-use crate::viewport::program::{PendingTileWrites, ViewportProgram};
-use crate::ui::widgets::pill;
+use pixors_executor::source::TileRange;
+
+use crate::viewport::program::ViewportProgram;
+use crate::viewport::tile_cache::ViewportCache;
+use crate::widgets::pill;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,
     canvas_w: u32,
     canvas_h: u32,
-    pending_writes: Arc<PendingTileWrites>,
+    cache: Option<Arc<Mutex<ViewportCache>>>,
     tile_generation: u64,
+    mip_fetch_signal: Arc<Mutex<Option<(u32, TileRange)>>>,
 ) -> Element<'a, Msg> {
-    let program = ViewportProgram { pending_writes, tile_generation };
+    let program = ViewportProgram { cache, tile_generation, mip_fetch_signal };
 
     let canvas_bg = shader_widget(program)
         .width(Length::Fill)

@@ -2,6 +2,7 @@ pub mod cache_writer;
 pub mod png_encoder;
 pub mod tile_sink;
 pub mod viewport;
+pub mod viewport_cache_sink;
 
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +13,7 @@ pub use cache_writer::CacheWriter;
 use png_encoder::PngEncoder;
 use tile_sink::TileSink;
 use viewport::ViewportSink;
+pub use viewport_cache_sink::ViewportCacheSink;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SinkNode {
@@ -19,6 +21,7 @@ pub enum SinkNode {
     TileSink(TileSink),
     PngEncoder(PngEncoder),
     CacheWriter(CacheWriter),
+    ViewportCacheSink(ViewportCacheSink),
 }
 
 impl Stage for SinkNode {
@@ -28,6 +31,7 @@ impl Stage for SinkNode {
             Self::TileSink(s) => s.kind(),
             Self::PngEncoder(s) => s.kind(),
             Self::CacheWriter(s) => s.kind(),
+            Self::ViewportCacheSink(s) => s.kind(),
         }
     }
 
@@ -37,6 +41,7 @@ impl Stage for SinkNode {
             Self::TileSink(s) => s.ports(),
             Self::PngEncoder(s) => s.ports(),
             Self::CacheWriter(s) => s.ports(),
+            Self::ViewportCacheSink(s) => s.ports(),
         }
     }
 
@@ -46,6 +51,7 @@ impl Stage for SinkNode {
             Self::TileSink(s) => s.hints(),
             Self::PngEncoder(s) => s.hints(),
             Self::CacheWriter(s) => s.hints(),
+            Self::ViewportCacheSink(s) => s.hints(),
         }
     }
 
@@ -55,6 +61,7 @@ impl Stage for SinkNode {
             Self::TileSink(s) => s.device(),
             Self::PngEncoder(s) => s.device(),
             Self::CacheWriter(s) => s.device(),
+            Self::ViewportCacheSink(s) => s.device(),
         }
     }
 
@@ -64,6 +71,7 @@ impl Stage for SinkNode {
             Self::TileSink(s) => s.cpu_kernel(),
             Self::PngEncoder(s) => s.cpu_kernel(),
             Self::CacheWriter(s) => s.cpu_kernel(),
+            Self::ViewportCacheSink(s) => s.cpu_kernel(),
         }
     }
 

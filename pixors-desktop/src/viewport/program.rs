@@ -1,102 +1,22 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use iced::widget::shader;
 use iced::{Event, Point, Rectangle, Size};
 use iced::mouse;
+use pixors_executor::source::TileRange;
 
 use crate::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
+use crate::viewport::tile_cache::ViewportCache;
+
+pub const TILE_SIZE: u32 = 256;
 
 pub struct ViewportProgram {
-    pub pending_writes: Arc<PendingTileWrites>,
-    /// Passed from App::tile_generation. Changes each tick while tiles are in
-    /// flight, ensuring Iced sees the program as modified and calls prepare().
+    pub cache: Option<Arc<Mutex<ViewportCache>>>,
     pub tile_generation: u64,
-}
-
-pub struct PendingTileWrites {
-    pub queue: Mutex<Vec<PendingTile>>,
-    pub realloc: Mutex<Option<(u32, u32)>>,
-    pub new_img: Mutex<Option<(u32, u32)>>,
-    /// Set to true when tiles are queued; cleared when drained. Used by the
-    /// app to detect pending work and force a re-render tick.
-    pub has_pending: AtomicBool,
-}
-
-impl PendingTileWrites {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            queue: Mutex::new(Vec::new()),
-            realloc: Mutex::new(None),
-            new_img: Mutex::new(None),
-            has_pending: AtomicBool::new(false),
-        })
-    }
-
-    pub fn signal_realloc(&self, w: u32, h: u32) {
-        *self.realloc.lock().unwrap() = Some((w, h));
-    }
-
-    pub(super) fn take_new_img(&self) -> Option<(u32, u32)> {
-        self.new_img.lock().unwrap().take()
-    }
-
-    pub fn push_tile(&self, tile: PendingTile) {
-        self.queue.lock().unwrap().push(tile);
-        self.has_pending.store(true, Ordering::Relaxed);
-    }
-
-    /// Takes the pending realloc dimensions if any.
-    pub(super) fn take_realloc(&self) -> Option<(u32, u32)> {
-        self.realloc.lock().unwrap().take()
-    }
-
-    /// Drains all queued tiles. Lock is released before the Vec is returned.
-    pub(super) fn drain_tiles(&self) -> Vec<PendingTile> {
-        let tiles = self.queue.lock().unwrap().drain(..).collect::<Vec<_>>();
-        if tiles.is_empty() {
-            self.has_pending.store(false, Ordering::Relaxed);
-        }
-        tiles
-    }
-
-    /// Tile an RGBA8 image and enqueue all tiles for GPU upload.
-    pub fn load_image(&self, rgba: &[u8], w: u32, h: u32) {
-        const TILE: u32 = 256;
-        self.signal_realloc(w, h);
-        *self.new_img.lock().unwrap() = Some((w, h));
-        let stride = w as usize * 4;
-        for ty in 0..h.div_ceil(TILE) {
-            for tx in 0..w.div_ceil(TILE) {
-                let px = tx * TILE;
-                let py = ty * TILE;
-                let tw = (w - px).min(TILE) as usize;
-                let th = (h - py).min(TILE) as usize;
-                let mut bytes = vec![0u8; tw * th * 4];
-                for row in 0..th {
-                    let src = (py as usize + row) * stride + px as usize * 4;
-                    let dst = row * tw * 4;
-                    bytes[dst..dst + tw * 4].copy_from_slice(&rgba[src..src + tw * 4]);
-                }
-                self.push_tile(PendingTile {
-                    px,
-                    py,
-                    tile_w: tw as u32,
-                    tile_h: th as u32,
-                    bytes,
-                });
-            }
-        }
-    }
-}
-
-pub struct PendingTile {
-    pub px: u32,
-    pub py: u32,
-    pub tile_w: u32,
-    pub tile_h: u32,
-    pub bytes: Vec<u8>,
+    /// Set by update() when MIP changes: (mip_level, visible_tile_range).
+    /// App polls this on each tick to trigger a disk fetch if needed.
+    pub mip_fetch_signal: Arc<Mutex<Option<(u32, TileRange)>>>,
 }
 
 impl<Msg> shader::Program<Msg> for ViewportProgram {
@@ -110,8 +30,8 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         _bounds: Rectangle,
     ) -> Self::Primitive {
         ViewportPrimitive {
-            camera: state.camera.to_uniform(),
-            pending_writes: self.pending_writes.clone(),
+            camera: state.camera.to_uniform(state.current_mip),
+            cache: self.cache.clone(),
         }
     }
 
@@ -122,11 +42,15 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<shader::Action<Msg>> {
-        // New image loaded — update camera dims and re-fit regardless of bounds change.
-        if let Some((img_w, img_h)) = self.pending_writes.take_new_img() {
-            state.camera.img_w = img_w as f32;
-            state.camera.img_h = img_h as f32;
-            state.camera.fit();
+        if let Some(ref cache) = self.cache {
+            if let Ok(mut guard) = cache.lock() {
+                if let Some((img_w, img_h)) = guard.take_new_img() {
+                    state.camera.img_w = img_w as f32;
+                    state.camera.img_h = img_h as f32;
+                    state.camera.fit();
+                    state.current_mip = state.camera.visible_mip_level();
+                }
+            }
         }
 
         let size = Size::new(bounds.width, bounds.height);
@@ -135,11 +59,14 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             if !state.fitted {
                 state.camera.fit();
                 state.fitted = true;
+                state.current_mip = state.camera.visible_mip_level();
             }
             state.last_bounds = Some(size);
         }
 
-        match event {
+        let old_mip = state.current_mip;
+
+        let action = match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if cursor.position_in(bounds).is_some() {
                     state.dragging = true;
@@ -169,20 +96,35 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 if cursor.position_in(bounds).is_some() {
-                    // Normalize to "steps": 1 mouse wheel click = 1 step, trackpad pixels / 16.
                     let steps = match delta {
                         mouse::ScrollDelta::Lines { y, .. } => *y,
                         mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
                     };
                     let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
-                    let pos = cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
+                    let pos =
+                        cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
                     state.camera.zoom_at(factor, pos.x, pos.y);
+                    state.current_mip = state.camera.visible_mip_level();
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
                     None
                 }
             }
             _ => None,
+        };
+
+        if state.current_mip != old_mip {
+            tracing::info!(
+                "[pixors] viewport: MIP changed {} → {}",
+                old_mip,
+                state.current_mip,
+            );
+            // Signal app to fetch only the visible tiles for the new MIP from disk.
+            let range = state.camera.visible_tile_range(state.current_mip, TILE_SIZE);
+            *self.mip_fetch_signal.lock().unwrap() = Some((state.current_mip, range));
+            Some(shader::Action::request_redraw().and_capture())
+        } else {
+            action
         }
     }
 
@@ -202,6 +144,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
 pub struct ViewportState {
     pub(super) camera: Camera,
+    pub(super) current_mip: u32,
     dragging: bool,
     fitted: bool,
     last_pos: Option<Point>,
@@ -212,6 +155,7 @@ impl Default for ViewportState {
     fn default() -> Self {
         Self {
             camera: Camera::new(1.0, 1.0),
+            current_mip: 0,
             dragging: false,
             fitted: false,
             last_pos: None,

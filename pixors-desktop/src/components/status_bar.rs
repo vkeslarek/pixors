@@ -1,11 +1,11 @@
 use iced::widget::{container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::ui::theme::{
+use crate::theme::{
     ACCENT, BG_SURFACE, BORDER_SUBTLE, OK_GREEN, STATUSBAR_H, TEXT_MUTED,
     TEXT_SECONDARY,
 };
-use crate::ui::components::toolbar::Tool;
+use crate::components::toolbar::Tool;
 
 #[derive(Debug, Clone)]
 pub struct State {

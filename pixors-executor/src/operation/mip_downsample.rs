@@ -177,20 +177,20 @@ impl MipDownsampleRunner {
                     TileGridPos { mip_level: mip, tx: tx_tl,     ty: ty_tl + 1 },
                     TileGridPos { mip_level: mip, tx: tx_tl + 1, ty: ty_tl + 1 },
                 ];
-                let mut present: Vec<Tile> = slots.iter()
-                    .filter_map(|k| self.grid.remove(k))
-                    .collect();
-                if present.is_empty() { continue; }
 
-                // Pad missing slots by clamping (repeat the first tile).
-                let filler = present[0].clone();
-                while present.len() < 4 {
-                    present.push(filler.clone());
-                }
+                // Find any present tile to use as filler for missing slots.
+                let filler_key = slots.iter().find(|k| self.grid.contains_key(k));
+                let Some(filler_key) = filler_key else { continue; };
+                let filler = self.grid.get(filler_key).unwrap().clone();
+
+                // Place each tile in its correct slot, filler for absent ones.
                 let tiles: [Tile; 4] = [
-                    present.remove(0), present.remove(0),
-                    present.remove(0), present.remove(0),
+                    self.grid.remove(&slots[0]).unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[1]).unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[2]).unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[3]).unwrap_or_else(|| filler.clone()),
                 ];
+
                 let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
                 let block = TileBlock { coord, tiles };
                 self.downsample_block(block, emit);

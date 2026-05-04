@@ -1,6 +1,6 @@
 use iced::Font;
 
-pub const FONT_BYTES: &[u8] = include_bytes!("../../assets/lucide.ttf");
+pub const FONT_BYTES: &[u8] = include_bytes!("../assets/lucide.ttf");
 pub const LUCIDE: Font = Font::with_name("lucide");
 
 pub const MOVE: &str = "\u{e121}";

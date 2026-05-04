@@ -2,7 +2,7 @@ use iced::border::Radius;
 use iced::widget::{container, row, text};
 use iced::{Background, Border, Element};
 
-use crate::ui::theme::{self, BG_ELEVATED, BORDER, TEXT_SECONDARY};
+use crate::theme::{self, BG_ELEVATED, BORDER, TEXT_SECONDARY};
 
 pub fn pill<'a, Msg: 'a>(label: String) -> Element<'a, Msg> {
     let dot = container(text(""))
