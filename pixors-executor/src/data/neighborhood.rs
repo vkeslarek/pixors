@@ -4,6 +4,7 @@ use crate::data::tile::TileCoord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NeighborhoodCoord {
+    pub mip_level: u32,
     pub tx: u32,
     pub ty: u32,
 }

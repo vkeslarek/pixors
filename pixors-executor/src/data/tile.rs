@@ -1,8 +1,18 @@
 use crate::model::pixel::meta::PixelMeta;
 use crate::data::Buffer;
 
+pub const DEFAULT_TILE_SIZE: u32 = 256;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TileGridPos {
+    pub mip_level: u32,
+    pub tx: u32,
+    pub ty: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileCoord {
+    pub mip_level: u32,
     pub tx: u32,
     pub ty: u32,
     pub px: u32,
@@ -12,7 +22,14 @@ pub struct TileCoord {
 }
 
 impl TileCoord {
-    pub fn new(tx: u32, ty: u32, tile_size: u32, image_width: u32, image_height: u32) -> Self {
+    pub fn new(
+        mip_level: u32,
+        tx: u32,
+        ty: u32,
+        tile_size: u32,
+        image_width: u32,
+        image_height: u32,
+    ) -> Self {
         let px = tx * tile_size;
         let py = ty * tile_size;
         let width = if px >= image_width {
@@ -26,6 +43,7 @@ impl TileCoord {
             (image_height - py).min(tile_size)
         };
         Self {
+            mip_level,
             tx,
             ty,
             px,

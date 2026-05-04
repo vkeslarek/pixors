@@ -47,7 +47,9 @@ impl Stage for TileToScanline {
 pub struct TileToScanlineRunner {
     bands: BTreeMap<u32, Vec<Tile>>,
     image_width: u32,
+    mip_level: u32,
     meta: Option<PixelMeta>,
+    initialized: bool,
 }
 
 impl TileToScanlineRunner {
@@ -55,7 +57,9 @@ impl TileToScanlineRunner {
         Self {
             bands: BTreeMap::new(),
             image_width: 0,
+            mip_level: 0,
             meta: None,
+            initialized: false,
         }
     }
 }
@@ -68,8 +72,10 @@ impl CpuKernel for TileToScanlineRunner {
             _ => return Err(Error::internal("expected Tile")),
         };
 
-        if self.meta.is_none() {
+        if !self.initialized {
             self.meta = Some(tile.meta);
+            self.mip_level = tile.coord.mip_level;
+            self.initialized = true;
         }
         self.image_width = self.image_width.max(tile.coord.px + tile.coord.width);
 
@@ -111,6 +117,7 @@ impl CpuKernel for TileToScanlineRunner {
                         .copy_from_slice(&data[src_off..src_off + len]);
                 }
                 emit.emit(Item::ScanLine(ScanLine::new(
+                    self.mip_level,
                     band_py + row,
                     self.image_width,
                     meta,

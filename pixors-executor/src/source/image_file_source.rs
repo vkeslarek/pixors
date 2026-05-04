@@ -61,7 +61,7 @@ impl CpuKernel for ImageFileSourceRunner {
         for y in 0..h {
             let s = y as usize * w as usize * 4;
             let data = rgba[s..s + w as usize * 4].to_vec();
-            emit.emit(Item::ScanLine(ScanLine::new(y, w, meta, Buffer::cpu(data))));
+            emit.emit(Item::ScanLine(ScanLine::new(0, y, w, meta, Buffer::cpu(data))));
         }
         Ok(())
     }

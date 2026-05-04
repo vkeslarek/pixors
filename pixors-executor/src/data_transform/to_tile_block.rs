@@ -111,7 +111,7 @@ fn cpu_downsample(
 
     let tx_tl = block.coord.tx_tl / 2;
     let ty_tl = block.coord.ty_tl / 2;
-    let coord = TileCoord::new(tx_tl, ty_tl, tile_size, mip_w, mip_h);
+    let coord = TileCoord::new(block.coord.mip_level + 1, tx_tl, ty_tl, tile_size, mip_w, mip_h);
     emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(out))));
     Ok(())
 }
@@ -201,7 +201,7 @@ fn gpu_downsample(
     let tile_size = block.tiles[0].coord.width.max(block.tiles[0].coord.height);
     let tx_tl = block.coord.tx_tl / 2;
     let ty_tl = block.coord.ty_tl / 2;
-    let coord = TileCoord::new(tx_tl, ty_tl, tile_size, tile_size, tile_size);
+    let coord = TileCoord::new(block.coord.mip_level + 1, tx_tl, ty_tl, tile_size, tile_size, tile_size);
 
     struct NoParamsKernel { sig: KernelSignature }
     impl crate::gpu::kernel::GpuKernel for NoParamsKernel {

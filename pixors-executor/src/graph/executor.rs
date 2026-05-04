@@ -65,7 +65,7 @@ impl<'a> Executor<'a> {
                 let mut emitter = Emitter::new();
                 if let Some(CompiledNode::Kernel(k)) = self.nodes.get_mut(&id) {
                     let dummy = Item::Tile(Tile::new(
-                        TileCoord::new(0, 0, 0, 0, 0),
+                        TileCoord::new(0, 0, 0, 0, 0, 0),
                         PixelMeta::new(
                             PixelFormat::Rgba8,
                             ColorSpace::SRGB,

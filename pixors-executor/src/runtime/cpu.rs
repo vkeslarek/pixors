@@ -68,7 +68,7 @@ impl Runner for CpuChainRunner {
             use crate::model::pixel::{AlphaPolicy, PixelFormat};
             use crate::model::color::ColorSpace;
             let dummy = Item::Tile(Tile::new(
-                TileCoord::new(0, 0, 0, 0, 0),
+                TileCoord::new(0, 0, 0, 0, 0, 0),
                 PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
                 Buffer::cpu(vec![]),
             ));

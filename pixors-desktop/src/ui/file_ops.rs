@@ -21,7 +21,7 @@ const BLUR_RADIUS: u32 = 32;
 /// Install the tile-sink callback once. Subsequent calls are no-ops (OnceLock).
 fn ensure_tile_sink_installed(pending: &Arc<PendingTileWrites>) {
     let p = pending.clone();
-    install_tile_sink(Box::new(move |px, py, tw, th, bytes| {
+    install_tile_sink(Box::new(move |_mip, px, py, tw, th, bytes| {
         p.push_tile(PendingTile {
             px,
             py,

@@ -9,5 +9,5 @@ pub use buffer::{Buffer, GpuBuffer};
 pub use device::Device;
 pub use neighborhood::{EdgeCondition, Neighborhood, NeighborhoodCoord};
 pub use scanline::{ScanLine, ScanLineCoord};
-pub use tile::{Tile, TileCoord};
+pub use tile::{Tile, TileCoord, TileGridPos};
 pub use tile_block::{TileBlock, TileBlockCoord};

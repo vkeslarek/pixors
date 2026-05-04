@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::debug_stopwatch;
 
 /// Callback: invoked when a tile arrives with its pixel coordinates and RGBA8 bytes.
-pub type TileCommitFn = Box<dyn Fn(u32, u32, u32, u32, &[u8]) + Send + Sync>;
+pub type TileCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
 static TILE_SINK: OnceLock<Arc<TileCommitFn>> = OnceLock::new();
 
@@ -70,6 +70,7 @@ impl CpuKernel for TileSinkRunner {
                     }
                 };
                 (self.cb)(
+                    tile.coord.mip_level,
                     tile.coord.px,
                     tile.coord.py,
                     tile.coord.width,

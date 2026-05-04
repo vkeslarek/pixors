@@ -41,6 +41,7 @@ pub struct ScanLineAccumulatorRunner {
     tile_size: u32,
     rows: Vec<Vec<u8>>,
     meta: Option<PixelMeta>,
+    mip_level: u32,
     band_y: u32,
     image_width: u32,
     image_height: u32,
@@ -53,6 +54,7 @@ impl ScanLineAccumulatorRunner {
             tile_size,
             rows: vec![],
             meta: None,
+            mip_level: 0,
             band_y: 0,
             image_width: 0,
             image_height: 0,
@@ -70,6 +72,7 @@ impl CpuKernel for ScanLineAccumulatorRunner {
         };
         if !self.initialized {
             self.meta = Some(scanline.meta);
+            self.mip_level = scanline.mip_level;
             self.image_width = scanline.width;
             self.initialized = true;
         }
@@ -110,6 +113,7 @@ impl ScanLineAccumulatorRunner {
                 buf.extend_from_slice(&row[s..e]);
             }
             let coord = TileCoord::new(
+                self.mip_level,
                 tx,
                 self.band_y,
                 self.tile_size,
