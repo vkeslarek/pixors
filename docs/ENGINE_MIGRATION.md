@@ -1,20 +1,27 @@
-# Engine Migration — Remaining Features
+# Roadmap — Próximas Features
 
-This document maps every feature from the deprecated `pixors-engine` to its
-current or planned location in `pixors-executor`, with concrete implementation
-examples.
+Estado atual do `pixors-executor` + `pixors-desktop` e o que falta implementar.
+
+---
+
+## ✅ Já implementado
+
+| Feature | Onde |
+|---------|------|
+| MIP pipeline (Blur MIP-aware, MipDownsample, MipFilter) | `operation/` |
+| CacheWriter + CacheReader (disk cache por MIP) | `sink/cache_writer.rs`, `source/cache_reader.rs` |
+| ViewportCache LRU (RAM) + ViewportCacheSink (streaming) | `viewport/tile_cache.rs`, `sink/viewport_cache_sink.rs` |
+| Viewport MIP-aware (Camera, TiledTexture, shader) | `viewport/` |
+| Pipeline fan-out + DAG compiler | `runtime/pipeline.rs` |
+| ImageFileSource (PNG, TIFF, JPEG), ScanLineAccumulator | `source/`, `data_transform/` |
 
 ---
 
 ## 1. Layer Composition / Blend
 
-**Engine**: `composite/` (layer blend modes, opacity, merge)
-**Executor**: `operation/composition/` (stubs — empty)
+**Arquivos:** `operation/composition/` (stubs vazios hoje)
 
-### Design
-
-Composition takes N layers + blend mode and merges them into one output. Each
-layer has pixel data, opacity, and a blend mode. The blend pipelin is:
+Composition recebe N layers + blend mode e faz merge. Cada layer tem pixel data, opacity e blend mode.
 
 ```
 Layer0 ──┐
@@ -22,482 +29,203 @@ Layer1 ──┼── Blend ──► Output
 Layer2 ──┘
 ```
 
-Since our pipeline is streaming (tile-by-tile, single-input), the composition
-stage receives tiles from one layer at a time and composites them onto an
-accumulator buffer. The accumulator is initialized with the bottom layer, then
-subsequent layers are blended on top.
-
-### Code
+Como o pipeline é streaming (tile-by-tile), o stage de composição recebe tiles de um layer por vez e compõe sobre um buffer acumulador via alpha blending.
 
 ```rust
-// pixors-executor/src/operation/composition/cpu.rs
-
-use std::sync::Arc;
-use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
-
-use crate::data::Buffer;
-use crate::data::Tile;
-use crate::error::Error;
-use crate::graph::emitter::Emitter;
-use crate::graph::item::Item;
-use crate::model::image::document::BlendMode;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
-
-static COMP_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static COMP_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static COMP_PORTS: PortSpec = PortSpec { inputs: COMP_INPUTS, outputs: COMP_OUTPUTS };
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Composition {
     pub width: u32,
     pub height: u32,
-    pub target_layer: usize,        // 0 = base, N = blend on top
     pub blend_mode: BlendMode,
     pub opacity: f32,
 }
-
-impl Stage for Composition {
-    fn kind(&self) -> &'static str { "composition" }
-    fn ports(&self) -> &'static PortSpec { &COMP_PORTS }
-    fn hints(&self) -> StageHints {
-        StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: false }
-    }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(CompositionRunner::new(self.width, self.height, self.blend_mode, self.opacity)))
-    }
-}
-
-pub struct CompositionRunner {
-    width: u32,
-    height: u32,
-    blend_mode: BlendMode,
-    opacity: f32,
-    accumulator: Mutex<Option<Arc<Vec<u8>>>>,
-    current_layer: Mutex<usize>,
-}
-
-impl CpuKernel for CompositionRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        let tile = match item { Item::Tile(t) => t, _ => return Ok(()), };
-        let data = tile.data.as_cpu_slice().unwrap();
-
-        let mut acc = self.accumulator.lock().unwrap();
-        if acc.is_none() {
-            // First layer: copy directly
-            let full = vec![0u8; self.width as usize * self.height as usize * 4];
-            *acc = Some(Arc::new(full));
-        }
-
-        let acc_data = Arc::get_mut(acc.as_mut().unwrap()).unwrap();
-        let stride = self.width as usize * 4;
-        let px = tile.coord.px as usize;
-        let py = tile.coord.py as usize;
-        let tw = tile.coord.width as usize;
-        let th = tile.coord.height as usize;
-
-        for row in 0..th {
-            let dst_off = (py + row) * stride + px * 4;
-            let src_off = row * tw * 4;
-            let len = tw * 4;
-
-            match self.blend_mode {
-                BlendMode::Normal => {
-                    // src OVER dst with alpha
-                    for i in (0..len).step_by(4) {
-                        let sa = data[src_off + i + 3] as f32 / 255.0 * self.opacity;
-                        for c in 0..4 {
-                            let dst_val = acc_data[dst_off + i + c] as f32;
-                            let src_val = data[src_off + i + c] as f32;
-                            acc_data[dst_off + i + c] =
-                                (src_val * sa + dst_val * (1.0 - sa)) as u8;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Emit the blended result tile
-        let tile_data = Vec::from(&acc_data[/* tile region */]);
-        emit.emit(Item::Tile(Tile::new(tile.coord, tile.meta, Buffer::cpu(tile_data))));
-        Ok(())
-    }
-}
 ```
 
-### Integration
-
-Add to `OperationNode`:
-
-```rust
-pub enum OperationNode {
-    // ...
-    Composition(composition::cpu::Composition),
-}
-```
-
-Desktop usage (simplified):
-
-```rust
-// Composite layer 1 over layer 0
-let src0 = graph.add_stage(StageNode::Source(layer0.source()));
-let src1 = graph.add_stage(StageNode::Source(layer1.source()));
-let comp = graph.add_stage(StageNode::Operation(
-    OperationNode::Composition(Composition {
-        width: w, height: h,
-        target_layer: 1,
-        blend_mode: BlendMode::Normal,
-        opacity: 1.0,
-    })
-));
-graph.add_edge(src0, comp, EdgePorts::default());
-graph.add_edge(src1, comp, EdgePorts::default());
-```
-
-**Caveat**: This design expects tiles from ALL layers to arrive at the
-composition stage. The current Pipeline supports DAGs with fan-in
-(multiple edges → one stage), but the CompositionRunner must accumulate
-tiles from all layers before emitting. A simpler two-layer merge
-(blend layer N onto layer N-1) is more practical for the existing
-single-chain model.
+**Ports:** 1 input Tile, 1 output Tile.  
+**Hints:** `ReadTransform`, `prefers_gpu: false`.
 
 ---
 
-## 2. Cache (Disk Cache)
+## 2. TIFF — Leitura na Pipeline + Escrita + Decode de Layers
 
-**Engine**: `state_graph/cache.rs`, `cache_reader.rs`, `cache_writer.rs`
-**Executor**: `source/cache_reader.rs`, `sink/cache_writer.rs` (stubs)
+**Arquivos:** `model/io/tiff.rs` (lê mas não integrado), `source/file_decoder.rs` (PNG-only), `sink/tiff_encoder.rs` (novo)
 
-### Design
+### Problema atual
 
-Cache stores intermediate pipeline results to disk, avoiding recomputation.
-Use case: after blurring a 100MP image, cache the result so reopening or
-adjusting other parameters doesn't re-run the blur.
+O model já tem `TiffFormat` com leitura completa (`read_tiff_rgba8`, `decode_u8_tiff`, `detect_tiff_color_space`, multi-page). Mas **nenhum source da pipeline usa** — tanto `ImageFileSource` quanto `FileDecoder` hardcodam `png::Decoder`.
 
-```
-[Pipeline stages...] → CacheWriter → [disk]
-                       CacheReader → [pipeline resumes...]
-```
+### Leitura na pipeline
 
-### CacheWriter
+Unificar `FileDecoder` para usar o trait `ImageFormat` e suportar PNG + TIFF + futuros formatos. Ou criar `TiffFileSource` dedicado.
 
 ```rust
-// pixors-executor/src/sink/cache_writer.rs
-
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::PathBuf;
-
-use crate::data::Tile;
-use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
-use crate::error::Error;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheWriter {
-    pub cache_dir: PathBuf,
-    pub key: String,
-}
-
-impl Stage for CacheWriter {
-    fn kind(&self) -> &'static str { "cache_writer" }
-    // ...
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(CacheWriterRunner {
-            dir: self.cache_dir.clone(),
-            key: self.key.clone(),
-        }))
-    }
-}
-
-pub struct CacheWriterRunner {
-    dir: PathBuf,
-    key: String,
-}
-
-impl CpuKernel for CacheWriterRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
-        let tile = match item { Item::Tile(t) => t, _ => return Ok(()), };
-        let data = tile.data.as_cpu_slice().ok_or_else(|| Error::internal("GPU tile"))?;
-
-        let tile_path = self.dir.join(format!(
-            "{}/tile_{}_{}_{}_{}.raw",
-            self.key, tile.coord.px, tile.coord.py, tile.coord.width, tile.coord.height
-        ));
-        fs::create_dir_all(tile_path.parent().unwrap())?;
-        File::create(&tile_path)?.write_all(data)?;
-        Ok(())
-    }
+// FileDecoderRunner::process() — ler via ImageFormat em vez de png::Decoder
+let format = detect_format(&self.path)?; // png, tiff, etc.
+match format {
+    Format::Png  => decode_png(&self.path, emit)?,
+    Format::Tiff => decode_tiff(&self.path, emit)?,
 }
 ```
 
-### CacheReader
+### Escrita (nova)
 
-```rust
-// pixors-executor/src/source/cache_reader.rs
-
-use crate::data::{Buffer, ScanLine, Tile};
-use crate::model::pixel::meta::PixelMeta;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheReader {
-    pub cache_dir: PathBuf,
-    pub key: String,
-    pub width: u32,
-    pub height: u32,
-    pub tile_size: u32,
-}
-
-impl Stage for CacheReader {
-    fn kind(&self) -> &'static str { "cache_reader" }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(CacheReaderRunner { /* ... */ }))
-    }
-}
-
-impl CpuKernel for CacheReaderRunner {
-    fn process(&mut self, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        // Iterate tile grid, read each from disk, emit
-        for ty in 0..self.grid_h {
-            for tx in 0..self.grid_w {
-                let path = self.dir.join(format!(
-                    "{}/tile_{}_{}_{}_{}.raw",
-                    self.key, tx * self.tile_size, ty * self.tile_size,
-                    self.tile_size, self.tile_size
-                ));
-                let data = fs::read(&path)?;
-                let coord = TileCoord::new(tx * self.tile_size, ty * self.tile_size,
-                                           self.tile_size, self.tile_size, tx, ty);
-                emit.emit(Item::Tile(Tile::new(coord, self.meta, Buffer::cpu(data))));
-            }
-        }
-        Ok(())
-    }
-}
-```
-
----
-
-## 3. TIFF Write
-
-**Current**: `model/io/tiff.rs` reads only.
-**Needed**: TIFF encoding for export.
-
-```rust
-// pixors-executor/src/model/io/tiff.rs — add to existing file
-
-pub fn write_tiff_rgba8(path: &Path, data: &[u8], width: u32, height: u32)
-    -> Result<(), Error>
-{
-    use tiff::encoder::{TiffEncoder, colortype};
-    let file = File::create(path)?;
-    let mut encoder = TiffEncoder::new(file)?;
-    encoder.write_image::<colortype::RGBA8>(width, height, data)?;
-    Ok(())
-}
-```
-
-For streaming tile-by-tile, the PngEncoder sink pattern applies:
+TIFF encoder para export, padrão `PngEncoder`:
 
 ```rust
 // pixors-executor/src/sink/tiff_encoder.rs
-
 pub struct TiffEncoder {
     pub path: PathBuf,
     pub width: u32,
     pub height: u32,
 }
-
-impl CpuKernel for TiffEncoderRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
-        // Accumulate tiles, write full image on finish()
-    }
-}
 ```
+
+### Decode de layers
+
+TIFFs multi-layer (Photoshop TIFF) precisam extrair layers individuais com nomes, opacidade e blend mode. Hoje o reader lê página plana. Estender `read_tiff_document_metadata` para detectar e expor layers.
 
 ---
 
-## 4. PNG Export Pipeline
+## 3. PNG Export Pipeline
 
-Desktop usage to export a processed image:
+**Arquivo:** `desktop/src/export.rs` (novo)
+
+Export de imagem processada via pipeline dedicada:
 
 ```rust
-// pixors-desktop/src/ui/export.rs (new file)
-
-use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
-use pixors_executor::runtime::pipeline::Pipeline;
-use pixors_executor::sink::{SinkNode, png_encoder::PngEncoder};
-
 pub fn export_png(image: &ImageFile, output: &Path) -> Result<(), String> {
-    let w = image.width;
-    let h = image.height;
-
     let mut graph = ExecGraph::new();
-    let src = graph.add_stage(StageNode::Source(
-        SourceNode::ImageFile(image.source(0))
-    ));
-    let sink = graph.add_stage(StageNode::Sink(
-        SinkNode::PngEncoder(PngEncoder::new(output.to_path_buf(), w, h))
-    ));
+    let src  = graph.add_stage(StageNode::Source(SourceNode::ImageFile(image.source(0))));
+    let sink = graph.add_stage(StageNode::Sink(SinkNode::PngEncoder(PngEncoder::new(output, w, h))));
     graph.add_edge(src, sink, EdgePorts::default());
-
-    let pipeline = Pipeline::compile(&graph).map_err(|e| e.to_string())?;
-    pipeline.run(None).map_err(|e| e.to_string())
+    Pipeline::compile(&graph)?.run(None)?
 }
 ```
 
+Mesmo padrão para TIFF export.
+
 ---
 
-## 5. ColorConvert (Real Implementation)
+## 4. ColorConvert (Real Implementation)
 
-**Current**: `operation/color/cpu.rs` has `target: String` and a stub runner.
-**Needed**: Actual color space conversion using the color model.
+**Arquivo:** `operation/color/` — tem `target: String` stub, precisa usar `ColorSpace` real.
 
 ```rust
-// pixors-executor/src/operation/color/cpu.rs (rewrite)
-
-use crate::model::color::{ColorSpace, convert};
-use crate::data::{Buffer, Tile};
-// ...
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorConvert {
     pub source: ColorSpace,
     pub target: ColorSpace,
 }
+```
 
-impl Stage for ColorConvert {
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(ColorConvertRunner {
-            source: self.source,
-            target: self.target,
-        }))
-    }
+Usa a API existente do model (`ColorSpace::to_linear`, `ColorSpace::from_linear`, `convert`). Opera tile-by-tile sobre `Buffer::Cpu`.
+
+---
+
+## 5. Desktop Editor State
+
+**Arquivos:** `desktop/src/editor.rs` + `desktop/src/editor/` (novos)
+
+O state central do editor que serve de base para todos os painéis, histórico e ações. É o modelo que o executor modifica e os painéis observam.
+
+```rust
+pub struct EditorState {
+    pub image: Option<Arc<ImageHandle>>,     // imagem aberta + path + cache dir
+    pub layers: Vec<LayerModel>,             // layers do documento
+    pub active_layer: usize,
+    pub history: History<EditorAction>,      // undo/redo
+    pub viewport: ViewportState,             // camera + mip (já existe)
+    pub status: StatusState,                 // dimensões, zoom %, tool ativa
 }
 
-pub struct ColorConvertRunner {
-    source: ColorSpace,
-    target: ColorSpace,
+pub struct LayerModel {
+    pub name: String,
+    pub visible: bool,
+    pub opacity: f32,
+    pub blend_mode: BlendMode,
+    pub source_path: Option<PathBuf>,        // para reload do disco
 }
 
-impl CpuKernel for ColorConvertRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        let tile = match item { Item::Tile(t) => t, _ => return Ok(()), };
-        let data = tile.data.as_cpu_slice().ok_or_else(|| Error::internal("GPU tile"))?;
-
-        // Convert each pixel
-        let mut out = vec![0u8; data.len()];
-        let pixels = data.len() / 4;
-        for i in 0..pixels {
-            let r = data[i * 4];
-            let g = data[i * 4 + 1];
-            let b = data[i * 4 + 2];
-            let a = data[i * 4 + 3];
-
-            // Unapply source transfer → linear
-            let linear = self.source.to_linear(r, g, b);
-            // Chromatic adaptation + matrix transform
-            let converted = self.source.to(self.target, linear);
-            // Apply target transfer
-            let encoded = self.target.from_linear(converted);
-
-            out[i * 4] = encoded.0;
-            out[i * 4 + 1] = encoded.1;
-            out[i * 4 + 2] = encoded.2;
-            out[i * 4 + 3] = a;
-        }
-
-        emit.emit(Item::Tile(Tile::new(tile.coord, tile.meta, Buffer::cpu(out))));
-        Ok(())
-    }
+pub enum EditorAction {
+    OpenImage { path: PathBuf },
+    ApplyBlur { radius: u32 },
+    CompositeLayer { from: usize, to: usize, mode: BlendMode, opacity: f32 },
+    // ...
 }
+```
+
+Os painéis (layers, filters, toolbar) leem desse state e disparam `EditorAction`. O `update()` do App faz dispatch das ações → pipeline → resultado.
+
+---
+
+## 6. Blur Preview + Apply (Painel de Filtros)
+
+**Arquivos:** `desktop/src/components/filters_panel.rs` (já existe, decorativo)
+
+O painel de filtros hoje é estático. Fluxo desejado:
+
+1. Usuário seleciona blur, ajusta radius via slider
+2. **Preview mode**: pipeline leve roda só na região visível do viewport (tiles no MIP atual)
+3. Preview é mostrado como overlay ou diretamente no viewport
+4. Usuário clica **Apply** → pipeline completa roda na imagem inteira → resultado commitado no histórico
+
+```
+Preview pipeline:
+  ImageFileSource(region) → Blur(radius) → ViewportCacheSink
+
+Apply pipeline:
+  ImageFileSource(full) → Blur(radius) → [CacheWriter] → [history commit]
 ```
 
 ---
 
-## 6. General Pattern: Adding a New Operation
+## 7. Painel de Layers Funcional
 
-Every operation follows this structure:
+**Arquivo:** `desktop/src/components/layers_panel.rs` (decorativo hoje)
 
-### 1. Define the stage struct
+- Listar layers do `EditorState.layers`
+- Reordenar (drag), toggle visibility, ajustar opacity
+- Selecionar layer ativo → toolbar opera sobre ele
+- "New Layer", "Delete Layer", "Merge Down"
+- Blend mode dropdown por layer
 
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MyOp {
-    pub param: u32,
-}
-```
+---
 
-### 2. Implement `Stage`
+## 8. Abas Funcionais
 
-```rust
-impl Stage for MyOp {
-    fn kind(&self) -> &'static str { "my_op" }
-    fn ports(&self) -> &'static PortSpec { &MY_PORTS }
-    fn hints(&self) -> StageHints {
-        StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: false }
-    }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(MyOpRunner { param: self.param }))
-    }
-    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
-        // Return Some(...) if GPU path exists
-        None
-    }
-}
-```
+**Arquivo:** `desktop/src/components/tab_bar.rs` (decorativo hoje)
 
-### 3. Implement `CpuKernel`
+- Cada aba = uma imagem aberta (múltiplos documentos)
+- Clique na aba → troca o `EditorState` ativo
+- "X" fecha documento
+- "+" abre novo (file dialog)
+- Estado atual só tem 1 imagem; precisa virar `Vec<EditorState>` ou `HashMap<DocumentId, EditorState>`
 
-```rust
-pub struct MyOpRunner { param: u32 }
+---
 
-impl CpuKernel for MyOpRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        // 1. Match Item variant (Tile, ScanLine, Neighborhood)
-        // 2. Extract data from Buffer::Cpu
-        // 3. Process
-        // 4. emit.emit(Item::...)
-        Ok(())
-    }
+## 9. Error Surface & Propagação
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        Ok(()) // flush any remaining data
-    }
-}
-```
+**Arquivos:** `desktop/src/app.rs`, `executor/src/error.rs`
 
-### 4. Add to the enum
+Hoje erros são logados (`tracing::error!`) mas não chegam na UI de forma estruturada.
 
-```rust
-// mod.rs of the operation category
-pub enum OperationNode {
-    // ...
-    MyOp(cpu::MyOp),
-}
-```
-
-Update the `Stage` impl on `OperationNode` with a new match arm.
-
-### 5. Desktop usage
-
-```rust
-let stage = graph.add_stage(StageNode::Operation(
-    OperationNode::MyOp(MyOp { param: 42 })
-));
-```
+- `PipelineEvent::Error` já existe no executor — precisa ser consumido pelo desktop
+- Adicionar `EditorState.errors: Vec<EditorError>` com timestamp, severidade, mensagem
+- Exibir errors no `status_bar` como toast/pill temporário
+- Pipeline errors propagados via canal (`Pipeline::run(events)`) → `Msg::PipelineError`
 
 ---
 
 ## Summary
 
-| Feature | Priority | Complexity |
-|---------|----------|------------|
-| Composition/Blend | High | Medium — multi-input staging |
-| ColorConvert (real) | High | Low — use existing color model |
-| Cache writer/reader | Medium | Low — filesystem I/O |
-| TIFF write | Medium | Low |
-| PNG export pipeline | Medium | Low |
-| GPU kernel for blur | Done ✓ | — |
-| GPU kernel for ColorConvert | Future | High — needs SPIR-V shader |
+| # | Feature | Complexidade |
+|---|---------|-------------|
+| 1 | Composition/Blend | Média — multi-input, acumulador |
+| 2 | TIFF write + layer decode | Baixa (write) / Média (decode) |
+| 3 | PNG export pipeline | Baixa |
+| 4 | ColorConvert real | Baixa — usar color model existente |
+| 5 | Desktop Editor State | Média — arquitetura central |
+| 6 | Blur preview + apply panel | Média — pipeline preview + apply |
+| 7 | Layers panel funcional | Média — arrastar, opacidade, blend |
+| 8 | Tabs funcionais | Baixa — múltiplos documentos |
+| 9 | Error surface | Baixa — propagação + UI |
