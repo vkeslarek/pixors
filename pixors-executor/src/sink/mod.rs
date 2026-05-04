@@ -6,7 +6,7 @@ pub mod viewport;
 use serde::{Deserialize, Serialize};
 
 use crate::data::Device;
-use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
+use crate::stage::{CpuKernel, PortSpec, Stage, StageHints};
 
 use cache_writer::CacheWriter;
 use png_encoder::PngEncoder;
@@ -67,7 +67,4 @@ impl Stage for SinkNode {
         }
     }
 
-    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
-        None
-    }
 }

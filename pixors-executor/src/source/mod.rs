@@ -5,7 +5,7 @@ pub mod image_file_source;
 use serde::{Deserialize, Serialize};
 
 use crate::data::Device;
-use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
+use crate::stage::{CpuKernel, PortSpec, Stage, StageHints};
 
 use cache_reader::CacheReader;
 use file_decoder::FileDecoder;
@@ -59,7 +59,4 @@ impl Stage for SourceNode {
         }
     }
 
-    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
-        None
-    }
 }

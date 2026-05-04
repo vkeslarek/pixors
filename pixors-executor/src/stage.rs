@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use crate::data::Device;
 use crate::data_transform::DataTransformNode;
@@ -49,9 +48,9 @@ pub struct StageHints {
     pub prefers_gpu: bool,
 }
 
-// ── CpuKernel: a stage's CPU implementation ────────────────────────────────────
-// NOTE: "CpuRunner" is reserved for the framework's per-thread runner entity (see
-// runtime::runner). This trait is the per-stage CPU execution descriptor.
+// ── Kernel: a stage's execution implementation ────────────────────────────────
+// Per-stage kernel; may dispatch GPU work internally. The framework's per-thread
+// runner entity is `ChainRunner` (see runtime::runner).
 
 pub trait CpuKernel: Send {
     fn process(
@@ -65,40 +64,6 @@ pub trait CpuKernel: Send {
     ) -> Result<(), Error> {
         Ok(())
     }
-    /// When true, the GPU chain runner will NOT download GPU items to CPU
-    /// before calling `process()`. The kernel is responsible for handling
-    /// both GPU and CPU buffers internally.
-    fn handles_gpu_items(&self) -> bool {
-        false
-    }
-}
-
-// ── GpuKernelDescriptor ────────────────────────────────────────────────────────
-
-/// How the GPU kernel binds its primary input data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GpuInputBinding {
-    /// Input is a single `Item::Tile`. One storage-read buffer.
-    Tile,
-    /// Input is an `Item::Neighborhood`. The runtime assembles the padded
-    /// region into a single contiguous buffer before dispatching.
-    Neighborhood,
-}
-
-/// Static description of a stage's GPU implementation.
-/// Returned by value from `Stage::gpu_kernel_descriptor(&self)` so closures
-/// can capture stage configuration (e.g. radius).
-pub struct GpuKernelDescriptor {
-    pub spirv: &'static [u8],
-    pub entry_point: &'static str,
-    pub input_binding: GpuInputBinding,
-    /// (x, y) workgroup size declared in the shader. Used to compute dispatch dims.
-    pub workgroup: (u32, u32),
-    /// Byte size of the uniform params buffer (0 = no params).
-    pub param_size: u64,
-    /// Called by the runtime to fill the uniform buffer from the current item's
-    /// metadata. `None` when `param_size == 0`.
-    pub write_params: Option<Arc<dyn Fn(&crate::graph::item::Item, &mut [u8]) + Send + Sync>>,
 }
 
 // ── Stage trait ────────────────────────────────────────────────────────────────
@@ -107,14 +72,10 @@ pub trait Stage {
     fn kind(&self) -> &'static str;
     fn ports(&self) -> &'static PortSpec;
     fn hints(&self) -> StageHints;
-    /// Tells the pipeline compiler which device this stage runs on and what
-    /// input data it accepts. Stages override this to control Upload/Download
-    /// insertion.
+    /// Tells the pipeline compiler which device this stage runs on.
+    /// Controls Upload/Download insertion at device-crossing edges.
     fn device(&self) -> Device { Device::Cpu }
     fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        None
-    }
-    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
         None
     }
 }
@@ -172,13 +133,6 @@ impl Stage for StageNode {
             Self::Sink(n) => n.cpu_kernel(),
             Self::Operation(n) => n.cpu_kernel(),
             Self::DataTransform(n) => n.cpu_kernel(),
-        }
-    }
-
-    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
-        match self {
-            Self::Operation(n) => n.gpu_kernel_descriptor(),
-            _ => None,
         }
     }
 }

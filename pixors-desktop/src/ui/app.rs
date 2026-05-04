@@ -47,6 +47,9 @@ pub struct App {
     pub progress_dir: f32,
     pub errors: Vec<(String, std::time::Instant)>,
     pub pending_writes: Arc<PendingTileWrites>,
+    /// Incremented each tick while tiles are arriving. Forces Iced to
+    /// re-evaluate the view so the shader's prepare() drains and uploads them.
+    pub tile_generation: u64,
 }
 
 impl Default for App {
@@ -72,6 +75,7 @@ impl Default for App {
             progress_dir: 1.0,
             errors: Vec::new(),
             pending_writes: PendingTileWrites::new(),
+            tile_generation: 0,
         }
     }
 }
@@ -201,6 +205,14 @@ impl App {
             }
         }
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
+
+        // If tiles are queued by the background pipeline, bump tile_generation
+        // so Iced sees a state change and re-renders, causing prepare() to drain
+        // and upload the new tiles to the GPU texture.
+        use std::sync::atomic::Ordering;
+        if self.pending_writes.has_pending.load(Ordering::Relaxed) {
+            self.tile_generation = self.tile_generation.wrapping_add(1);
+        }
     }
 
     fn handle_menu_msg(&mut self, m: menu_bar::Msg) {

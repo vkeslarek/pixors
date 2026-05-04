@@ -140,6 +140,9 @@ impl CpuKernel for DownloadRunner {
             return Ok(());
         }
         let ctx = self.ctx()?;
+        // Flush scheduler so any pending compute dispatches are submitted
+        // before the copy_buffer_to_buffer that reads their output.
+        ctx.scheduler().flush();
         let gbuf = tile.data.as_gpu().unwrap().clone();
         let size = gbuf.size;
         let staging = ctx.device().create_buffer(&wgpu::BufferDescriptor {

@@ -12,6 +12,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             app.status.canvas_w,
             app.status.canvas_h,
             app.pending_writes.clone(),
+            app.tile_generation,
         ),
         crate::ui::components::sidebar_grid::view(
             &app.panes,

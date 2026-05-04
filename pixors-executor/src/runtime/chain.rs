@@ -5,16 +5,16 @@ use crate::stage::CpuKernel;
 
 use super::runner::{ItemReceiver, ItemSender, Runner};
 
-/// CPU chain runner. Holds an ordered list of CpuKernel stages that execute
-/// sequentially in a single thread. Items flow through the chain via an Emitter
-/// at each step; the final stage's output goes to the output channels.
+/// Runs an ordered list of kernels sequentially in a single thread. Each kernel
+/// may dispatch GPU work internally. Items flow through via an `Emitter` at each
+/// step; the final stage's output goes to the output channels.
 ///
-/// Fan-out: if multiple output channels exist, emitted items are cloned to each.
-pub struct CpuChainRunner {
+/// Fan-out: emitted items are cloned to every output channel.
+pub struct ChainRunner {
     pub kernels: Vec<Box<dyn CpuKernel>>,
 }
 
-impl CpuChainRunner {
+impl ChainRunner {
     pub fn new(kernels: Vec<Box<dyn CpuKernel>>) -> Self {
         Self { kernels }
     }
@@ -53,7 +53,7 @@ impl CpuChainRunner {
     }
 }
 
-impl Runner for CpuChainRunner {
+impl Runner for ChainRunner {
     fn run(
         mut self: Box<Self>,
         inputs: Vec<ItemReceiver>,
@@ -62,7 +62,7 @@ impl Runner for CpuChainRunner {
         let kernels = &mut self.kernels;
 
         if inputs.is_empty() {
-            // Source: kick off with a dummy item, then finish.
+            // Source chain: kick off with a dummy item, then finish.
             use crate::data::{Buffer, Tile, TileCoord};
             use crate::model::pixel::meta::PixelMeta;
             use crate::model::pixel::{AlphaPolicy, PixelFormat};
@@ -72,20 +72,20 @@ impl Runner for CpuChainRunner {
                 PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
                 Buffer::cpu(vec![]),
             ));
-            let items = CpuChainRunner::run_item(kernels, dummy)?;
+            let items = ChainRunner::run_item(kernels, dummy)?;
             send_to_all(&outputs, items);
-            let finish_items = CpuChainRunner::run_finish(kernels)?;
+            let finish_items = ChainRunner::run_finish(kernels)?;
             send_to_all(&outputs, finish_items);
         } else {
             let recv = &inputs[0];
             loop {
                 match recv.recv() {
                     Ok(Some(item)) => {
-                        let items = CpuChainRunner::run_item(kernels, item)?;
+                        let items = ChainRunner::run_item(kernels, item)?;
                         send_to_all(&outputs, items);
                     }
                     Ok(None) | Err(_) => {
-                        let finish_items = CpuChainRunner::run_finish(kernels)?;
+                        let finish_items = ChainRunner::run_finish(kernels)?;
                         send_to_all(&outputs, finish_items);
                         break;
                     }
@@ -93,7 +93,6 @@ impl Runner for CpuChainRunner {
             }
         }
 
-        // Propagate EOS to all output channels.
         for out in &outputs {
             let _ = out.send(None);
         }

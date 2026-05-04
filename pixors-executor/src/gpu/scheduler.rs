@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
+use crate::data::{Buffer, Tile};
+use crate::error::Error;
 use crate::gpu::kernel::{GpuKernel, KernelSignature};
 use crate::gpu::pool::BufferPool;
 
@@ -138,6 +140,58 @@ impl Scheduler {
 
     pub fn pool(&self) -> &Arc<BufferPool> {
         &self.pool
+    }
+
+    /// Upload raw bytes into a `STORAGE | COPY_SRC | COPY_DST` GPU buffer.
+    pub fn upload_bytes(&self, data: &[u8]) -> GpuBuffer {
+        let size = data.len() as u64;
+        let usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let pool_buf = self.pool.acquire(size, usage);
+        let arc = pool_buf.arc();
+        self.queue.write_buffer(&arc, 0, data);
+        GpuBuffer::new(arc, size)
+    }
+
+    /// Download a GPU buffer to CPU bytes.
+    /// Caller must call `flush()` first to ensure pending dispatches are submitted.
+    pub fn download_buffer(&self, gbuf: &GpuBuffer) -> Result<Vec<u8>, Error> {
+        let size = gbuf.size;
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sched-staging"),
+            size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("sched-download"),
+        });
+        enc.copy_buffer_to_buffer(&gbuf.buffer, 0, &staging, 0, size);
+        self.queue.submit(std::iter::once(enc.finish()));
+
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), wgpu::BufferAsyncError>>();
+        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+        self.device.poll(wgpu::Maintain::Wait);
+        rx.recv()
+            .map_err(|_| Error::internal("download recv"))?
+            .map_err(|e| Error::internal(format!("download map: {e:?}")))?;
+
+        let bytes = staging.slice(..).get_mapped_range().to_vec();
+        staging.unmap();
+        Ok(bytes)
+    }
+
+    /// Download a tile to CPU if GPU-backed. No-op if already CPU.
+    /// Caller must call `flush()` first.
+    pub fn download_tile(&self, tile: &Tile) -> Result<Tile, Error> {
+        match &tile.data {
+            Buffer::Cpu(_) => Ok(tile.clone()),
+            Buffer::Gpu(gbuf) => {
+                let bytes = self.download_buffer(gbuf)?;
+                Ok(Tile::new(tile.coord, tile.meta, Buffer::cpu(bytes)))
+            }
+        }
     }
 
     pub fn compute_pipeline(

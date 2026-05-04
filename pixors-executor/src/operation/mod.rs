@@ -8,7 +8,7 @@ pub mod transfer;
 use serde::{Deserialize, Serialize};
 
 use crate::data::Device;
-use crate::stage::{CpuKernel, GpuKernelDescriptor, PortSpec, Stage, StageHints};
+use crate::stage::{CpuKernel, PortSpec, Stage, StageHints};
 
 use blur::Blur;
 use color::ColorConvert;
@@ -83,10 +83,4 @@ impl Stage for OperationNode {
         }
     }
 
-    fn gpu_kernel_descriptor(&self) -> Option<GpuKernelDescriptor> {
-        match self {
-            Self::Blur(s) => s.gpu_kernel_descriptor(),
-            _ => None,
-        }
-    }
 }

@@ -1,6 +1,5 @@
-pub mod cpu;
+pub mod chain;
 pub mod event;
-pub mod gpu;
 pub mod pipeline;
 pub mod runner;
 

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use iced::widget::shader;
@@ -9,12 +10,18 @@ use crate::viewport::pipeline::ViewportPrimitive;
 
 pub struct ViewportProgram {
     pub pending_writes: Arc<PendingTileWrites>,
+    /// Passed from App::tile_generation. Changes each tick while tiles are in
+    /// flight, ensuring Iced sees the program as modified and calls prepare().
+    pub tile_generation: u64,
 }
 
 pub struct PendingTileWrites {
     pub queue: Mutex<Vec<PendingTile>>,
     pub realloc: Mutex<Option<(u32, u32)>>,
     pub new_img: Mutex<Option<(u32, u32)>>,
+    /// Set to true when tiles are queued; cleared when drained. Used by the
+    /// app to detect pending work and force a re-render tick.
+    pub has_pending: AtomicBool,
 }
 
 impl PendingTileWrites {
@@ -23,6 +30,7 @@ impl PendingTileWrites {
             queue: Mutex::new(Vec::new()),
             realloc: Mutex::new(None),
             new_img: Mutex::new(None),
+            has_pending: AtomicBool::new(false),
         })
     }
 
@@ -36,6 +44,7 @@ impl PendingTileWrites {
 
     pub fn push_tile(&self, tile: PendingTile) {
         self.queue.lock().unwrap().push(tile);
+        self.has_pending.store(true, Ordering::Relaxed);
     }
 
     /// Takes the pending realloc dimensions if any.
@@ -45,7 +54,11 @@ impl PendingTileWrites {
 
     /// Drains all queued tiles. Lock is released before the Vec is returned.
     pub(super) fn drain_tiles(&self) -> Vec<PendingTile> {
-        self.queue.lock().unwrap().drain(..).collect()
+        let tiles = self.queue.lock().unwrap().drain(..).collect::<Vec<_>>();
+        if tiles.is_empty() {
+            self.has_pending.store(false, Ordering::Relaxed);
+        }
+        tiles
     }
 
     /// Tile an RGBA8 image and enqueue all tiles for GPU upload.

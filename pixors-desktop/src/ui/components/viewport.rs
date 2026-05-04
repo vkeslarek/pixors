@@ -11,8 +11,9 @@ pub fn view<'a, Msg: 'a>(
     canvas_w: u32,
     canvas_h: u32,
     pending_writes: Arc<PendingTileWrites>,
+    tile_generation: u64,
 ) -> Element<'a, Msg> {
-    let program = ViewportProgram { pending_writes };
+    let program = ViewportProgram { pending_writes, tile_generation };
 
     let canvas_bg = shader_widget(program)
         .width(Length::Fill)

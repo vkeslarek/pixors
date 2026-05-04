@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::data::{Buffer, GpuBuffer, Tile, TileBlock, TileBlockCoord, TileCoord, TileGridPos};
@@ -200,7 +200,6 @@ impl MipDownsampleRunner {
 }
 
 impl CpuKernel for MipDownsampleRunner {
-    fn handles_gpu_items(&self) -> bool { true }
     fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("mip_downsample");
         match item {
@@ -350,14 +349,17 @@ fn cpu_downsample_block(
 
     let w0 = block.tiles[0].coord.width as usize;
     let h0 = block.tiles[0].coord.height as usize;
+    let tiles = &block.tiles;
 
-    for y in 0..out_h {
-        for x in 0..out_w {
-            let avg = sample_and_average(&block.tiles, x * 2, y * 2, w0, h0);
-            let off = (y * out_w + x) * bpp;
-            out[off..off + bpp].copy_from_slice(&avg);
-        }
-    }
+    out.par_chunks_mut(out_w * bpp)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for x in 0..out_w {
+                let avg = sample_and_average(tiles, x * 2, y * 2, w0, h0);
+                let off = x * bpp;
+                row[off..off + bpp].copy_from_slice(&avg);
+            }
+        });
 
     Tile::new(coord, meta, Buffer::cpu(out))
 }

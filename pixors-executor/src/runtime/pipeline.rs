@@ -16,9 +16,8 @@ use crate::operation::transfer::{Download, Upload};
 use crate::operation::OperationNode;
 use crate::stage::{Stage, StageNode};
 
-use super::cpu::CpuChainRunner;
+use super::chain::ChainRunner;
 use super::event::PipelineEvent;
-use super::gpu::GpuChainRunner;
 use super::runner::{ItemReceiver, ItemSender, Runner, CHANNEL_BOUND};
 
 type Graph = StableDiGraph<StageNode, EdgePorts>;
@@ -64,7 +63,7 @@ impl Pipeline {
         // 5. Create inter-chain channels.
         let (mut ch_in, mut ch_out) = build_channels(&g, &order, &node_chain, chains.len());
 
-        // 6. Build a Runner per chain.
+        // 6. Build a ChainRunner per chain.
         let mut compiled = Vec::new();
         for (idx, nodes) in chains.iter().enumerate() {
             let dev = devs[&nodes[0]];
@@ -77,36 +76,15 @@ impl Pipeline {
                 nodes.iter().map(|&id| g[id].kind()).collect::<Vec<_>>(),
             );
 
-            let runner: Box<dyn Runner> = match dev {
-                Device::Cpu | Device::Either => {
-                    let kernels = nodes
-                        .iter()
-                        .map(|&id| {
-                            g[id].cpu_kernel().ok_or_else(|| {
-                                Error::internal(format!("'{}': no cpu_kernel", g[id].kind()))
-                            })
-                        })
-                        .collect::<Result<_, _>>()?;
-                    Box::new(CpuChainRunner::new(kernels))
-                }
-                Device::Gpu => {
-                    let steps = nodes
-                        .iter()
-                        .map(|&id| {
-                            let s = &g[id];
-                            if let Some(d) = s.gpu_kernel_descriptor() {
-                                Ok(super::gpu::ChainStep::Gpu(d))
-                            } else if let Some(k) = s.cpu_kernel() {
-                                Ok(super::gpu::ChainStep::Cpu(k))
-                            } else {
-                                Err(Error::internal(format!("'{}': no kernel", s.kind())))
-                            }
-                        })
-                        .collect::<Result<_, _>>()?;
-                    Box::new(GpuChainRunner::new(steps))
-                }
-            };
-            compiled.push((runner, inputs, outputs));
+            let kernels = nodes
+                .iter()
+                .map(|&id| {
+                    g[id].cpu_kernel().ok_or_else(|| {
+                        Error::internal(format!("'{}': no kernel", g[id].kind()))
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            compiled.push((Box::new(ChainRunner::new(kernels)) as Box<dyn Runner>, inputs, outputs));
         }
 
         tracing::info!("[pixors] compile: {} chains built", compiled.len());
