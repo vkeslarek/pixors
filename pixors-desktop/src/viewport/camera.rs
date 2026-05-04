@@ -77,14 +77,36 @@ impl Camera {
         self.pan_y = a_img_y - anchor_y / self.zoom;
     }
 
+    /// Select a MIP level appropriate for the current zoom.
+    ///
+    /// Two constraints:
+    /// 1. Zoom-driven ideal: `mip = floor(-log₂(z))` — one texel ≈ one screen pixel.
+    /// 2. Texture cap:     texture dimension must stay ≤ 8192 px (wgpu + sane tile count).
+    ///
+    /// The higher of the two wins (lower quality), so enormous images never
+    /// create a multi-gigabyte texture at MIP 0, but smaller images degrade
+    /// gracefully to MIP 0 when the user zooms in.
     pub fn visible_mip_level(&self) -> u32 {
-        if self.zoom >= 0.5 {
+        // ── Zoom-driven (standard graphics formula) ─────────────────────────
+        let zoom_mip = if self.zoom >= 0.5 {
             0
         } else {
-            let lvl = (-(self.zoom as f64).log2().floor() as u32)
-                .min(compute_max_mip(self.img_w as u32, self.img_h as u32));
-            lvl
-        }
+            (-(self.zoom as f64).log2().floor() as u32)
+                .saturating_sub(1) // bias toward higher quality
+                .min(compute_max_mip(self.img_w as u32, self.img_h as u32))
+        };
+
+        // ── Texture cap (keep tile count + VRAM under control) ─────────────
+        const MAX_TEX_DIM: u32 = 8192;
+        let max_img_dim = self.img_w.max(self.img_h) as u32;
+        let floor_mip = if max_img_dim <= MAX_TEX_DIM {
+            0
+        } else {
+            ((max_img_dim as f64 / MAX_TEX_DIM as f64).log2().ceil() as u32)
+                .min(compute_max_mip(max_img_dim, max_img_dim))
+        };
+
+        zoom_mip.max(floor_mip)
     }
 
     /// Tile indices visible at the given MIP level, with 1-tile padding for smooth scroll.
