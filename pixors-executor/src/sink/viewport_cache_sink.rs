@@ -3,11 +3,10 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::data::buffer::Buffer;
-use crate::error::Error;
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
+use crate::error::Error;
 use crate::stage::{
-    BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints,
+    BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints,
 };
 
 pub type CacheCommitFn = Box<
@@ -39,7 +38,7 @@ static VCS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     kind: DataKind::Tile,
 }];
 static VCS_OUTPUTS: &[PortDeclaration] = &[];
-static VCS_PORTS: PortSpec = PortSpec {
+static VCS_PORTS: PortSpecification = PortSpecification {
     inputs: PortGroup::Fixed(VCS_INPUTS),
     outputs: PortGroup::Fixed(VCS_OUTPUTS),
 };
@@ -52,7 +51,7 @@ impl Stage for ViewportCacheSink {
         "viewport_cache_sink"
     }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &VCS_PORTS
     }
 
@@ -74,30 +73,26 @@ pub struct ViewportCacheSinkProcessor {
 }
 
 impl Processor for ViewportCacheSinkProcessor {
-    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
-        match item {
-            Item::Tile(tile) => {
-                let data = match &tile.data {
-                    Buffer::Cpu(v) => v.as_slice(),
-                    Buffer::Gpu(_) => {
-                        return Err(Error::internal(
-                            "ViewportCacheSink requires CPU tiles",
-                        ))
-                    }
-                };
-                (self.cb)(
-                    tile.coord.mip_level,
-                    tile.coord.tx,
-                    tile.coord.ty,
-                    tile.coord.px,
-                    tile.coord.py,
-                    tile.coord.width,
-                    tile.coord.height,
-                    data,
-                );
-                Ok(())
+    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+        let tile = ProcessorContext::take_tile(item)?;
+        let data = match &tile.data {
+            Buffer::Cpu(v) => v.as_slice(),
+            Buffer::Gpu(_) => {
+                return Err(Error::internal(
+                    "ViewportCacheSink requires CPU tiles",
+                ))
             }
-            _ => Err(Error::internal("ViewportCacheSink expected Tile")),
-        }
+        };
+        (self.cb)(
+            tile.coord.mip_level,
+            tile.coord.tx,
+            tile.coord.ty,
+            tile.coord.px,
+            tile.coord.py,
+            tile.coord.width,
+            tile.coord.height,
+            data,
+        );
+        Ok(())
     }
 }

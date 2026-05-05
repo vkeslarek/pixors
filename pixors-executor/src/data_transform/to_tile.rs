@@ -3,12 +3,13 @@ use serde::{Deserialize, Serialize};
 use crate::model::pixel::meta::PixelMeta;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
 
 use crate::data::buffer::Buffer;
+use crate::data::device::Device;
 use crate::data::tile::{Tile, TileCoord};
 use crate::debug_stopwatch;
 
@@ -17,7 +18,7 @@ static SA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kin
 
 static SA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static SA_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(SA_INPUTS), outputs: PortGroup::Fixed(SA_OUTPUTS) };
+static SA_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(SA_INPUTS), outputs: PortGroup::Fixed(SA_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanLineToTile {
@@ -27,7 +28,7 @@ pub struct ScanLineToTile {
 impl Stage for ScanLineToTile {
     fn kind(&self) -> &'static str { "scanline_accumulator" }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &SA_PORTS
     }
 
@@ -37,6 +38,8 @@ impl Stage for ScanLineToTile {
             prefers_gpu: false,
         }
     }
+
+    fn device(&self) -> Device { Device::Either }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(ScanLineToTileProcessor::new(self.tile_size)))
@@ -70,12 +73,10 @@ impl ScanLineToTileProcessor {
 }
 
 impl Processor for ScanLineToTileProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+        ctx.ensure_cpu()?;
         let _sw = debug_stopwatch!("scanline_accumulator");
-        let scanline = match &item {
-            Item::ScanLine(s) => s,
-            _ => return Err(Error::internal("expected ScanLine")),
-        };
+        let scanline = ProcessorContext::take_scanline(item)?;
         if !self.initialized {
             self.meta = Some(scanline.meta);
             self.mip_level = scanline.mip_level;
@@ -85,17 +86,17 @@ impl Processor for ScanLineToTileProcessor {
         self.image_height = self.image_height.max(scanline.y + 1);
         self.rows.push(match &scanline.data {
             Buffer::Cpu(v) => (**v).clone(),
-            Buffer::Gpu(_) => return Err(Error::internal("GPU not supported")),
+            Buffer::Gpu(_) => Vec::new(),
         });
         if self.rows.len() >= self.tile_size as usize {
-            self.emit_tiles(emit);
+            self.emit_tiles(ctx.emit);
         }
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         if !self.rows.is_empty() {
-            self.emit_tiles(emit);
+            self.emit_tiles(ctx.emit);
         }
         Ok(())
     }

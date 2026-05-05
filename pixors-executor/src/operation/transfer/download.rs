@@ -7,7 +7,7 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::tile::TileCoord;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
@@ -23,7 +23,7 @@ static DL_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: D
 
 static DL_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static DL_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(DL_INPUTS), outputs: PortGroup::Fixed(DL_OUTPUTS) };
+static DL_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(DL_INPUTS), outputs: PortGroup::Fixed(DL_OUTPUTS) };
 
 /// How many tiles to accumulate before flushing (1 submit + 1
 /// `device.poll(Wait)` per chunk). Caps peak staging memory.
@@ -41,7 +41,7 @@ pub struct Download;
 impl Stage for Download {
     fn kind(&self) -> &'static str { "download" }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &DL_PORTS
     }
 
@@ -137,30 +137,27 @@ impl DownloadProcessor {
 }
 
 impl Processor for DownloadProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("download");
-        let tile = match item {
-            Item::Tile(t) => t,
-            _ => return Err(Error::internal("Download expected Tile")),
-        };
+        let tile = ProcessorContext::take_tile(item)?;
         if tile.data.is_cpu() {
-            emit.emit(Item::Tile(tile));
+            ctx.emit.emit(Item::Tile(tile));
             return Ok(());
         }
-        let ctx = self.ctx()?;
+        let gpu_ctx = self.ctx()?;
         // Flush scheduler so any pending compute dispatches are submitted
         // before the copy_buffer_to_buffer that reads their output.
-        ctx.scheduler().flush();
+        gpu_ctx.scheduler().flush();
         let gbuf = tile.data.as_gpu().unwrap().clone();
         let size = gbuf.size;
-        let staging = ctx.device().create_buffer(&wgpu::BufferDescriptor {
+        let staging = gpu_ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("download-staging"),
             size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let encoder = self.encoder.get_or_insert_with(|| {
-            ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            gpu_ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("download-batch"),
             })
         });
@@ -171,13 +168,13 @@ impl Processor for DownloadProcessor {
             staging,
         });
         if self.pending.len() >= BATCH_SIZE {
-            self.flush(emit)?;
+            self.flush(ctx.emit)?;
         }
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        self.flush(emit)?;
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
+        self.flush(ctx.emit)?;
         tracing::debug!(
             "[pixors] download: total {} chunks (BATCH_SIZE={})",
             self.flushed_chunks, BATCH_SIZE

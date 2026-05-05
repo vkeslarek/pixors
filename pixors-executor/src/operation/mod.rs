@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::delegate_stage;
 use crate::operation::blur::Blur;
-use crate::operation::color::cpu::ColorConvert;
+use crate::operation::color::ColorConvert;
 use crate::operation::compose::Compose;
 use crate::operation::mip_downsample::MipDownsample;
 use crate::operation::mip_filter::MipFilter;

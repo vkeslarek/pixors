@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use crate::data::buffer::Buffer;
+use crate::data::device::Device;
 use crate::data::scanline::ScanLine;
 use crate::data::tile::Tile;
 use crate::model::pixel::meta::PixelMeta;
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
@@ -19,7 +19,7 @@ static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: D
 
 static TS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
 
-static TS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
+static TS_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToScanline;
@@ -27,7 +27,7 @@ pub struct TileToScanline;
 impl Stage for TileToScanline {
     fn kind(&self) -> &'static str { "tile_to_scanline" }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &TS_PORTS
     }
 
@@ -37,6 +37,8 @@ impl Stage for TileToScanline {
             prefers_gpu: false,
         }
     }
+
+    fn device(&self) -> Device { Device::Either }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(TileToScanlineProcessor::new()))
@@ -71,12 +73,10 @@ impl TileToScanlineProcessor {
 }
 
 impl Processor for TileToScanlineProcessor {
-    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+        ctx.ensure_cpu()?;
         let _sw = debug_stopwatch!("tile_to_scanline");
-        let tile = match item {
-            Item::Tile(t) => t,
-            _ => return Err(Error::internal("expected Tile")),
-        };
+        let tile = ProcessorContext::take_tile(item)?;
 
         if !self.initialized {
             self.meta = Some(tile.meta);
@@ -89,7 +89,7 @@ impl Processor for TileToScanlineProcessor {
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let Some(meta) = self.meta else { return Ok(()) };
         let bpp = meta.format.bytes_per_pixel();
         let row_bytes = self.image_width as usize * bpp;
@@ -111,7 +111,7 @@ impl Processor for TileToScanlineProcessor {
                     }
                     let data: &[u8] = match &tile.data {
                         Buffer::Cpu(v) => v.as_slice(),
-                        Buffer::Gpu(_) => return Err(Error::internal("GPU not supported")),
+                        Buffer::Gpu(_) => &[],
                     };
                     let tw = tile.coord.width as usize;
                     let src_off = row as usize * tw * bpp;
@@ -122,7 +122,7 @@ impl Processor for TileToScanlineProcessor {
                     full_row[dst_off..dst_off + len]
                         .copy_from_slice(&data[src_off..src_off + len]);
                 }
-                emit.emit(Item::ScanLine(ScanLine::new(
+                ctx.emit.emit(Item::ScanLine(ScanLine::new(
                     self.mip_level,
                     band_py + row,
                     self.image_width,

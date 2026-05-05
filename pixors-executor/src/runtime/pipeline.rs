@@ -66,7 +66,7 @@ impl Pipeline {
                     })
                 })
                 .collect::<Result<_, _>>()?;
-            compiled.push((Box::new(ChainRunner::new(kernels)) as Box<dyn Runner>, inputs, outputs));
+            compiled.push((Box::new(ChainRunner::new(kernels, dev)) as Box<dyn Runner>, inputs, outputs));
         }
 
         tracing::info!("[pixors] compile: {} chains built", compiled.len());

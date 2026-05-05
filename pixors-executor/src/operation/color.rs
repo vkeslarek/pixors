@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
@@ -13,7 +12,7 @@ static CC_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: D
 
 static CC_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static CC_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CC_INPUTS), outputs: PortGroup::Fixed(CC_OUTPUTS) };
+static CC_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(CC_INPUTS), outputs: PortGroup::Fixed(CC_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColorConvert {
@@ -23,7 +22,7 @@ pub struct ColorConvert {
 impl Stage for ColorConvert {
     fn kind(&self) -> &'static str { "color_convert" }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &CC_PORTS
     }
 
@@ -42,16 +41,10 @@ impl Stage for ColorConvert {
 pub struct ColorConvertProcessor;
 
 impl Processor for ColorConvertProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("color_convert");
-        match item {
-            Item::Tile(t) => {
-                emit.emit(Item::Tile(t));
-                Ok(())
-            }
-            _other => Err(Error::internal(
-                "expected Tile, got ScanLine/Neighborhood".to_string()
-            )),
-        }
+        let t = ProcessorContext::take_tile(item)?;
+        ctx.emit.emit(Item::Tile(t));
+        Ok(())
     }
 }

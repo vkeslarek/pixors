@@ -2,12 +2,9 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
-
-use crate::graph::emitter::Emitter;
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::graph::item::Item;
-
 use crate::error::Error;
 
 use crate::debug_stopwatch;
@@ -39,7 +36,7 @@ static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: D
 
 static TS_OUTPUTS: &[PortDeclaration] = &[];
 
-static TS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
+static TS_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
 
 // ── Stage ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +48,7 @@ impl Stage for TileSink {
         "tile_sink"
     }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &TS_PORTS
     }
 
@@ -75,27 +72,23 @@ pub struct TileSinkProcessor {
 }
 
 impl Processor for TileSinkProcessor {
-    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_sink:consume");
-        match item {
-            Item::Tile(tile) => {
-                let src: &[u8] = match &tile.data {
-                    crate::data::buffer::Buffer::Cpu(v) => v.as_slice(),
-                    crate::data::buffer::Buffer::Gpu(_) => {
-                        return Err(Error::internal("GPU tile not supported in tile_sink"))
-                    }
-                };
-                (self.cb)(
-                    tile.coord.mip_level,
-                    tile.coord.px,
-                    tile.coord.py,
-                    tile.coord.width,
-                    tile.coord.height,
-                    src,
-                );
-                Ok(())
+        let tile = ProcessorContext::take_tile(item)?;
+        let src: &[u8] = match &tile.data {
+            crate::data::buffer::Buffer::Cpu(v) => v.as_slice(),
+            crate::data::buffer::Buffer::Gpu(_) => {
+                return Err(Error::internal("GPU tile not supported in tile_sink"))
             }
-            _ => Err(Error::internal("expected Tile")),
-        }
+        };
+        (self.cb)(
+            tile.coord.mip_level,
+            tile.coord.px,
+            tile.coord.py,
+            tile.coord.width,
+            tile.coord.height,
+            src,
+        );
+        Ok(())
     }
 }

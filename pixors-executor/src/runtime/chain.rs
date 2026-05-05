@@ -1,28 +1,35 @@
+use crate::data::device::Device;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::Processor;
+use crate::stage::{Processor, ProcessorContext};
 
 use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner};
 
 pub struct ChainRunner {
     pub kernels: Vec<Box<dyn Processor>>,
+    pub device: Device,
 }
 
 impl ChainRunner {
-    pub fn new(kernels: Vec<Box<dyn Processor>>) -> Self {
-        Self { kernels }
+    pub fn new(kernels: Vec<Box<dyn Processor>>, device: Device) -> Self {
+        Self { kernels, device }
     }
 
-    fn run_item(kernels: &mut [Box<dyn Processor>], port: u16, item: Item) -> Result<Vec<RoutedItem>, Error> {
+    fn run_item(
+        kernels: &mut [Box<dyn Processor>],
+        port: u16,
+        device: Device,
+        item: Item,
+    ) -> Result<Vec<RoutedItem>, Error> {
         let mut current = vec![RoutedItem { port, payload: item }];
         for (i, kernel) in kernels.iter_mut().enumerate() {
             let mut next = Vec::new();
             for routed_item in current {
                 let mut emit = Emitter::new();
-                // Chain assumes internal edges are port 0 -> port 0.
                 let p = if i == 0 { routed_item.port } else { 0 };
-                kernel.process(p, routed_item.payload, &mut emit)?;
+                let ctx = ProcessorContext { port: p, device, emit: &mut emit };
+                kernel.process(ctx, routed_item.payload)?;
                 next.extend(emit.into_items());
             }
             current = next;
@@ -30,16 +37,17 @@ impl ChainRunner {
         Ok(current)
     }
 
-    fn run_finish(kernels: &mut [Box<dyn Processor>]) -> Result<Vec<RoutedItem>, Error> {
+    fn run_finish(kernels: &mut [Box<dyn Processor>], device: Device) -> Result<Vec<RoutedItem>, Error> {
         let mut all_outputs: Vec<RoutedItem> = Vec::new();
         let n = kernels.len();
         for i in 0..n {
             let mut emit = Emitter::new();
-            kernels[i].finish(&mut emit)?;
+            let ctx = ProcessorContext { port: 0, device, emit: &mut emit };
+            kernels[i].finish(ctx)?;
             let items = emit.into_items();
             if i + 1 < n {
                 for routed_item in items {
-                    let outputs = Self::run_item(&mut kernels[i + 1..], 0, routed_item.payload)?;
+                    let outputs = Self::run_item(&mut kernels[i + 1..], 0, device, routed_item.payload)?;
                     all_outputs.extend(outputs);
                 }
             } else {
@@ -57,6 +65,7 @@ impl Runner for ChainRunner {
         outputs: Vec<(ItemSender, u16, u16)>,
     ) -> Result<(), Error> {
         let kernels = &mut self.kernels;
+        let device = self.device;
 
         if inputs.is_empty() {
             use crate::data::buffer::Buffer;
@@ -69,20 +78,20 @@ impl Runner for ChainRunner {
                 PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
                 Buffer::cpu(vec![]),
             ));
-            let items = ChainRunner::run_item(kernels, 0, dummy)?;
+            let items = ChainRunner::run_item(kernels, 0, device, dummy)?;
             send_to_all(&outputs, items);
-            let finish_items = ChainRunner::run_finish(kernels)?;
+            let finish_items = ChainRunner::run_finish(kernels, device)?;
             send_to_all(&outputs, finish_items);
         } else {
             let recv = &inputs[0];
             loop {
                 match recv.recv() {
                     Ok(Some(routed)) => {
-                        let items = ChainRunner::run_item(kernels, routed.port, routed.payload)?;
+                        let items = ChainRunner::run_item(kernels, routed.port, device, routed.payload)?;
                         send_to_all(&outputs, items);
                     }
                     Ok(None) | Err(_) => {
-                        let finish_items = ChainRunner::run_finish(kernels)?;
+                        let finish_items = ChainRunner::run_finish(kernels, device)?;
                         send_to_all(&outputs, finish_items);
                         break;
                     }

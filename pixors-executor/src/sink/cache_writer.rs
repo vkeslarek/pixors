@@ -3,16 +3,15 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::data::buffer::Buffer;
-use crate::error::Error;
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::error::Error;
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
 static CW_OUTPUTS: &[PortDeclaration] = &[];
 
-static CW_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CW_INPUTS), outputs: PortGroup::Fixed(CW_OUTPUTS) };
+static CW_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(CW_INPUTS), outputs: PortGroup::Fixed(CW_OUTPUTS) };
 
 /// Writes tiles to disk as raw RGBA8, organised by MIP level.
 ///
@@ -37,7 +36,7 @@ impl Stage for CacheWriter {
         "cache_writer"
     }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &CW_PORTS
     }
 
@@ -60,14 +59,8 @@ pub struct CacheWriterProcessor {
 }
 
 impl Processor for CacheWriterProcessor {
-    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
-        let tile = match item {
-            Item::Tile(t) => t,
-            other => return Err(Error::internal(format!(
-                "CacheWriter expected Tile, got {:?}",
-                other.kind(),
-            ))),
-        };
+    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+        let tile = ProcessorContext::take_tile(item)?;
 
         let mip = tile.coord.mip_level;
         let tx = tile.coord.tx;

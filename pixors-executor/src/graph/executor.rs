@@ -11,7 +11,7 @@ use crate::graph::item::Item;
 use crate::graph::routed::Routed;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{Processor, Stage};
+use crate::stage::{Processor, ProcessorContext, Stage};
 use crate::error::Error;
 use crate::debug_stopwatch;
 use crate::model::color::space::ColorSpace;
@@ -74,8 +74,8 @@ impl<'a> Executor<'a> {
                         ),
                         Buffer::cpu(vec![]),
                     ));
-                    k.process(0, dummy, &mut emitter)?;
-                    k.finish(&mut emitter)?;
+                    k.process(ProcessorContext { port: 0, device: stage.device(), emit: &mut emitter }, dummy)?;
+                    k.finish(ProcessorContext { port: 0, device: stage.device(), emit: &mut emitter })?;
                 }
                 self.route(id, emitter.into_items(), &mut pending);
             }
@@ -83,7 +83,7 @@ impl<'a> Executor<'a> {
             while let Some(item) = pending.get_mut(&id).and_then(|q| q.pop_front()) {
                 let mut emitter = Emitter::new();
                 match self.nodes.get_mut(&id) {
-                    Some(CompiledNode::Kernel(k)) => k.process(item.port, item.payload, &mut emitter)?,
+                    Some(CompiledNode::Kernel(k)) => k.process(ProcessorContext { port: item.port, device: stage.device(), emit: &mut emitter }, item.payload)?,
                     _ => return Err(Error::internal("unexpected input")),
                 }
                 self.route(id, emitter.into_items(), &mut pending);
@@ -91,7 +91,7 @@ impl<'a> Executor<'a> {
 
             let mut emitter = Emitter::new();
             match self.nodes.get_mut(&id) {
-                Some(CompiledNode::Kernel(k)) => k.finish(&mut emitter)?,
+                Some(CompiledNode::Kernel(k)) => k.finish(ProcessorContext { port: 0, device: stage.device(), emit: &mut emitter })?,
                 _ => {}
             }
             self.route(id, emitter.into_items(), &mut pending);

@@ -2,14 +2,11 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::data::device::Device;
 
-use crate::graph::emitter::Emitter;
-
 use crate::graph::item::Item;
-
 use crate::error::Error;
 
 use crate::debug_stopwatch;
@@ -44,7 +41,7 @@ static VS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: D
 
 static VS_OUTPUTS: &[PortDeclaration] = &[];
 
-static VS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(VS_INPUTS), outputs: PortGroup::Fixed(VS_OUTPUTS) };
+static VS_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(VS_INPUTS), outputs: PortGroup::Fixed(VS_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewportSink {
@@ -54,7 +51,7 @@ pub struct ViewportSink {
 
 impl Stage for ViewportSink {
     fn kind(&self) -> &'static str { "viewport_sink" }
-    fn ports(&self) -> &'static PortSpec { &VS_PORTS }
+    fn ports(&self) -> &'static PortSpecification { &VS_PORTS }
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
     }
@@ -72,9 +69,9 @@ pub struct ViewportSinkProcessor {
 }
 
 impl Processor for ViewportSinkProcessor {
-    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("viewport_sink");
-        let tile = match item { Item::Tile(t) => t, _ => return Ok(()), };
+        let tile = ProcessorContext::take_tile(item)?;
 
         let target = TARGET.get().ok_or_else(|| Error::internal("viewport not installed"))?;
 

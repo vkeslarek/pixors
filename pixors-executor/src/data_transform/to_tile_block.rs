@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use crate::data::device::Device;
 use crate::data::tile::{Tile, TileGridPos};
 use crate::data::tile_block::{TileBlock, TileBlockCoord};
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
@@ -16,7 +16,7 @@ static IN: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind
 
 static OUT: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
+static PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToTileBlock {
@@ -28,11 +28,13 @@ pub struct TileToTileBlock {
 impl Stage for TileToTileBlock {
     fn kind(&self) -> &'static str { "tile_to_tile_block" }
 
-    fn ports(&self) -> &'static PortSpec { &PORTS }
+    fn ports(&self) -> &'static PortSpecification { &PORTS }
 
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
     }
+
+    fn device(&self) -> Device { Device::Either }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(TileToTileBlockProcessor::new(
@@ -97,18 +99,15 @@ impl TileToTileBlockProcessor {
 }
 
 impl Processor for TileToTileBlockProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_to_tile_block");
-        let tile = match item {
-            Item::Tile(t) => t,
-            _ => return Err(Error::internal("TileToTileBlock expected Tile")),
-        };
+        let tile = ProcessorContext::take_tile(item)?;
 
         let mip = tile.coord.mip_level;
         let tx = tile.coord.tx;
         let ty = tile.coord.ty;
 
-        emit.emit(Item::Tile(tile.clone()));
+        ctx.emit.emit(Item::Tile(tile.clone()));
 
         let key = TileGridPos { mip_level: mip, tx, ty };
         self.grid.insert(key, tile);
@@ -116,14 +115,14 @@ impl Processor for TileToTileBlockProcessor {
         for (tx_tl, ty_tl) in Self::candidate_blocks(tx, ty) {
             if let Some(block_tiles) = self.take_block(mip, tx_tl, ty_tl) {
                 let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
-                emit.emit(Item::TileBlock(TileBlock { coord, tiles: block_tiles }));
+                ctx.emit.emit(Item::TileBlock(TileBlock { coord, tiles: block_tiles }));
             }
         }
 
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let remaining: Vec<(u32, u32, u32)> = self.grid.keys()
             .map(|k| (k.mip_level, k.tx, k.ty))
             .collect();
@@ -153,7 +152,7 @@ impl Processor for TileToTileBlockProcessor {
                     partial[3].take().unwrap(),
                 ];
                 let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
-                emit.emit(Item::TileBlock(TileBlock { coord, tiles }));
+                ctx.emit.emit(Item::TileBlock(TileBlock { coord, tiles }));
             }
         }
         Ok(())

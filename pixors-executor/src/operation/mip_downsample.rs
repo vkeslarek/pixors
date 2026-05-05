@@ -16,7 +16,7 @@ use crate::gpu::kernel::{
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints,
+    BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints,
 };
 
 const MIP_DOWNSAMPLE_SPV: &[u8] =
@@ -24,7 +24,7 @@ const MIP_DOWNSAMPLE_SPV: &[u8] =
 
 static IN: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 static OUT: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-static PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
+static PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
 
 /// Generates MIP levels from incoming level-0 tiles.
 ///
@@ -47,7 +47,7 @@ pub struct MipDownsample {
 
 impl Stage for MipDownsample {
     fn kind(&self) -> &'static str { "mip_downsample" }
-    fn ports(&self) -> &'static PortSpec { &PORTS }
+    fn ports(&self) -> &'static PortSpecification { &PORTS }
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: false }
     }
@@ -202,26 +202,26 @@ impl MipDownsampleProcessor {
 }
 
 impl Processor for MipDownsampleProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("mip_downsample");
         match item {
             Item::Tile(tile) => {
                 // Pass through the original tile.
-                emit.emit(Item::Tile(tile.clone()));
+                ctx.emit.emit(Item::Tile(tile.clone()));
                 // Ingest it to build higher MIP levels.
-                self.ingest(tile, emit);
+                self.ingest(tile, ctx.emit);
                 Ok(())
             }
             Item::TileBlock(block) => {
-                self.downsample_block(block, emit);
+                self.downsample_block(block, ctx.emit);
                 Ok(())
             }
             _ => Err(Error::internal("MipDownsample expected Tile or TileBlock")),
         }
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
-        self.flush_remaining(emit);
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
+        self.flush_remaining(ctx.emit);
         Ok(())
     }
 }

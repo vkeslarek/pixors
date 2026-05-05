@@ -13,7 +13,7 @@ use crate::gpu::kernel::{
 };
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::debug_stopwatch;
 
@@ -26,7 +26,7 @@ static BLUR_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "neighborhood
 
 static BLUR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static BLUR_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(BLUR_INPUTS), outputs: PortGroup::Fixed(BLUR_OUTPUTS) };
+static BLUR_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(BLUR_INPUTS), outputs: PortGroup::Fixed(BLUR_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blur {
@@ -35,7 +35,7 @@ pub struct Blur {
 
 impl Stage for Blur {
     fn kind(&self) -> &'static str { "blur" }
-    fn ports(&self) -> &'static PortSpec { &BLUR_PORTS }
+    fn ports(&self) -> &'static PortSpecification { &BLUR_PORTS }
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: true }
     }
@@ -67,24 +67,21 @@ impl BlurProcessor {
 }
 
 impl Processor for BlurProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("blur");
-        let nbhd = match item {
-            Item::Neighborhood(n) => n,
-            _ => return Err(Error::internal("expected Neighborhood")),
-        };
+        let nbhd = ProcessorContext::take_neighborhood(item)?;
 
         let all_gpu = nbhd.tiles.iter().all(|t| t.data.is_gpu());
         if all_gpu {
             match gpu_blur_dispatch(&nbhd, self.radius) {
-                Ok(tile) => { emit.emit(Item::Tile(tile)); return Ok(()); }
+                Ok(tile) => { ctx.emit.emit(Item::Tile(tile)); return Ok(()); }
                 Err(e) => tracing::warn!("GPU blur failed ({e}), falling back to CPU"),
             }
             let nbhd = download_neighborhood(nbhd)?;
-            return cpu_blur_process(&nbhd, self.radius, emit);
+            return cpu_blur_process(&nbhd, self.radius, ctx.emit);
         }
 
-        cpu_blur_process(&nbhd, self.radius, emit)
+        cpu_blur_process(&nbhd, self.radius, ctx.emit)
     }
 }
 

@@ -5,16 +5,15 @@ use serde::{Deserialize, Serialize};
 use crate::data::buffer::Buffer;
 use crate::data::tile::{Tile, TileCoord};
 use crate::error::Error;
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::model::color::space::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 static CR_INPUTS: &[PortDeclaration] = &[];
 static CR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-static CR_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CR_INPUTS), outputs: PortGroup::Fixed(CR_OUTPUTS) };
+static CR_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(CR_INPUTS), outputs: PortGroup::Fixed(CR_OUTPUTS) };
 
 /// Bounding range of tile coordinates (exclusive end).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +47,7 @@ impl Stage for CacheReader {
         "cache_reader"
     }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &CR_PORTS
     }
 
@@ -81,7 +80,7 @@ pub struct CacheReaderProcessor {
 }
 
 impl Processor for CacheReaderProcessor {
-    fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, _item: Item) -> Result<(), Error> {
         let mip_w = (self.image_width >> self.mip_level).max(1);
         let mip_h = (self.image_height >> self.mip_level).max(1);
         let cols = mip_w.div_ceil(self.tile_size);
@@ -138,7 +137,7 @@ impl Processor for CacheReaderProcessor {
                 if coord.width == 0 || coord.height == 0 {
                     continue;
                 }
-                emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
+                ctx.emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
             }
         }
         Ok(())

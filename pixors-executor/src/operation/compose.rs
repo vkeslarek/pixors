@@ -9,7 +9,8 @@ use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::model::image::BlendMode;
 use crate::stage::{
-    BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints,
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext,
+    Stage, StageHints,
 };
 
 static COMPOSE_INPUT: PortDeclaration = PortDeclaration {
@@ -20,7 +21,7 @@ static COMPOSE_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "composed",
     kind: DataKind::Tile,
 }];
-static COMPOSE_PORTS: PortSpec = PortSpec {
+static COMPOSE_PORTS: PortSpecification = PortSpecification {
     inputs: PortGroup::Variable(&COMPOSE_INPUT),
     outputs: PortGroup::Fixed(COMPOSE_OUTPUTS),
 };
@@ -36,7 +37,7 @@ impl Stage for Compose {
         "compose"
     }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &COMPOSE_PORTS
     }
 
@@ -109,16 +110,8 @@ impl ComposeProcessor {
 }
 
 impl Processor for ComposeProcessor {
-    fn process(
-        &mut self,
-        port: u16,
-        item: Item,
-        emit: &mut Emitter<Item>,
-    ) -> Result<(), Error> {
-        let tile = match item {
-            Item::Tile(t) => t,
-            _ => return Err(Error::internal("Compose expected Tile")),
-        };
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+        let tile = ProcessorContext::take_tile(item)?;
 
         let mip = tile.coord.mip_level;
         let tx = tile.coord.tx;
@@ -129,36 +122,32 @@ impl Processor for ComposeProcessor {
             ty,
         };
 
-        if port >= self.layer_count {
+        if ctx.port >= self.layer_count {
             return Err(Error::internal(format!(
-                "Compose: port {port} out of bounds (layer_count {})",
-                self.layer_count
+                "Compose: port {} out of bounds (layer_count {})",
+                ctx.port, self.layer_count,
             )));
         }
         let slots = self
             .grid
             .entry(key)
             .or_insert_with(|| vec![None; self.layer_count as usize]);
-        slots[port as usize] = Some(tile);
+        slots[ctx.port as usize] = Some(tile);
 
-        self.try_compose(mip, tx, ty, emit);
+        self.try_compose(mip, tx, ty, ctx.emit);
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let keys: Vec<TileGridPos> = self.grid.keys().cloned().collect();
         for key in keys {
-            self.flush_slot(key, emit);
+            self.flush_slot(key, ctx.emit);
         }
         Ok(())
     }
 }
 
-fn compose_and_emit(
-    tiles: Vec<(u16, Tile)>,
-    blend_modes: &[BlendMode],
-    emit: &mut Emitter<Item>,
-) {
+fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], emit: &mut Emitter<Item>) {
     if tiles.is_empty() {
         return;
     }

@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use crate::data::device::Device;
 use crate::data::neighborhood::{EdgeCondition, Neighborhood};
 use crate::data::tile::{Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
@@ -16,7 +17,7 @@ static NA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: D
 
 static NA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "neighborhood", kind: DataKind::Neighborhood }];
 
-static NA_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(NA_INPUTS), outputs: PortGroup::Fixed(NA_OUTPUTS) };
+static NA_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(NA_INPUTS), outputs: PortGroup::Fixed(NA_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToNeighborhood {
@@ -26,7 +27,7 @@ pub struct TileToNeighborhood {
 impl Stage for TileToNeighborhood {
     fn kind(&self) -> &'static str { "neighborhood_agg" }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &NA_PORTS
     }
 
@@ -36,6 +37,8 @@ impl Stage for TileToNeighborhood {
             prefers_gpu: false,
         }
     }
+
+    fn device(&self) -> Device { Device::Either }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(TileToNeighborhoodProcessor::new(self.radius)))
@@ -135,12 +138,9 @@ impl TileToNeighborhoodProcessor {
 }
 
 impl Processor for TileToNeighborhoodProcessor {
-    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("neighborhood_agg");
-        let tile = match item {
-            Item::Tile(t) => t,
-            _ => return Err(Error::internal("expected Tile")),
-        };
+        let tile = ProcessorContext::take_tile(item)?;
         self.discover_bounds(&tile);
         self.update_bounds(&tile);
 
@@ -166,16 +166,16 @@ impl Processor for TileToNeighborhoodProcessor {
             .filter(|p| p.ty <= safe_until)
             .collect();
         for pos in candidates {
-            self.try_emit(pos.mip_level, pos.tx, pos.ty, emit);
+            self.try_emit(pos.mip_level, pos.tx, pos.ty, ctx.emit);
         }
         Ok(())
     }
 
-    fn finish(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let keys: Vec<TileGridPos> = self.tile_cache.keys().copied().collect();
         for pos in keys {
             if !self.emitted.contains(&pos) {
-                self.try_emit(pos.mip_level, pos.tx, pos.ty, emit);
+                self.try_emit(pos.mip_level, pos.tx, pos.ty, ctx.emit);
             }
         }
         Ok(())

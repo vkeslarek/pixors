@@ -7,9 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::model::color::space::ColorSpace;
 use crate::data::scanline::ScanLine;
 use crate::model::pixel::meta::PixelMeta;
-use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
 
 use crate::error::Error;
 
@@ -21,7 +20,7 @@ use crate::debug_stopwatch;
 
 static FD_INPUTS: &[PortDeclaration] = &[];
 static FD_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
-static FD_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(FD_INPUTS), outputs: PortGroup::Fixed(FD_OUTPUTS) };
+static FD_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(FD_INPUTS), outputs: PortGroup::Fixed(FD_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDecoder {
@@ -31,7 +30,7 @@ pub struct FileDecoder {
 impl Stage for FileDecoder {
     fn kind(&self) -> &'static str { "file_decoder" }
 
-    fn ports(&self) -> &'static PortSpec {
+    fn ports(&self) -> &'static PortSpecification {
         &FD_PORTS
     }
 
@@ -58,7 +57,7 @@ impl FileDecoderProcessor {
 }
 
 impl Processor for FileDecoderProcessor {
-    fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, ctx: ProcessorContext<'_>, _item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("file_decoder");
         let file = File::open(&self.path)?;
         let mut decoder = png::Decoder::new(BufReader::new(file));
@@ -78,7 +77,7 @@ impl Processor for FileDecoderProcessor {
         for y in 0..h {
             let s = y as usize * w as usize * 4;
             let data = rgba[s..s + w as usize * 4].to_vec();
-            emit.emit(Item::ScanLine(ScanLine::new(0, y, w, meta, Buffer::cpu(data))));
+            ctx.emit.emit(Item::ScanLine(ScanLine::new(0, y, w, meta, Buffer::cpu(data))));
         }
         Ok(())
     }

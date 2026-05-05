@@ -10,7 +10,8 @@ mod tests {
     use crate::model::pixel::meta::PixelMeta;
     use crate::model::pixel::{AlphaPolicy, PixelFormat};
     use crate::operation::blur::BlurProcessor;
-    use crate::stage::Processor;
+    use crate::data::device::Device;
+    use crate::stage::{Processor, ProcessorContext};
 
     #[test]
     #[ignore]
@@ -55,7 +56,7 @@ mod tests {
         let mut processor = BlurProcessor::new(r);
         let mut cpu_emit = Emitter::new();
         processor
-            .process(0, Item::Neighborhood(cpu_nbhd), &mut cpu_emit)
+            .process(ProcessorContext { port: 0, device: Device::Cpu, emit: &mut cpu_emit }, Item::Neighborhood(cpu_nbhd))
             .unwrap();
         let cpu_out = match cpu_emit.into_items().remove(0).payload {
             Item::Tile(t) => t,
