@@ -3,7 +3,8 @@ use iced::wgpu;
 pub struct TiledTexture {
     texture: wgpu::Texture,
     full_view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
+    sampler_linear: wgpu::Sampler,
+    sampler_nearest: wgpu::Sampler,
     width: u32,
     height: u32,
     mip_level: u32,
@@ -22,11 +23,13 @@ impl TiledTexture {
         let texture = Self::create_texture(device, width, height);
         fill_background(queue, &texture, width, height);
         let full_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = make_sampler(device);
+        let sampler_linear = make_sampler(device, wgpu::FilterMode::Linear);
+        let sampler_nearest = make_sampler(device, wgpu::FilterMode::Nearest);
         Self {
             texture,
             full_view,
-            sampler,
+            sampler_linear,
+            sampler_nearest,
             width,
             height,
             mip_level,
@@ -61,10 +64,12 @@ impl TiledTexture {
         let texture = Self::create_texture(device, new_width, new_height);
         fill_background(queue, &texture, new_width, new_height);
         let full_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = make_sampler(device);
+        let sampler_linear = make_sampler(device, wgpu::FilterMode::Linear);
+        let sampler_nearest = make_sampler(device, wgpu::FilterMode::Nearest);
         self.texture = texture;
         self.full_view = full_view;
-        self.sampler = sampler;
+        self.sampler_linear = sampler_linear;
+        self.sampler_nearest = sampler_nearest;
         self.width = new_width;
         self.height = new_height;
         self.mip_level = new_mip;
@@ -110,8 +115,12 @@ impl TiledTexture {
     pub fn view(&self) -> &wgpu::TextureView {
         &self.full_view
     }
-    pub fn sampler(&self) -> &wgpu::Sampler {
-        &self.sampler
+    pub fn sampler(&self, linear: bool) -> &wgpu::Sampler {
+        if linear {
+            &self.sampler_linear
+        } else {
+            &self.sampler_nearest
+        }
     }
     pub fn dims(&self) -> (u32, u32) {
         (self.width, self.height)
@@ -124,13 +133,13 @@ impl TiledTexture {
     }
 }
 
-fn make_sampler(device: &wgpu::Device) -> wgpu::Sampler {
+fn make_sampler(device: &wgpu::Device, filter: wgpu::FilterMode) -> wgpu::Sampler {
     device.create_sampler(&wgpu::SamplerDescriptor {
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
         address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
+        mag_filter: filter,
+        min_filter: filter,
         ..Default::default()
     })
 }

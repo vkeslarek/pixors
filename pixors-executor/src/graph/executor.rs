@@ -8,6 +8,7 @@ use crate::data::{Buffer, Tile, TileCoord};
 use crate::graph::emitter::Emitter;
 use crate::graph::graph::{ExecGraph, StageId};
 use crate::graph::item::Item;
+use crate::graph::routed::Routed;
 use crate::model::color::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
@@ -45,7 +46,7 @@ impl<'a> Executor<'a> {
     pub fn run(&mut self) -> Result<(), Error> {
         let order = toposort(&self.graph.graph, None).map_err(|_| Error::internal("cycle"))?;
 
-        let mut pending: HashMap<StageId, VecDeque<Item>> = self
+        let mut pending: HashMap<StageId, VecDeque<Routed<Item>>> = self
             .graph
             .graph
             .node_indices()
@@ -82,7 +83,7 @@ impl<'a> Executor<'a> {
             while let Some(item) = pending.get_mut(&id).and_then(|q| q.pop_front()) {
                 let mut emitter = Emitter::new();
                 match self.nodes.get_mut(&id) {
-                    Some(CompiledNode::Kernel(k)) => k.process(0, item, &mut emitter)?,
+                    Some(CompiledNode::Kernel(k)) => k.process(item.port, item.payload, &mut emitter)?,
                     _ => return Err(Error::internal("unexpected input")),
                 }
                 self.route(id, emitter.into_items(), &mut pending);
@@ -101,18 +102,23 @@ impl<'a> Executor<'a> {
     fn route(
         &self,
         from: StageId,
-        items: Vec<Item>,
-        pending: &mut HashMap<StageId, VecDeque<Item>>,
+        items: Vec<Routed<Item>>,
+        pending: &mut HashMap<StageId, VecDeque<Routed<Item>>>,
     ) {
         for edge in self.graph.graph.edges_directed(from, Direction::Outgoing) {
             let target = edge.target();
+            let from_port = edge.weight().from_port;
+            let to_port = edge.weight().to_port;
             if let Some(queue) = pending.get_mut(&target) {
                 for item in &items {
-                    queue.push_back(item.clone());
+                    if item.port == from_port {
+                        queue.push_back(Routed {
+                            port: to_port,
+                            payload: item.payload.clone(),
+                        });
+                    }
                 }
             }
-            // Only route to first consumer for backward compat
-            break;
         }
     }
 }

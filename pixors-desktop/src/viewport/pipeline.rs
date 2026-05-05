@@ -14,6 +14,7 @@ pub struct ViewportPipeline {
     tiled_texture: Option<Arc<Mutex<TiledTexture>>>,
     texture_dims: Option<(u32, u32)>,
     last_mip: Option<u32>,
+    use_linear: bool,
 }
 
 impl shader::Pipeline for ViewportPipeline {
@@ -140,6 +141,7 @@ impl shader::Pipeline for ViewportPipeline {
             tiled_texture: None,
             texture_dims: None,
             last_mip: None,
+            use_linear: true,
         }
     }
 }
@@ -172,13 +174,13 @@ impl ViewportPipeline {
         })
     }
 
-    fn rebind_if_needed(&mut self, device: &iced::wgpu::Device) {
+    fn rebind_if_needed(&mut self, device: &iced::wgpu::Device, use_linear: bool) {
         let Some(tex) = &self.tiled_texture else {
             return;
         };
         let guard = tex.lock().unwrap();
         let dims = guard.dims();
-        if self.texture_dims == Some(dims) {
+        if self.texture_dims == Some(dims) && self.use_linear == use_linear {
             return;
         }
         self.bind_group = Self::make_bind_group(
@@ -186,9 +188,10 @@ impl ViewportPipeline {
             &self.bgl,
             &self.camera_buffer,
             guard.view(),
-            guard.sampler(),
+            guard.sampler(use_linear),
         );
         self.texture_dims = Some(dims);
+        self.use_linear = use_linear;
     }
 }
 
@@ -262,8 +265,9 @@ impl shader::Primitive for ViewportPrimitive {
             }
         }
 
+        let use_linear = self.camera.zoom < 4.0;
         pipeline.last_mip = Some(mip);
-        pipeline.rebind_if_needed(device);
+        pipeline.rebind_if_needed(device, use_linear);
         queue.write_buffer(
             &pipeline.camera_buffer,
             0,

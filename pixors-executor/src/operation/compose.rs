@@ -121,6 +121,12 @@ impl CpuKernel for ComposeRunner {
             ty,
         };
 
+        if port >= self.layer_count {
+            return Err(Error::internal(format!(
+                "Compose: port {port} out of bounds (layer_count {})",
+                self.layer_count
+            )));
+        }
         let slots = self
             .grid
             .entry(key)
@@ -146,10 +152,16 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
     }
 
     let bpp = tiles[0].1.meta.format.bytes_per_pixel() as usize;
-    let w = tiles[0].1.coord.width as usize;
-    let h = tiles[0].1.coord.height as usize;
+    let mut w = 0;
+    let mut h = 0;
+    for (_, tile) in tiles.iter() {
+        w = w.max(tile.coord.width as usize);
+        h = h.max(tile.coord.height as usize);
+    }
     let meta = tiles[0].1.meta;
-    let coord = tiles[0].1.coord;
+    let mut coord = tiles[0].1.coord;
+    coord.width = w as u32;
+    coord.height = h as u32;
 
     let mut out = vec![0u8; w * h * bpp];
 
@@ -160,13 +172,15 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
             let mut started = false;
 
             for (_, tile) in tiles.iter() {
+                if x >= tile.coord.width as usize || y >= tile.coord.height as usize {
+                    continue;
+                }
+
                 let data = match &tile.data {
                     Buffer::Cpu(v) => v.as_slice(),
                     Buffer::Gpu(_) => continue,
                 };
-                let px = x.min(tile.coord.width as usize - 1);
-                let py = y.min(tile.coord.height as usize - 1);
-                let t_off = (py * tile.coord.width as usize + px) * bpp;
+                let t_off = (y * tile.coord.width as usize + x) * bpp;
                 if t_off + bpp > data.len() {
                     continue;
                 }
@@ -180,8 +194,8 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
                     result = src;
                     started = true;
                 } else {
-                    // Lower port = on top. Ascending order → later items go OVER earlier.
-                    result = alpha_over(&result, &src);
+                    // Higher port = on top. Ascending order → later items go OVER earlier.
+                    result = alpha_over(&src, &result);
                 }
             }
 

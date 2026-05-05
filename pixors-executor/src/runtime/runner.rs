@@ -12,6 +12,6 @@ pub trait Runner: Send {
     fn run(
         self: Box<Self>,
         inputs: Vec<ItemReceiver>,
-        outputs: Vec<(ItemSender, u16)>,
+        outputs: Vec<(ItemSender, u16, u16)>,
     ) -> Result<(), Error>;
 }

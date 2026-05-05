@@ -51,7 +51,7 @@ pub struct App {
     pub cache: Option<Arc<Mutex<ViewportCache>>>,
     pub tile_generation: u64,
     /// Written by ViewportProgram when MIP changes; read here to trigger disk fetch.
-    pub mip_fetch_signal: Arc<Mutex<Option<(u32, TileRange)>>>,
+    pub mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
     pub cache_dir: Option<PathBuf>,
     pub image_dims: Option<(u32, u32)>,
 }
@@ -80,7 +80,7 @@ impl Default for App {
             errors: Vec::new(),
             cache: Some(ViewportCache::new()),
             tile_generation: 0,
-            mip_fetch_signal: Arc::new(Mutex::new(None)),
+            mip_fetch_signal: Arc::new(Mutex::new(Vec::new())),
             cache_dir: None,
             image_dims: None,
         }
@@ -222,7 +222,8 @@ impl App {
         }
 
         if let Ok(mut sig) = self.mip_fetch_signal.lock() {
-            if let Some((mip, range)) = sig.take() {
+            let reqs = std::mem::take(&mut *sig);
+            for (mip, range) in reqs {
                 self.fetch_mip_from_cache(mip, range);
             }
         }

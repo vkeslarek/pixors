@@ -14,14 +14,15 @@ impl ChainRunner {
         Self { kernels }
     }
 
-    fn run_item(kernels: &mut [Box<dyn CpuKernel>], port: u16, item: Item) -> Result<Vec<Item>, Error> {
-        let mut current = vec![item];
+    fn run_item(kernels: &mut [Box<dyn CpuKernel>], port: u16, item: Item) -> Result<Vec<RoutedItem>, Error> {
+        let mut current = vec![RoutedItem { port, payload: item }];
         for (i, kernel) in kernels.iter_mut().enumerate() {
             let mut next = Vec::new();
-            for item in current {
+            for routed_item in current {
                 let mut emit = Emitter::new();
-                let p = if i == 0 { port } else { 0 };
-                kernel.process(p, item, &mut emit)?;
+                // Chain assumes internal edges are port 0 -> port 0.
+                let p = if i == 0 { routed_item.port } else { 0 };
+                kernel.process(p, routed_item.payload, &mut emit)?;
                 next.extend(emit.into_items());
             }
             current = next;
@@ -29,16 +30,16 @@ impl ChainRunner {
         Ok(current)
     }
 
-    fn run_finish(kernels: &mut [Box<dyn CpuKernel>]) -> Result<Vec<Item>, Error> {
-        let mut all_outputs: Vec<Item> = Vec::new();
+    fn run_finish(kernels: &mut [Box<dyn CpuKernel>]) -> Result<Vec<RoutedItem>, Error> {
+        let mut all_outputs: Vec<RoutedItem> = Vec::new();
         let n = kernels.len();
         for i in 0..n {
             let mut emit = Emitter::new();
             kernels[i].finish(&mut emit)?;
             let items = emit.into_items();
             if i + 1 < n {
-                for item in items {
-                    let outputs = Self::run_item(&mut kernels[i + 1..], 0, item)?;
+                for routed_item in items {
+                    let outputs = Self::run_item(&mut kernels[i + 1..], 0, routed_item.payload)?;
                     all_outputs.extend(outputs);
                 }
             } else {
@@ -53,7 +54,7 @@ impl Runner for ChainRunner {
     fn run(
         mut self: Box<Self>,
         inputs: Vec<ItemReceiver>,
-        outputs: Vec<(ItemSender, u16)>,
+        outputs: Vec<(ItemSender, u16, u16)>,
     ) -> Result<(), Error> {
         let kernels = &mut self.kernels;
 
@@ -88,21 +89,23 @@ impl Runner for ChainRunner {
             }
         }
 
-        for (tx, _) in &outputs {
+        for (tx, _, _) in &outputs {
             let _ = tx.send(None);
         }
         Ok(())
     }
 }
 
-fn send_to_all(outputs: &[(ItemSender, u16)], items: Vec<Item>) {
+fn send_to_all(outputs: &[(ItemSender, u16, u16)], items: Vec<RoutedItem>) {
     if outputs.is_empty() || items.is_empty() {
         return;
     }
-    for item in items {
-        for (tx, to_port) in outputs.iter() {
-            let routed = RoutedItem { port: *to_port, payload: item.clone() };
-            let _ = tx.send(Some(routed));
+    for routed_item in items {
+        for (tx, from_port, to_port) in outputs.iter() {
+            if routed_item.port == *from_port {
+                let routed = RoutedItem { port: *to_port, payload: routed_item.payload.clone() };
+                let _ = tx.send(Some(routed));
+            }
         }
     }
 }

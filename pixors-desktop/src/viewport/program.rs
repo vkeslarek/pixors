@@ -16,7 +16,7 @@ pub struct ViewportProgram {
     pub tile_generation: u64,
     /// Set by update() when MIP changes: (mip_level, visible_tile_range).
     /// App polls this on each tick to trigger a disk fetch if needed.
-    pub mip_fetch_signal: Arc<Mutex<Option<(u32, TileRange)>>>,
+    pub mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
 }
 
 impl<Msg> shader::Program<Msg> for ViewportProgram {
@@ -119,9 +119,20 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 old_mip,
                 state.current_mip,
             );
-            // Signal app to fetch only the visible tiles for the new MIP from disk.
-            let range = state.camera.visible_tile_range(state.current_mip, TILE_SIZE);
-            *self.mip_fetch_signal.lock().unwrap() = Some((state.current_mip, range));
+            let mut reqs = Vec::new();
+            reqs.push((state.current_mip, state.camera.visible_tile_range(state.current_mip, TILE_SIZE)));
+            
+            // Preemptively fetch lower resolution (zoomed out, MIP + 1)
+            let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
+            if state.current_mip < max_mip {
+                reqs.push((state.current_mip + 1, state.camera.visible_tile_range(state.current_mip + 1, TILE_SIZE)));
+            }
+            // Preemptively fetch higher resolution (zoomed in, MIP - 1)
+            if state.current_mip > 0 {
+                reqs.push((state.current_mip - 1, state.camera.visible_tile_range(state.current_mip - 1, TILE_SIZE)));
+            }
+            
+            *self.mip_fetch_signal.lock().unwrap() = reqs;
             Some(shader::Action::request_redraw().and_capture())
         } else {
             action

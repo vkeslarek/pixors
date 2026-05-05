@@ -22,7 +22,7 @@ use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner, CHANNEL_BOUND}
 type Graph = StableDiGraph<StageNode, EdgePorts>;
 
 pub struct Pipeline {
-    chains: Vec<(Box<dyn Runner>, Vec<ItemReceiver>, Vec<(ItemSender, u16)>)>,
+    chains: Vec<(Box<dyn Runner>, Vec<ItemReceiver>, Vec<(ItemSender, u16, u16)>)>,
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
@@ -197,14 +197,24 @@ fn validate_ports(g: &Graph) -> Result<(), Error> {
 fn outport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
     match group {
         PortGroup::Fixed(ports) => ports.len(),
-        PortGroup::Variable(_) => g.edges_directed(id, Direction::Outgoing).count(),
+        PortGroup::Variable(_) => {
+            g.edges_directed(id, Direction::Outgoing)
+                .map(|e| e.weight().from_port as usize + 1)
+                .max()
+                .unwrap_or(0)
+        }
     }
 }
 
 fn inport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
     match group {
         PortGroup::Fixed(ports) => ports.len(),
-        PortGroup::Variable(_) => g.edges_directed(id, Direction::Incoming).count(),
+        PortGroup::Variable(_) => {
+            g.edges_directed(id, Direction::Incoming)
+                .map(|e| e.weight().to_port as usize + 1)
+                .max()
+                .unwrap_or(0)
+        }
     }
 }
 
@@ -288,14 +298,14 @@ fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
         if sd != Device::Gpu && dd == Device::Gpu && is_tile {
             let mid = g.add_node(StageNode::Operation(OperationNode::Upload(Upload)));
             if let Some(e) = g.find_edge(src, dst) { g.remove_edge(e); }
-            g.add_edge(src, mid, ports);
-            g.add_edge(mid, dst, ports);
+            g.add_edge(src, mid, EdgePorts { from_port: ports.from_port, to_port: 0 });
+            g.add_edge(mid, dst, EdgePorts { from_port: 0, to_port: ports.to_port });
             devs.insert(mid, Device::Cpu);
         } else if sd == Device::Gpu && dd != Device::Gpu && is_tile {
             let mid = g.add_node(StageNode::Operation(OperationNode::Download(Download)));
             if let Some(e) = g.find_edge(src, dst) { g.remove_edge(e); }
-            g.add_edge(src, mid, ports);
-            g.add_edge(mid, dst, ports);
+            g.add_edge(src, mid, EdgePorts { from_port: ports.from_port, to_port: 0 });
+            g.add_edge(mid, dst, EdgePorts { from_port: 0, to_port: ports.to_port });
             devs.insert(mid, Device::Cpu);
         }
     }
@@ -341,9 +351,9 @@ fn build_channels(
     order: &[StageId],
     node_chain: &HashMap<StageId, usize>,
     num_chains: usize,
-) -> (Vec<Vec<ItemReceiver>>, Vec<Vec<(ItemSender, u16)>>) {
+) -> (Vec<Vec<ItemReceiver>>, Vec<Vec<(ItemSender, u16, u16)>>) {
     let mut ins: Vec<Vec<ItemReceiver>> = (0..num_chains).map(|_| vec![]).collect();
-    let mut outs: Vec<Vec<(ItemSender, u16)>> = (0..num_chains).map(|_| vec![]).collect();
+    let mut outs: Vec<Vec<(ItemSender, u16, u16)>> = (0..num_chains).map(|_| vec![]).collect();
     let mut seen = HashMap::new();
 
     for &src_node in order {
@@ -351,12 +361,12 @@ fn build_channels(
         for edge in g.edges_directed(src_node, Direction::Outgoing) {
             let dc = node_chain[&edge.target()];
             let ports = *edge.weight();
-            if sc == dc || seen.contains_key(&(sc, dc, ports.to_port)) {
+            if sc == dc || seen.contains_key(&(sc, dc, ports.from_port, ports.to_port)) {
                 continue;
             }
-            seen.insert((sc, dc, ports.to_port), ());
+            seen.insert((sc, dc, ports.from_port, ports.to_port), ());
             let (tx, rx) = sync_channel::<Option<RoutedItem>>(CHANNEL_BOUND);
-            outs[sc].push((tx, ports.to_port));
+            outs[sc].push((tx, ports.from_port, ports.to_port));
             ins[dc].push(rx);
         }
     }

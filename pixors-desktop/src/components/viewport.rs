@@ -15,7 +15,7 @@ pub fn view<'a, Msg: 'a>(
     canvas_h: u32,
     cache: Option<Arc<Mutex<ViewportCache>>>,
     tile_generation: u64,
-    mip_fetch_signal: Arc<Mutex<Option<(u32, TileRange)>>>,
+    mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
 ) -> Element<'a, Msg> {
     let program = ViewportProgram { cache, tile_generation, mip_fetch_signal };
 
