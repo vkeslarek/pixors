@@ -3,21 +3,21 @@ use std::collections::{HashMap, VecDeque};
 use petgraph::Direction;
 use petgraph::algo::toposort;
 use petgraph::visit::EdgeRef;
-
-use crate::data::{Buffer, Tile, TileCoord};
+use crate::data::buffer::Buffer;
+use crate::data::tile::{Tile, TileCoord};
 use crate::graph::emitter::Emitter;
 use crate::graph::graph::{ExecGraph, StageId};
 use crate::graph::item::Item;
 use crate::graph::routed::Routed;
-use crate::model::color::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{CpuKernel, Stage};
+use crate::stage::{Processor, Stage};
 use crate::error::Error;
 use crate::debug_stopwatch;
+use crate::model::color::space::ColorSpace;
 
 enum CompiledNode {
-    Kernel(Box<dyn CpuKernel>),
+    Kernel(Box<dyn Processor>),
 }
 
 pub struct Executor<'a> {
@@ -30,11 +30,11 @@ impl<'a> Executor<'a> {
         let mut nodes = HashMap::with_capacity(graph.stage_count());
         for id in graph.graph.node_indices() {
             let stage = &graph.graph[id];
-            let node = if let Some(k) = stage.cpu_kernel() {
+            let node = if let Some(k) = stage.processor() {
                 CompiledNode::Kernel(k)
             } else {
                 return Err(Error::internal(format!(
-                    "no cpu_kernel for stage: {}",
+                    "no processor for stage: {}",
                     stage.kind()
                 )));
             };

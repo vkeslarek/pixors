@@ -1,22 +1,22 @@
 use serde::{Deserialize, Serialize};
 
-use crate::data::Tile;
+use crate::data::tile::Tile;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
 use crate::gpu;
 
-use crate::data::{Buffer, GpuBuffer};
+use crate::data::buffer::{Buffer, GpuBuffer};
 
 use crate::debug_stopwatch;
 
 
-static UP_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static UP_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static UP_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static UP_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
 static UP_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(UP_INPUTS), outputs: PortGroup::Fixed(UP_OUTPUTS) };
 
@@ -37,20 +37,20 @@ impl Stage for Upload {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(UploadRunner::new()))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(UploadProcessor::new()))
     }
 }
 
-pub struct UploadRunner;
+pub struct UploadProcessor;
 
-impl UploadRunner {
+impl UploadProcessor {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl CpuKernel for UploadRunner {
+impl Processor for UploadProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("upload");
         let tile = match item {
@@ -61,7 +61,7 @@ impl CpuKernel for UploadRunner {
             emit.emit(Item::Tile(tile));
             return Ok(());
         }
-        let ctx = gpu::try_init()
+        let ctx = gpu::context::try_init()
             .ok_or_else(|| Error::internal("GPU unavailable but Upload was scheduled"))?;
         let bytes: &[u8] = tile.data.as_cpu_slice().unwrap();
         let size = bytes.len() as u64;

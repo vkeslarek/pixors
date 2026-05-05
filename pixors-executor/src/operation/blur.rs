@@ -1,7 +1,10 @@
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Buffer, Device, Neighborhood, Tile};
+use crate::data::buffer::Buffer;
+use crate::data::device::Device;
+use crate::data::neighborhood::Neighborhood;
+use crate::data::tile::Tile;
 use crate::error::Error;
 use crate::gpu;
 use crate::gpu::kernel::{
@@ -10,7 +13,7 @@ use crate::gpu::kernel::{
 };
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::debug_stopwatch;
 
@@ -19,9 +22,9 @@ const BLUR_SPIRV: &[u8] =
     include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
 
 
-static BLUR_INPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
+static BLUR_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "neighborhood", kind: DataKind::Neighborhood }];
 
-static BLUR_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static BLUR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
 static BLUR_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(BLUR_INPUTS), outputs: PortGroup::Fixed(BLUR_OUTPUTS) };
 
@@ -37,8 +40,8 @@ impl Stage for Blur {
         StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: true }
     }
     fn device(&self) -> Device { Device::Gpu }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(BlurKernel::new(self.radius)))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(BlurProcessor::new(self.radius)))
     }
 }
 
@@ -53,17 +56,17 @@ pub struct BlurParams {
 
 // ── Kernel ──────────────────────────────────────────────────────────────────
 
-pub struct BlurKernel {
+pub struct BlurProcessor {
     radius: u32,
 }
 
-impl BlurKernel {
+impl BlurProcessor {
     pub fn new(radius: u32) -> Self {
         Self { radius }
     }
 }
 
-impl CpuKernel for BlurKernel {
+impl Processor for BlurProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("blur");
         let nbhd = match item {
@@ -119,7 +122,7 @@ impl crate::gpu::kernel::GpuKernel for BlurGpuKernel {
 }
 
 fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
-    let ctx = gpu::try_init()
+    let ctx = gpu::context::try_init()
         .ok_or_else(|| Error::internal("GPU unavailable for blur"))?;
     let scheduler = ctx.scheduler();
     scheduler.flush();
@@ -195,7 +198,7 @@ fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
         mip_level, nbhd.center.tx, nbhd.center.ty, r,
     );
 
-    use crate::data::GpuBuffer;
+    use crate::data::buffer::GpuBuffer;
     Ok(Tile::new(nbhd.center, nbhd.meta, Buffer::Gpu(GpuBuffer::new(out_arc, out_size))))
 }
 
@@ -206,7 +209,7 @@ fn download_neighborhood(mut nbhd: Neighborhood) -> Result<Neighborhood, Error> 
     if !nbhd.tiles.iter().any(|t| t.data.is_gpu()) {
         return Ok(nbhd);
     }
-    let ctx = gpu::try_init()
+    let ctx = gpu::context::try_init()
         .ok_or_else(|| Error::internal("GPU unavailable for neighborhood download"))?;
     let scheduler = ctx.scheduler();
     scheduler.flush();

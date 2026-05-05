@@ -1,11 +1,12 @@
 //! Color conversion engine — precomputed LUTs for fast pixel conversion.
 
-use crate::model::color::Matrix3x3;
-use crate::model::color::{ColorSpace, TransferFn};
 use crate::error::Error;
-use crate::model::color::SampleFormat;
 use crate::model::pixel::{AlphaPolicy, Pixel};
 use wide::f32x4;
+use crate::model::color::matrix::Matrix3x3;
+use crate::model::color::sample::SampleFormat;
+use crate::model::color::space::ColorSpace;
+use crate::model::color::transfer::TransferFn;
 
 /// Precomputed converter between two color spaces.
 ///
@@ -216,7 +217,7 @@ pub fn decode_simd(v: f32x4, tf: TransferFn) -> f32x4 {
 pub fn encode_simd(v: f32x4, lut: &[f32]) -> f32x4 {
     let mut out = [0.0; 4];
     for (i, val) in v.to_array().iter().enumerate() {
-        out[i] = crate::model::color::lookup_encode(*val, lut);
+        out[i] = lookup_encode(*val, lut);
     }
     f32x4::from(out)
 }

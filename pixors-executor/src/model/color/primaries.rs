@@ -2,7 +2,7 @@
 //!
 //! Based on kolor's `RgbPrimaries` and `WhitePoint`.
 
-use super::Chromaticity;
+use crate::model::color::chromaticity::Chromaticity;
 
 /// A set of primary colors that define an RGB color space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

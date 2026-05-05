@@ -2,11 +2,13 @@
 //!
 //! Used by PNG and TIFF readers. Pure functions, no I/O.
 
-use super::{ColorSpace, WhitePoint, primaries::RgbPrimaries};
 
 // ---------------------------------------------------------------------------
 // Chromaticity matching
 // ---------------------------------------------------------------------------
+
+use crate::model::color::primaries::{RgbPrimaries, WhitePoint};
+use crate::model::color::space::ColorSpace;
 
 /// Match `(wx, wy, rx, ry, gx, gy, bx, by)` chromaticity values against
 /// known primaries+whitepoint combos. Returns `(RgbPrimaries, WhitePoint)`
@@ -211,8 +213,8 @@ impl IccClassification {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::color::transfer::TransferFn;
     use super::*;
-    use crate::model::color::TransferFn;
 
     #[test]
     fn match_srgb_chromaticities() {

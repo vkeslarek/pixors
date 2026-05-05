@@ -1,6 +1,6 @@
 //! TIFF image loading.
 
-use crate::model::color::ColorSpace;
+use crate::model::color::space::ColorSpace;
 use crate::error::Error;
 use crate::model::image::buffer::BufferDesc;
 use crate::model::image::{AlphaMode, ImageBuffer, Image, Layer, LayerMetadata, ImageInfo, Orientation, ImageMetadata, BlendMode};

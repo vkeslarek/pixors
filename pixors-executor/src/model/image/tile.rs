@@ -1,10 +1,10 @@
-use crate::model::color::ColorSpace;
+use crate::model::color::conversion::ColorConversion;
 use crate::model::pixel::Rgba;
-use crate::model::color::ColorConversion;
 use crate::model::pixel::AlphaPolicy;
 use half::f16;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use crate::model::color::space::ColorSpace;
 
 /// Identity of a tile — everything the engine needs to locate any tile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -162,7 +162,6 @@ impl TileGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::color::ColorSpace;
 
     #[test]
     fn test_tile_coord_creation() {

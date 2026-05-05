@@ -2,15 +2,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::Buffer;
+use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
-static CW_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static CW_OUTPUTS: &[PortDecl] = &[];
+static CW_OUTPUTS: &[PortDeclaration] = &[];
 
 static CW_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CW_INPUTS), outputs: PortGroup::Fixed(CW_OUTPUTS) };
 
@@ -48,18 +48,18 @@ impl Stage for CacheWriter {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(CacheWriterRunner {
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(CacheWriterProcessor {
             cache_dir: self.cache_dir.clone(),
         }))
     }
 }
 
-pub struct CacheWriterRunner {
+pub struct CacheWriterProcessor {
     cache_dir: PathBuf,
 }
 
-impl CpuKernel for CacheWriterRunner {
+impl Processor for CacheWriterProcessor {
     fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let tile = match item {
             Item::Tile(t) => t,

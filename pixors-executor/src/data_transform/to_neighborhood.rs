@@ -1,29 +1,29 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-
-use crate::data::{EdgeCondition, Neighborhood, NeighborhoodCoord, Tile, TileGridPos};
+use crate::data::neighborhood::{EdgeCondition, Neighborhood};
+use crate::data::tile::{Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
 use crate::debug_stopwatch;
 
 
-static NA_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static NA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static NA_OUTPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
+static NA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "neighborhood", kind: DataKind::Neighborhood }];
 
 static NA_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(NA_INPUTS), outputs: PortGroup::Fixed(NA_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NeighborhoodAgg {
+pub struct TileToNeighborhood {
     pub radius: u32,
 }
 
-impl Stage for NeighborhoodAgg {
+impl Stage for TileToNeighborhood {
     fn kind(&self) -> &'static str { "neighborhood_agg" }
 
     fn ports(&self) -> &'static PortSpec {
@@ -37,12 +37,12 @@ impl Stage for NeighborhoodAgg {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(NeighborhoodAggRunner::new(self.radius)))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(TileToNeighborhoodProcessor::new(self.radius)))
     }
 }
 
-pub struct NeighborhoodAggRunner {
+pub struct TileToNeighborhoodProcessor {
     pixel_radius: u32,
     tile_cache: HashMap<TileGridPos, Tile>,
     emitted: HashSet<TileGridPos>,
@@ -53,7 +53,7 @@ pub struct NeighborhoodAggRunner {
     initialized: bool,
 }
 
-impl NeighborhoodAggRunner {
+impl TileToNeighborhoodProcessor {
     pub fn new(pixel_radius: u32) -> Self {
         Self {
             pixel_radius,
@@ -134,7 +134,7 @@ impl NeighborhoodAggRunner {
     }
 }
 
-impl CpuKernel for NeighborhoodAggRunner {
+impl Processor for TileToNeighborhoodProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("neighborhood_agg");
         let tile = match item {

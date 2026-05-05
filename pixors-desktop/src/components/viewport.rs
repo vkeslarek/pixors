@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use iced::widget::{column, container, shader as shader_widget, stack};
 use iced::{Background, Color, Element, Length};
 
-use pixors_executor::source::TileRange;
+use pixors_executor::source::cache_reader::TileRange;
 
 use crate::viewport::program::ViewportProgram;
 use crate::viewport::tile_cache::ViewportCache;

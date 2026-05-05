@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-
-use crate::data::{Tile, TileBlock, TileBlockCoord, TileGridPos};
+use crate::data::tile::{Tile, TileGridPos};
+use crate::data::tile_block::{TileBlock, TileBlockCoord};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
 use crate::debug_stopwatch;
 
 
-static IN: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static IN: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static OUT: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static OUT: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
 static PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
 
@@ -34,21 +34,21 @@ impl Stage for TileToTileBlock {
         StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(TileToTileBlockRunner::new(
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(TileToTileBlockProcessor::new(
             self.tile_size, self.image_width, self.image_height,
         )))
     }
 }
 
-pub struct TileToTileBlockRunner {
+pub struct TileToTileBlockProcessor {
     tile_size: u32,
     image_width: u32,
     image_height: u32,
     grid: HashMap<TileGridPos, Tile>,
 }
 
-impl TileToTileBlockRunner {
+impl TileToTileBlockProcessor {
     pub fn new(tile_size: u32, image_width: u32, image_height: u32) -> Self {
         Self { tile_size, image_width, image_height, grid: HashMap::new() }
     }
@@ -96,7 +96,7 @@ impl TileToTileBlockRunner {
     }
 }
 
-impl CpuKernel for TileToTileBlockRunner {
+impl Processor for TileToTileBlockProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_to_tile_block");
         let tile = match item {

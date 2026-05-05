@@ -1,4 +1,7 @@
-use crate::data::{Neighborhood, ScanLine, Tile, TileBlock};
+use crate::data::neighborhood::Neighborhood;
+use crate::data::scanline::ScanLine;
+use crate::data::tile::Tile;
+use crate::data::tile_block::TileBlock;
 use crate::stage::DataKind;
 
 #[derive(Debug, Clone)]

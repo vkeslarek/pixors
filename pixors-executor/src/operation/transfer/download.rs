@@ -2,25 +2,26 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::Tile;
+use crate::data::tile::Tile;
 use crate::model::pixel::meta::PixelMeta;
 use crate::data::tile::TileCoord;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
-use crate::gpu::{self, GpuContext};
+use crate::gpu;
+use crate::gpu::context::GpuContext;
 
-use crate::data::Buffer;
+use crate::data::buffer::Buffer;
 
 use crate::debug_stopwatch;
 
 
-static DL_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static DL_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static DL_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static DL_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
 static DL_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(DL_INPUTS), outputs: PortGroup::Fixed(DL_OUTPUTS) };
 
@@ -51,22 +52,22 @@ impl Stage for Download {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(DownloadRunner::new()))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(DownloadProcessor::new()))
     }
 }
 
 /// GPU → CPU. Accumulates up to `BATCH_SIZE` tiles, then issues a single
 /// submit + poll for the chunk. Was previously per-tile poll, the dominant
 /// pipeline stall.
-pub struct DownloadRunner {
+pub struct DownloadProcessor {
     pending: Vec<Pending>,
     encoder: Option<wgpu::CommandEncoder>,
     ctx: Option<Arc<GpuContext>>,
     flushed_chunks: usize,
 }
 
-impl DownloadRunner {
+impl DownloadProcessor {
     pub fn new() -> Self {
         Self {
             pending: vec![],
@@ -80,7 +81,7 @@ impl DownloadRunner {
         if let Some(c) = &self.ctx {
             return Ok(c.clone());
         }
-        let c = gpu::try_init()
+        let c = gpu::context::try_init()
             .ok_or_else(|| Error::internal("GPU unavailable but Download was scheduled"))?;
         self.ctx = Some(c.clone());
         Ok(c)
@@ -135,7 +136,7 @@ impl DownloadRunner {
     }
 }
 
-impl CpuKernel for DownloadRunner {
+impl Processor for DownloadProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("download");
         let tile = match item {

@@ -7,11 +7,12 @@ use petgraph::algo::toposort;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 
-use crate::data::Device;
+use crate::data::device::Device;
 use crate::error::Error;
 use crate::gpu;
 use crate::graph::graph::{ExecGraph, EdgePorts, StageId};
-use crate::operation::transfer::{Download, Upload};
+use crate::operation::transfer::download::Download;
+use crate::operation::transfer::upload::Upload;
 use crate::operation::OperationNode;
 use crate::stage::{PortGroup, Stage, StageNode};
 
@@ -30,7 +31,7 @@ pub struct Pipeline {
 impl Pipeline {
     pub fn compile(graph: &ExecGraph) -> Result<Self, Error> {
         let mut g: Graph = graph.graph.clone();
-        let gpu_ok = gpu::gpu_available();
+        let gpu_ok = gpu::context::gpu_available();
 
         validate_ports(&g)?;
 
@@ -60,7 +61,7 @@ impl Pipeline {
             let kernels = nodes
                 .iter()
                 .map(|&id| {
-                    g[id].cpu_kernel().ok_or_else(|| {
+                    g[id].processor().ok_or_else(|| {
                         Error::internal(format!("'{}': no kernel", g[id].kind()))
                     })
                 })

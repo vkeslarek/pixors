@@ -1,23 +1,23 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-
+use crate::data::buffer::Buffer;
+use crate::data::scanline::ScanLine;
+use crate::data::tile::Tile;
 use crate::model::pixel::meta::PixelMeta;
-use crate::data::{ScanLine, Tile};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
-use crate::data::Buffer;
 
 use crate::debug_stopwatch;
 
 
-static TS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static TS_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static TS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
 
 static TS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
 
@@ -38,19 +38,19 @@ impl Stage for TileToScanline {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(TileToScanlineRunner::new()))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(TileToScanlineProcessor::new()))
     }
 }
 
-/// Inverse of `ScanLineAccumulator`: takes Tiles back to ScanLines.
+/// Inverse of `ScanLineToTile`: takes Tiles back to ScanLines.
 ///
-/// Tiles can arrive in any order — upstream stages (e.g. `NeighborhoodAgg`)
+/// Tiles can arrive in any order — upstream stages (e.g. `TileToNeighborhood`)
 /// drain a `HashMap`, so band order is not guaranteed. We bucket tiles by
 /// band (`ty`) and emit each band's scanlines on `finish` once the full
 /// image is in. Per-band flushing on a `ty` change would corrupt rows when
 /// columns from the same band are interleaved with another band.
-pub struct TileToScanlineRunner {
+pub struct TileToScanlineProcessor {
     bands: BTreeMap<u32, Vec<Tile>>,
     image_width: u32,
     mip_level: u32,
@@ -58,7 +58,7 @@ pub struct TileToScanlineRunner {
     initialized: bool,
 }
 
-impl TileToScanlineRunner {
+impl TileToScanlineProcessor {
     pub fn new() -> Self {
         Self {
             bands: BTreeMap::new(),
@@ -70,7 +70,7 @@ impl TileToScanlineRunner {
     }
 }
 
-impl CpuKernel for TileToScanlineRunner {
+impl Processor for TileToScanlineProcessor {
     fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_to_scanline");
         let tile = match item {

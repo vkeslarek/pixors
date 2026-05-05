@@ -2,17 +2,18 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Buffer, Tile, TileCoord};
+use crate::data::buffer::Buffer;
+use crate::data::tile::{Tile, TileCoord};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::model::color::ColorSpace;
+use crate::model::color::space::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
-static CR_INPUTS: &[PortDecl] = &[];
-static CR_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static CR_INPUTS: &[PortDeclaration] = &[];
+static CR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 static CR_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CR_INPUTS), outputs: PortGroup::Fixed(CR_OUTPUTS) };
 
 /// Bounding range of tile coordinates (exclusive end).
@@ -58,8 +59,8 @@ impl Stage for CacheReader {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(CacheReaderRunner {
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(CacheReaderProcessor {
             cache_dir: self.cache_dir.clone(),
             mip_level: self.mip_level,
             tile_size: self.tile_size,
@@ -70,7 +71,7 @@ impl Stage for CacheReader {
     }
 }
 
-pub struct CacheReaderRunner {
+pub struct CacheReaderProcessor {
     cache_dir: PathBuf,
     mip_level: u32,
     tile_size: u32,
@@ -79,7 +80,7 @@ pub struct CacheReaderRunner {
     tile_range: Option<TileRange>,
 }
 
-impl CpuKernel for CacheReaderRunner {
+impl Processor for CacheReaderProcessor {
     fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let mip_w = (self.image_width >> self.mip_level).max(1);
         let mip_h = (self.image_height >> self.mip_level).max(1);

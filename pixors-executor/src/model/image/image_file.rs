@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Error;
-use crate::model::color::ColorSpace;
+use crate::model::color::space::ColorSpace;
 use crate::model::image::AlphaMode;
 use crate::model::image::buffer::{BufferDesc, PlaneDesc, SampleFormat};
 use crate::model::image::document::{LayerMetadata, Orientation, BlendMode};
+use crate::source::image_file_source::ImageFileSource;
 
 #[derive(Debug, Clone)]
 pub struct ImageFile {
@@ -42,9 +43,9 @@ impl ImageFile {
         &self.layer_infos
     }
 
-    pub fn source(&self, layer_index: usize) -> crate::source::ImageFileSource {
+    pub fn source(&self, layer_index: usize) -> ImageFileSource {
         let li = &self.layer_infos[layer_index];
-        crate::source::ImageFileSource {
+        ImageFileSource {
             path: self.path.clone(),
             layer_index,
             layer_name: li.name.clone(),

@@ -72,7 +72,7 @@ impl ColorSpace {
         if self.primaries == dst.primaries && self.white_point == dst.white_point {
             return Ok(Matrix3x3::IDENTITY);
         }
-        crate::model::color::rgb_to_rgb_transform(
+        crate::model::color::matrix::rgb_to_rgb_transform(
             self.primaries,
             self.white_point,
             dst.primaries,

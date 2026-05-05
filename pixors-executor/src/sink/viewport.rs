@@ -2,9 +2,9 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
-use crate::data::Device;
+use crate::data::device::Device;
 
 use crate::graph::emitter::Emitter;
 
@@ -40,9 +40,9 @@ pub fn install_viewport(target: ViewportTarget) {
 // ── Stage ───────────────────────────────────────────────────────────────────
 
 
-static VS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static VS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static VS_OUTPUTS: &[PortDecl] = &[];
+static VS_OUTPUTS: &[PortDeclaration] = &[];
 
 static VS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(VS_INPUTS), outputs: PortGroup::Fixed(VS_OUTPUTS) };
 
@@ -59,19 +59,19 @@ impl Stage for ViewportSink {
         StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
     }
     fn device(&self) -> Device { Device::Either }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(ViewportSinkRunner { width: self.width, height: self.height }))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(ViewportSinkProcessor { width: self.width, height: self.height }))
     }
 }
 
 // ── Runner ──────────────────────────────────────────────────────────────────
 
-pub struct ViewportSinkRunner {
+pub struct ViewportSinkProcessor {
     width: u32,
     height: u32,
 }
 
-impl CpuKernel for ViewportSinkRunner {
+impl Processor for ViewportSinkProcessor {
     fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("viewport_sink");
         let tile = match item { Item::Tile(t) => t, _ => return Ok(()), };
@@ -79,7 +79,7 @@ impl CpuKernel for ViewportSinkRunner {
         let target = TARGET.get().ok_or_else(|| Error::internal("viewport not installed"))?;
 
         let (buf, _) = match &tile.data {
-            crate::data::Buffer::Gpu(g) => (&g.buffer, g.size),
+            crate::data::buffer::Buffer::Gpu(g) => (&g.buffer, g.size),
             _ => return Ok(()),
         };
 
@@ -90,7 +90,7 @@ impl CpuKernel for ViewportSinkRunner {
         if px + tw > self.width || py + th > self.height { return Ok(()); }
 
         let padded = ((tw * 4 + 255) / 256) * 256;
-        let ctx = crate::gpu::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
+        let ctx = crate::gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
         let mut enc = ctx.device().create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("vpsink_copy") });
         enc.copy_buffer_to_texture(

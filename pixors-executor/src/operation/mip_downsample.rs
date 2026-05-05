@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Buffer, GpuBuffer, Tile, TileBlock, TileBlockCoord, TileCoord, TileGridPos};
+use crate::data::buffer::{Buffer, GpuBuffer};
+use crate::data::tile_block::{TileBlock, TileBlockCoord};
+use crate::data::tile::{Tile, TileCoord, TileGridPos};
 use crate::debug_stopwatch;
 use crate::error::Error;
 use crate::gpu;
@@ -14,14 +16,14 @@ use crate::gpu::kernel::{
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints,
+    BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints,
 };
 
 const MIP_DOWNSAMPLE_SPV: &[u8] =
     include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/mip_downsample.spv"));
 
-static IN: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static OUT: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static IN: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static OUT: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 static PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
 
 /// Generates MIP levels from incoming level-0 tiles.
@@ -49,8 +51,8 @@ impl Stage for MipDownsample {
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: false }
     }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(MipDownsampleRunner::new(
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(MipDownsampleProcessor::new(
             self.image_width, self.image_height, self.tile_size,
         )))
     }
@@ -58,7 +60,7 @@ impl Stage for MipDownsample {
 
 // ── Runner ──────────────────────────────────────────────────────────────────
 
-pub struct MipDownsampleRunner {
+pub struct MipDownsampleProcessor {
     image_width: u32,
     image_height: u32,
     tile_size: u32,
@@ -66,7 +68,7 @@ pub struct MipDownsampleRunner {
     grid: HashMap<TileGridPos, Tile>,
 }
 
-impl MipDownsampleRunner {
+impl MipDownsampleProcessor {
     pub fn new(image_width: u32, image_height: u32, tile_size: u32) -> Self {
         Self { image_width, image_height, tile_size, grid: HashMap::new() }
     }
@@ -199,7 +201,7 @@ impl MipDownsampleRunner {
     }
 }
 
-impl CpuKernel for MipDownsampleRunner {
+impl Processor for MipDownsampleProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("mip_downsample");
         match item {
@@ -237,7 +239,7 @@ fn gpu_downsample_block(
     mip_w: u32,
     mip_h: u32,
 ) -> Result<Tile, Error> {
-    let ctx = gpu::try_init()
+    let ctx = gpu::context::try_init()
         .ok_or_else(|| Error::internal("GPU unavailable for MIP downsample"))?;
     let scheduler = ctx.scheduler();
 

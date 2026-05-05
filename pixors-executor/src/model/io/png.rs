@@ -1,6 +1,5 @@
 //! PNG image loading and saving.
 
-use crate::model::color::{ColorSpace, TransferFn, RgbPrimaries};
 use crate::error::Error;
 use crate::model::image::buffer::BufferDesc;
 use crate::model::image::{AlphaMode, ImageBuffer, Layer, LayerMetadata, ImageInfo, Orientation, ImageMetadata, TileCoord};
@@ -11,6 +10,9 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use png::{Decoder, Encoder, ColorType, BitDepth, Transformations};
+use crate::model::color::primaries::RgbPrimaries;
+use crate::model::color::space::ColorSpace;
+use crate::model::color::transfer::TransferFn;
 
 /// PNG format reader.
 pub struct PngFormat;

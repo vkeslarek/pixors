@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex};
-
-use crate::data::{Buffer, Tile};
+use crate::data::buffer::Buffer;
+use crate::data::tile::Tile;
 use crate::error::Error;
 use crate::gpu::kernel::{GpuKernel, KernelSignature};
 use crate::gpu::pool::BufferPool;

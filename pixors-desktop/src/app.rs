@@ -5,7 +5,7 @@ use iced::keyboard::{self, Key};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Element, Length, Subscription};
-use pixors_executor::source::TileRange;
+use pixors_executor::source::cache_reader::TileRange;
 
 use crate::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,

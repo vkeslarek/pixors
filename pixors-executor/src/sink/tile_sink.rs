@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::graph::emitter::Emitter;
 
@@ -35,9 +35,9 @@ pub fn tile_sink() -> Option<Arc<TileCommitFn>> {
 }
 
 
-static TS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
-static TS_OUTPUTS: &[PortDecl] = &[];
+static TS_OUTPUTS: &[PortDeclaration] = &[];
 
 static TS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
 
@@ -62,26 +62,26 @@ impl Stage for TileSink {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+    fn processor(&self) -> Option<Box<dyn Processor>> {
         let cb = TILE_SINK.get().cloned()?;
-        Some(Box::new(TileSinkRunner { cb }))
+        Some(Box::new(TileSinkProcessor { cb }))
     }
 }
 
 // ── Runner ──────────────────────────────────────────────────────────────────
 
-pub struct TileSinkRunner {
+pub struct TileSinkProcessor {
     cb: Arc<TileCommitFn>,
 }
 
-impl CpuKernel for TileSinkRunner {
+impl Processor for TileSinkProcessor {
     fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_sink:consume");
         match item {
             Item::Tile(tile) => {
                 let src: &[u8] = match &tile.data {
-                    crate::data::Buffer::Cpu(v) => v.as_slice(),
-                    crate::data::Buffer::Gpu(_) => {
+                    crate::data::buffer::Buffer::Cpu(v) => v.as_slice(),
+                    crate::data::buffer::Buffer::Gpu(_) => {
                         return Err(Error::internal("GPU tile not supported in tile_sink"))
                     }
                 };

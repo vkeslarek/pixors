@@ -3,7 +3,7 @@
 //! - `WorkingWriter`: disk-backed tile storage (ACEScg f16) — owns the tiles,
 //!   converts raw bytes → ACEScg f16, reads/writes/caches tiles on disk.
 
-use crate::model::color::ColorSpace;
+use crate::model::color::space::ColorSpace;
 use crate::error::Error;
 use crate::model::image::{Tile, TileCoord};
 use crate::model::pixel::Rgba;

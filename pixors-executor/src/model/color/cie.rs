@@ -1,4 +1,4 @@
-use crate::model::color::Chromaticity;
+use crate::model::color::chromaticity::Chromaticity;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Xyz<T> {

@@ -1,4 +1,4 @@
-use crate::data::Tile;
+use crate::data::tile::Tile;
 
 /// Coordinates of a 2×2 block within the tile grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

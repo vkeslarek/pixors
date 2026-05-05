@@ -1,30 +1,30 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::pixel::meta::PixelMeta;
-use crate::data::{Tile, TileCoord};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
-use crate::data::Buffer;
 
+use crate::data::buffer::Buffer;
+use crate::data::tile::{Tile, TileCoord};
 use crate::debug_stopwatch;
 
 
-static SA_INPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static SA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
 
-static SA_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+static SA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
 
 static SA_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(SA_INPUTS), outputs: PortGroup::Fixed(SA_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanLineAccumulator {
+pub struct ScanLineToTile {
     pub tile_size: u32,
 }
 
-impl Stage for ScanLineAccumulator {
+impl Stage for ScanLineToTile {
     fn kind(&self) -> &'static str { "scanline_accumulator" }
 
     fn ports(&self) -> &'static PortSpec {
@@ -38,12 +38,12 @@ impl Stage for ScanLineAccumulator {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(ScanLineAccumulatorRunner::new(self.tile_size)))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(ScanLineToTileProcessor::new(self.tile_size)))
     }
 }
 
-pub struct ScanLineAccumulatorRunner {
+pub struct ScanLineToTileProcessor {
     tile_size: u32,
     rows: Vec<Vec<u8>>,
     meta: Option<PixelMeta>,
@@ -54,7 +54,7 @@ pub struct ScanLineAccumulatorRunner {
     initialized: bool,
 }
 
-impl ScanLineAccumulatorRunner {
+impl ScanLineToTileProcessor {
     pub fn new(tile_size: u32) -> Self {
         Self {
             tile_size,
@@ -69,7 +69,7 @@ impl ScanLineAccumulatorRunner {
     }
 }
 
-impl CpuKernel for ScanLineAccumulatorRunner {
+impl Processor for ScanLineToTileProcessor {
     fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("scanline_accumulator");
         let scanline = match &item {
@@ -101,7 +101,7 @@ impl CpuKernel for ScanLineAccumulatorRunner {
     }
 }
 
-impl ScanLineAccumulatorRunner {
+impl ScanLineToTileProcessor {
     fn emit_tiles(&mut self, emit: &mut Emitter<Item>) {
         let meta = self.meta.unwrap();
         let rows = std::mem::take(&mut self.rows);

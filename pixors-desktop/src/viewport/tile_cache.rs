@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::data::TileGridPos;
+use pixors_executor::data::tile::TileGridPos;
 
 pub struct CachedTile {
     pub px: u32,

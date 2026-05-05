@@ -5,5 +5,3 @@ pub mod scheduler;
 
 #[cfg(test)]
 mod tests;
-
-pub use context::{GpuContext, gpu_available, try_init};

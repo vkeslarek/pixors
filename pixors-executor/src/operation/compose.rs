@@ -2,19 +2,21 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Buffer, Tile, TileGridPos};
+use crate::data::buffer::Buffer;
+use crate::data::tile::{Tile, TileGridPos};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
+use crate::model::image::BlendMode;
 use crate::stage::{
-    BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints,
+    BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints,
 };
 
-static COMPOSE_INPUT: PortDecl = PortDecl {
+static COMPOSE_INPUT: PortDeclaration = PortDeclaration {
     name: "layers",
     kind: DataKind::Tile,
 };
-static COMPOSE_OUTPUTS: &[PortDecl] = &[PortDecl {
+static COMPOSE_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "composed",
     kind: DataKind::Tile,
 }];
@@ -26,6 +28,7 @@ static COMPOSE_PORTS: PortSpec = PortSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Compose {
     pub layer_count: u16,
+    pub blend_modes: Vec<BlendMode>,
 }
 
 impl Stage for Compose {
@@ -44,20 +47,25 @@ impl Stage for Compose {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(ComposeRunner::new(self.layer_count)))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(ComposeProcessor::new(
+            self.layer_count,
+            self.blend_modes.clone(),
+        )))
     }
 }
 
-pub struct ComposeRunner {
+pub struct ComposeProcessor {
     layer_count: u16,
+    blend_modes: Vec<BlendMode>,
     grid: HashMap<TileGridPos, Vec<Option<Tile>>>,
 }
 
-impl ComposeRunner {
-    pub fn new(layer_count: u16) -> Self {
+impl ComposeProcessor {
+    pub fn new(layer_count: u16, blend_modes: Vec<BlendMode>) -> Self {
         Self {
             layer_count,
+            blend_modes,
             grid: HashMap::new(),
         }
     }
@@ -84,7 +92,7 @@ impl ComposeRunner {
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
 
-        compose_and_emit(tiles, emit);
+        compose_and_emit(tiles, &self.blend_modes, emit);
     }
 
     fn flush_slot(&mut self, key: TileGridPos, emit: &mut Emitter<Item>) {
@@ -96,11 +104,11 @@ impl ComposeRunner {
             .enumerate()
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
-        compose_and_emit(tiles, emit);
+        compose_and_emit(tiles, &self.blend_modes, emit);
     }
 }
 
-impl CpuKernel for ComposeRunner {
+impl Processor for ComposeProcessor {
     fn process(
         &mut self,
         port: u16,
@@ -146,7 +154,11 @@ impl CpuKernel for ComposeRunner {
     }
 }
 
-fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
+fn compose_and_emit(
+    tiles: Vec<(u16, Tile)>,
+    blend_modes: &[BlendMode],
+    emit: &mut Emitter<Item>,
+) {
     if tiles.is_empty() {
         return;
     }
@@ -171,7 +183,7 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
             let mut result: [u8; 4] = [0, 0, 0, 0];
             let mut started = false;
 
-            for (_, tile) in tiles.iter() {
+            for (port, tile) in tiles.iter() {
                 if x >= tile.coord.width as usize || y >= tile.coord.height as usize {
                     continue;
                 }
@@ -194,8 +206,8 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
                     result = src;
                     started = true;
                 } else {
-                    // Higher port = on top. Ascending order → later items go OVER earlier.
-                    result = alpha_over(&src, &result);
+                    let mode = blend_modes.get(*port as usize).copied().unwrap_or_default();
+                    result = blend(&src, &result, mode);
                 }
             }
 
@@ -204,6 +216,12 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, emit: &mut Emitter<Item>) {
     }
 
     emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(out))));
+}
+
+fn blend(top: &[u8; 4], bottom: &[u8; 4], mode: BlendMode) -> [u8; 4] {
+    match mode {
+        BlendMode::Normal => alpha_over(top, bottom),
+    }
 }
 
 fn alpha_over(top: &[u8; 4], bottom: &[u8; 4]) -> [u8; 4] {

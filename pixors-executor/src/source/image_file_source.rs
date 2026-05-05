@@ -4,19 +4,19 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::ScanLine;
-use crate::data::Buffer;
+use crate::data::scanline::ScanLine;
+use crate::data::buffer::Buffer;
 use crate::debug_stopwatch;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::model::color::ColorSpace;
+use crate::model::color::space::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
-static IS_INPUTS: &[PortDecl] = &[];
-static IS_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static IS_INPUTS: &[PortDeclaration] = &[];
+static IS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
 static IS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IS_INPUTS), outputs: PortGroup::Fixed(IS_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,18 +32,18 @@ impl Stage for ImageFileSource {
     fn hints(&self) -> StageHints {
         StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
     }
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(ImageFileSourceRunner {
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(ImageFileSourceProcessor {
             path: self.path.clone(),
         }))
     }
 }
 
-pub struct ImageFileSourceRunner {
+pub struct ImageFileSourceProcessor {
     path: PathBuf,
 }
 
-impl CpuKernel for ImageFileSourceRunner {
+impl Processor for ImageFileSourceProcessor {
     fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("image_file_source");
         let file = File::open(&self.path)?;

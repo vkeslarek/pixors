@@ -1,20 +1,20 @@
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::CpuKernel;
+use crate::stage::Processor;
 
 use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner};
 
 pub struct ChainRunner {
-    pub kernels: Vec<Box<dyn CpuKernel>>,
+    pub kernels: Vec<Box<dyn Processor>>,
 }
 
 impl ChainRunner {
-    pub fn new(kernels: Vec<Box<dyn CpuKernel>>) -> Self {
+    pub fn new(kernels: Vec<Box<dyn Processor>>) -> Self {
         Self { kernels }
     }
 
-    fn run_item(kernels: &mut [Box<dyn CpuKernel>], port: u16, item: Item) -> Result<Vec<RoutedItem>, Error> {
+    fn run_item(kernels: &mut [Box<dyn Processor>], port: u16, item: Item) -> Result<Vec<RoutedItem>, Error> {
         let mut current = vec![RoutedItem { port, payload: item }];
         for (i, kernel) in kernels.iter_mut().enumerate() {
             let mut next = Vec::new();
@@ -30,7 +30,7 @@ impl ChainRunner {
         Ok(current)
     }
 
-    fn run_finish(kernels: &mut [Box<dyn CpuKernel>]) -> Result<Vec<RoutedItem>, Error> {
+    fn run_finish(kernels: &mut [Box<dyn Processor>]) -> Result<Vec<RoutedItem>, Error> {
         let mut all_outputs: Vec<RoutedItem> = Vec::new();
         let n = kernels.len();
         for i in 0..n {
@@ -59,10 +59,11 @@ impl Runner for ChainRunner {
         let kernels = &mut self.kernels;
 
         if inputs.is_empty() {
-            use crate::data::{Buffer, Tile, TileCoord};
+            use crate::data::buffer::Buffer;
+            use crate::data::tile::{Tile, TileCoord};
             use crate::model::pixel::meta::PixelMeta;
             use crate::model::pixel::{AlphaPolicy, PixelFormat};
-            use crate::model::color::ColorSpace;
+            use crate::model::color::space::ColorSpace;
             let dummy = Item::Tile(Tile::new(
                 TileCoord::new(0, 0, 0, 0, 0, 0),
                 PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),

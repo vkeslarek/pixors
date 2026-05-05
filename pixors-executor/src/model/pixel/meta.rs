@@ -1,4 +1,4 @@
-use crate::model::color::ColorSpace;
+use crate::model::color::space::ColorSpace;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
 
 #[derive(Debug, Clone, Copy)]

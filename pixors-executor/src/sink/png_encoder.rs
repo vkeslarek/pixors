@@ -8,18 +8,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
-use crate::data::Buffer;
+use crate::data::buffer::Buffer;
 
 use crate::debug_stopwatch;
 
 
-static PE_INPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
 
-static PE_OUTPUTS: &[PortDecl] = &[];
+static PE_OUTPUTS: &[PortDeclaration] = &[];
 
 static PE_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(PE_INPUTS), outputs: PortGroup::Fixed(PE_OUTPUTS) };
 
@@ -42,12 +42,12 @@ impl Stage for PngEncoder {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(PngEncoderRunner::new(self.path.clone())))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(PngEncoderProcessor::new(self.path.clone())))
     }
 }
 
-pub struct PngEncoderRunner {
+pub struct PngEncoderProcessor {
     path: PathBuf,
     rows: HashMap<u32, Vec<u8>>,
     image_width: u32,
@@ -55,13 +55,13 @@ pub struct PngEncoderRunner {
     bpp: u8,
 }
 
-impl PngEncoderRunner {
+impl PngEncoderProcessor {
     pub fn new(path: PathBuf) -> Self {
         Self { path, rows: HashMap::new(), image_width: 0, image_height: 0, bpp: 0 }
     }
 }
 
-impl CpuKernel for PngEncoderRunner {
+impl Processor for PngEncoderProcessor {
     fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:consume");
         let scanline = match item {

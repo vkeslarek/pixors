@@ -1,18 +1,21 @@
 #[cfg(test)]
 mod tests {
-    use crate::data::{EdgeCondition, Neighborhood, Tile, TileCoord};
+    use crate::data::buffer::Buffer;
+    use crate::data::neighborhood::{EdgeCondition, Neighborhood};
+    use crate::data::tile::{Tile, TileCoord};
+    use crate::gpu;
     use crate::graph::emitter::Emitter;
     use crate::graph::item::Item;
-    use crate::stage::CpuKernel;
-    use crate::operation::blur::BlurKernel;
-    use crate::model::pixel::{AlphaPolicy, PixelFormat};
+    use crate::model::color::space::ColorSpace;
     use crate::model::pixel::meta::PixelMeta;
-    use crate::data::Buffer;
+    use crate::model::pixel::{AlphaPolicy, PixelFormat};
+    use crate::operation::blur::BlurProcessor;
+    use crate::stage::Processor;
 
     #[test]
     #[ignore]
     fn gpu_blur_matches_cpu_within_tolerance() {
-        if crate::gpu::try_init().is_none() {
+        if gpu::context::try_init().is_none() {
             tracing::info!("no GPU adapter; skipping");
             return;
         }
@@ -32,18 +35,29 @@ mod tests {
         }
         let meta = PixelMeta::new(
             PixelFormat::Rgba8,
-            crate::model::color::ColorSpace::SRGB,
+            ColorSpace::SRGB,
             AlphaPolicy::Straight,
         );
         let coord = TileCoord::new(0, 0, 0, w, w, h);
 
         // CPU reference.
         let cpu_tile = Tile::new(coord, meta, Buffer::cpu(data.clone()));
-        let cpu_nbhd = Neighborhood::new(r, coord, vec![cpu_tile], EdgeCondition::Clamp, meta, w, h, w);
-        let mut kernel = BlurKernel::new(r);
+        let cpu_nbhd = Neighborhood::new(
+            r,
+            coord,
+            vec![cpu_tile],
+            EdgeCondition::Clamp,
+            meta,
+            w,
+            h,
+            w,
+        );
+        let mut processor = BlurProcessor::new(r);
         let mut cpu_emit = Emitter::new();
-        kernel.process(0, Item::Neighborhood(cpu_nbhd), &mut cpu_emit).unwrap();
-        let cpu_out = match cpu_emit.into_items().remove(0) {
+        processor
+            .process(0, Item::Neighborhood(cpu_nbhd), &mut cpu_emit)
+            .unwrap();
+        let cpu_out = match cpu_emit.into_items().remove(0).payload {
             Item::Tile(t) => t,
             _ => panic!(),
         };

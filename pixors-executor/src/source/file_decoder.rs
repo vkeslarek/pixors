@@ -4,23 +4,23 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::color::ColorSpace;
-use crate::data::ScanLine;
+use crate::model::color::space::ColorSpace;
+use crate::data::scanline::ScanLine;
 use crate::model::pixel::meta::PixelMeta;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints};
 
 use crate::error::Error;
 
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
 
-use crate::data::Buffer;
+use crate::data::buffer::Buffer;
 
 use crate::debug_stopwatch;
 
-static FD_INPUTS: &[PortDecl] = &[];
-static FD_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+static FD_INPUTS: &[PortDeclaration] = &[];
+static FD_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
 static FD_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(FD_INPUTS), outputs: PortGroup::Fixed(FD_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,22 +42,22 @@ impl Stage for FileDecoder {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
-        Some(Box::new(FileDecoderRunner::new(self.path.clone())))
+    fn processor(&self) -> Option<Box<dyn Processor>> {
+        Some(Box::new(FileDecoderProcessor::new(self.path.clone())))
     }
 }
 
-pub struct FileDecoderRunner {
+pub struct FileDecoderProcessor {
     path: PathBuf,
 }
 
-impl FileDecoderRunner {
+impl FileDecoderProcessor {
     pub fn new(path: PathBuf) -> Self {
         Self { path }
     }
 }
 
-impl CpuKernel for FileDecoderRunner {
+impl Processor for FileDecoderProcessor {
     fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("file_decoder");
         let file = File::open(&self.path)?;

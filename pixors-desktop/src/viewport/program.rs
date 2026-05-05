@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use iced::widget::shader;
 use iced::{Event, Point, Rectangle, Size};
 use iced::mouse;
-use pixors_executor::source::TileRange;
+use pixors_executor::source::cache_reader::TileRange;
 
 use crate::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;

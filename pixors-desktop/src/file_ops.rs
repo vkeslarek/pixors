@@ -2,10 +2,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use pixors_executor::data::TileGridPos;
+use pixors_executor::data::tile::TileGridPos;
 use pixors_executor::model::image::ImageFile;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
-use pixors_executor::data_transform::{ScanLineAccumulator, DataTransformNode};
+use pixors_executor::data_transform::to_tile::ScanLineToTile;
+use pixors_executor::data_transform::DataTransformNode;
+use pixors_executor::model::image::BlendMode;
 use pixors_executor::operation::compose::Compose;
 use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
@@ -17,7 +19,8 @@ use pixors_executor::sink::viewport_cache_sink::{
     install_viewport_cache_sink, ViewportCacheSink,
 };
 use pixors_executor::sink::SinkNode;
-use pixors_executor::source::{CacheReader, SourceNode, TileRange};
+use pixors_executor::source::cache_reader::{CacheReader, TileRange};
+use pixors_executor::source::SourceNode;
 use pixors_executor::stage::StageNode;
 
 use crate::viewport::tile_cache::{CachedTile, ViewportCache};
@@ -75,16 +78,16 @@ pub fn open_and_run(
     let mut graph = ExecGraph::new();
 
     let src_a = graph.add_stage(StageNode::Source(SourceNode::ImageFile(img_a.source(0))));
-    let acc_a = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
-        ScanLineAccumulator { tile_size: TILE_SIZE },
+    let acc_a = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
+        ScanLineToTile { tile_size: TILE_SIZE },
     )));
     let src_b = graph.add_stage(StageNode::Source(SourceNode::ImageFile(img_b.source(0))));
-    let acc_b = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
-        ScanLineAccumulator { tile_size: TILE_SIZE },
+    let acc_b = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
+        ScanLineToTile { tile_size: TILE_SIZE },
     )));
 
     let compose = graph.add_stage(StageNode::Operation(OperationNode::Compose(
-        Compose { layer_count: 2 },
+        Compose { layer_count: 2, blend_modes: vec![BlendMode::Normal; 2] },
     )));
 
     let mip = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(

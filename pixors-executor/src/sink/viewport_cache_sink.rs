@@ -2,12 +2,12 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::Buffer;
+use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints,
+    BufferAccess, Processor, DataKind, PortDeclaration, PortGroup, PortSpec, Stage, StageHints,
 };
 
 pub type CacheCommitFn = Box<
@@ -34,11 +34,11 @@ pub fn viewport_cache_sink() -> Option<Arc<CacheCommitFn>> {
     CACHE_SINK.get().cloned()
 }
 
-static VCS_INPUTS: &[PortDecl] = &[PortDecl {
+static VCS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
     kind: DataKind::Tile,
 }];
-static VCS_OUTPUTS: &[PortDecl] = &[];
+static VCS_OUTPUTS: &[PortDeclaration] = &[];
 static VCS_PORTS: PortSpec = PortSpec {
     inputs: PortGroup::Fixed(VCS_INPUTS),
     outputs: PortGroup::Fixed(VCS_OUTPUTS),
@@ -63,17 +63,17 @@ impl Stage for ViewportCacheSink {
         }
     }
 
-    fn cpu_kernel(&self) -> Option<Box<dyn CpuKernel>> {
+    fn processor(&self) -> Option<Box<dyn Processor>> {
         let cb = CACHE_SINK.get().cloned()?;
-        Some(Box::new(ViewportCacheSinkRunner { cb }))
+        Some(Box::new(ViewportCacheSinkProcessor { cb }))
     }
 }
 
-pub struct ViewportCacheSinkRunner {
+pub struct ViewportCacheSinkProcessor {
     cb: Arc<CacheCommitFn>,
 }
 
-impl CpuKernel for ViewportCacheSinkRunner {
+impl Processor for ViewportCacheSinkProcessor {
     fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         match item {
             Item::Tile(tile) => {

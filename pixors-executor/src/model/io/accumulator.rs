@@ -107,7 +107,7 @@ impl RowAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::color::ColorSpace;
+    use crate::model::color::space::ColorSpace;
     use crate::model::image::buffer::BufferDesc;
     use crate::model::image::AlphaMode;
 

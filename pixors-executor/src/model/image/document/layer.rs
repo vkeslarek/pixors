@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::model::image::ImageBuffer;
 use crate::model::image::buffer::BufferDesc;
 
@@ -8,7 +10,7 @@ pub enum Orientation {
 }
 
 use std::hash::Hash;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum BlendMode {
     #[default] Normal,
 }

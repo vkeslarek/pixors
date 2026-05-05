@@ -3,11 +3,10 @@
 //! Describes any image layout via per-channel descriptors (offset, stride, row_stride).
 //! Enables interleaved, planar, padded, and mixed layouts without hardcoding assumptions.
 
-use crate::model::color::{ColorSpace};
 use bytemuck::Pod;
 use half::f16;
 use std::ops::Range;
-
+use crate::model::color::space::ColorSpace;
 // ---------------------------------------------------------------------------
 // Sample Format
 // ---------------------------------------------------------------------------
