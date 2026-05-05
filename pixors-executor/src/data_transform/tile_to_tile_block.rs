@@ -5,13 +5,18 @@ use serde::{Deserialize, Serialize};
 use crate::data::{Tile, TileBlock, TileBlockCoord, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::debug_stopwatch;
 
+
 static IN: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static OUT: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static PORTS: PortSpec = PortSpec { inputs: IN, outputs: OUT };
+
+static PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToTileBlock {
@@ -92,7 +97,7 @@ impl TileToTileBlockRunner {
 }
 
 impl CpuKernel for TileToTileBlockRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_to_tile_block");
         let tile = match item {
             Item::Tile(t) => t,

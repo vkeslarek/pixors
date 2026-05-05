@@ -73,7 +73,7 @@ impl<'a> Executor<'a> {
                         ),
                         Buffer::cpu(vec![]),
                     ));
-                    k.process(dummy, &mut emitter)?;
+                    k.process(0, dummy, &mut emitter)?;
                     k.finish(&mut emitter)?;
                 }
                 self.route(id, emitter.into_items(), &mut pending);
@@ -82,7 +82,7 @@ impl<'a> Executor<'a> {
             while let Some(item) = pending.get_mut(&id).and_then(|q| q.pop_front()) {
                 let mut emitter = Emitter::new();
                 match self.nodes.get_mut(&id) {
-                    Some(CompiledNode::Kernel(k)) => k.process(item, &mut emitter)?,
+                    Some(CompiledNode::Kernel(k)) => k.process(0, item, &mut emitter)?,
                     _ => return Err(Error::internal("unexpected input")),
                 }
                 self.route(id, emitter.into_items(), &mut pending);

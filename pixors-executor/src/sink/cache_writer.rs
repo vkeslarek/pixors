@@ -6,11 +6,13 @@ use crate::data::Buffer;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
 
 static CW_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static CW_OUTPUTS: &[PortDecl] = &[];
-static CW_PORTS: PortSpec = PortSpec { inputs: CW_INPUTS, outputs: CW_OUTPUTS };
+
+static CW_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CW_INPUTS), outputs: PortGroup::Fixed(CW_OUTPUTS) };
 
 /// Writes tiles to disk as raw RGBA8, organised by MIP level.
 ///
@@ -58,7 +60,7 @@ pub struct CacheWriterRunner {
 }
 
 impl CpuKernel for CacheWriterRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let tile = match item {
             Item::Tile(t) => t,
             other => return Err(Error::internal(format!(

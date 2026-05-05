@@ -2,31 +2,49 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::data::Device;
+
 use crate::graph::emitter::Emitter;
+
 use crate::graph::item::Item;
+
 use crate::error::Error;
+
 use crate::debug_stopwatch;
+
 
 // ── Installed by desktop, consumed by sink ──────────────────────────────────
 
+
 pub struct ViewportTarget {
+
     pub texture: Arc<wgpu::Texture>,
+
     pub queue: Arc<wgpu::Queue>,
+
 }
+
 
 static TARGET: OnceLock<ViewportTarget> = OnceLock::new();
 
+
 pub fn install_viewport(target: ViewportTarget) {
+
     let _ = TARGET.set(target);
+
 }
+
 
 // ── Stage ───────────────────────────────────────────────────────────────────
 
+
 static VS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static VS_OUTPUTS: &[PortDecl] = &[];
-static VS_PORTS: PortSpec = PortSpec { inputs: VS_INPUTS, outputs: VS_OUTPUTS };
+
+static VS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(VS_INPUTS), outputs: PortGroup::Fixed(VS_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewportSink {
@@ -54,7 +72,7 @@ pub struct ViewportSinkRunner {
 }
 
 impl CpuKernel for ViewportSinkRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("viewport_sink");
         let tile = match item { Item::Tile(t) => t, _ => return Ok(()), };
 

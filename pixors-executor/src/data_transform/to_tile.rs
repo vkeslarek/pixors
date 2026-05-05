@@ -4,14 +4,20 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::{Tile, TileCoord};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::data::Buffer;
+
 use crate::debug_stopwatch;
 
+
 static SA_INPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+
 static SA_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static SA_PORTS: PortSpec = PortSpec { inputs: SA_INPUTS, outputs: SA_OUTPUTS };
+
+static SA_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(SA_INPUTS), outputs: PortGroup::Fixed(SA_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanLineAccumulator {
@@ -64,7 +70,7 @@ impl ScanLineAccumulatorRunner {
 }
 
 impl CpuKernel for ScanLineAccumulatorRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("scanline_accumulator");
         let scanline = match &item {
             Item::ScanLine(s) => s,

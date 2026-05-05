@@ -42,7 +42,7 @@ mod tests {
         let cpu_nbhd = Neighborhood::new(r, coord, vec![cpu_tile], EdgeCondition::Clamp, meta, w, h, w);
         let mut kernel = BlurKernel::new(r);
         let mut cpu_emit = Emitter::new();
-        kernel.process(Item::Neighborhood(cpu_nbhd), &mut cpu_emit).unwrap();
+        kernel.process(0, Item::Neighborhood(cpu_nbhd), &mut cpu_emit).unwrap();
         let cpu_out = match cpu_emit.into_items().remove(0) {
             Item::Tile(t) => t,
             _ => panic!(),

@@ -10,15 +10,20 @@ use crate::gpu::kernel::{
 };
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::debug_stopwatch;
+
 
 const BLUR_SPIRV: &[u8] =
     include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
 
+
 static BLUR_INPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
+
 static BLUR_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static BLUR_PORTS: PortSpec = PortSpec { inputs: BLUR_INPUTS, outputs: BLUR_OUTPUTS };
+
+static BLUR_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(BLUR_INPUTS), outputs: PortGroup::Fixed(BLUR_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blur {
@@ -59,7 +64,7 @@ impl BlurKernel {
 }
 
 impl CpuKernel for BlurKernel {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("blur");
         let nbhd = match item {
             Item::Neighborhood(n) => n,

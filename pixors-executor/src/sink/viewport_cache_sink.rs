@@ -7,19 +7,19 @@ use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints,
+    BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints,
 };
 
 pub type CacheCommitFn = Box<
     dyn Fn(
-            u32,  // mip_level
-            u32,  // tx
-            u32,  // ty
-            u32,  // px
-            u32,  // py
-            u32,  // width
-            u32,  // height
-            &[u8], // RGBA8 bytes
+            u32,
+            u32,
+            u32,
+            u32,
+            u32,
+            u32,
+            u32,
+            &[u8],
         ) + Send
         + Sync,
 >;
@@ -40,8 +40,8 @@ static VCS_INPUTS: &[PortDecl] = &[PortDecl {
 }];
 static VCS_OUTPUTS: &[PortDecl] = &[];
 static VCS_PORTS: PortSpec = PortSpec {
-    inputs: VCS_INPUTS,
-    outputs: VCS_OUTPUTS,
+    inputs: PortGroup::Fixed(VCS_INPUTS),
+    outputs: PortGroup::Fixed(VCS_OUTPUTS),
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,7 +74,7 @@ pub struct ViewportCacheSinkRunner {
 }
 
 impl CpuKernel for ViewportCacheSinkRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         match item {
             Item::Tile(tile) => {
                 let data = match &tile.data {

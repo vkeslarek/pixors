@@ -6,6 +6,7 @@ use pixors_executor::data::TileGridPos;
 use pixors_executor::model::image::ImageFile;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
 use pixors_executor::data_transform::{ScanLineAccumulator, DataTransformNode};
+use pixors_executor::operation::compose::Compose;
 use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
 use pixors_executor::operation::OperationNode;
@@ -23,8 +24,6 @@ use crate::viewport::tile_cache::{CachedTile, ViewportCache};
 
 const TILE_SIZE: u32 = 256;
 
-/// Install a no-op tile-sink callback once. Keeps the pipeline graph valid
-/// (TileSink acts as the output node that drives execution).
 fn ensure_tile_sink_installed() {
     install_tile_sink(Box::new(|_, _, _, _, _, _| {}));
 }
@@ -32,16 +31,23 @@ fn ensure_tile_sink_installed() {
 pub fn open_and_run(
     vp_cache: Option<Arc<Mutex<ViewportCache>>>,
 ) -> Result<(u32, u32, PathBuf), String> {
-    let path = rfd::FileDialog::new()
+    let path_a = rfd::FileDialog::new()
         .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
         .pick_file()
         .ok_or_else(|| "cancelled".to_string())?;
 
-    let image = ImageFile::open(&path).map_err(|e| e.to_string())?;
-    let w = image.width;
-    let h = image.height;
+    let path_b = rfd::FileDialog::new()
+        .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
+        .set_title("Pick second image to overlay")
+        .pick_file()
+        .ok_or_else(|| "cancelled".to_string())?;
 
-    let cache_dir = path.with_extension("pixors_cache");
+    let img_a = ImageFile::open(&path_a).map_err(|e| e.to_string())?;
+    let img_b = ImageFile::open(&path_b).map_err(|e| e.to_string())?;
+    let w = img_a.width.max(img_b.width);
+    let h = img_a.height.max(img_b.height);
+
+    let cache_dir = path_a.with_extension("pixors_cache");
 
     if let Some(ref cache) = vp_cache {
         if let Ok(mut guard) = cache.lock() {
@@ -67,14 +73,24 @@ pub fn open_and_run(
     }
 
     let mut graph = ExecGraph::new();
-    let src    = graph.add_stage(StageNode::Source(SourceNode::ImageFile(image.source(0))));
-    let acc    = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
+
+    let src_a = graph.add_stage(StageNode::Source(SourceNode::ImageFile(img_a.source(0))));
+    let acc_a = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
         ScanLineAccumulator { tile_size: TILE_SIZE },
     )));
-    let mip    = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
+    let src_b = graph.add_stage(StageNode::Source(SourceNode::ImageFile(img_b.source(0))));
+    let acc_b = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineAccumulator(
+        ScanLineAccumulator { tile_size: TILE_SIZE },
+    )));
+
+    let compose = graph.add_stage(StageNode::Operation(OperationNode::Compose(
+        Compose { layer_count: 2 },
+    )));
+
+    let mip = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
         MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
     )));
-    let cache  = graph.add_stage(StageNode::Sink(SinkNode::CacheWriter(
+    let cache = graph.add_stage(StageNode::Sink(SinkNode::CacheWriter(
         CacheWriter { cache_dir },
     )));
     let vp_sink = graph.add_stage(StageNode::Sink(SinkNode::ViewportCacheSink(
@@ -83,14 +99,18 @@ pub fn open_and_run(
     let filter = graph.add_stage(StageNode::Operation(OperationNode::MipFilter(
         MipFilter { mip_level: 0 },
     )));
-    let sink   = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
+    let sink = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
 
-    graph.add_edge(src,    acc,     EdgePorts::default());
-    graph.add_edge(acc,    mip,     EdgePorts::default());
-    graph.add_edge(mip,    cache,   EdgePorts::default());
-    graph.add_edge(mip,    vp_sink, EdgePorts::default());
-    graph.add_edge(mip,    filter,  EdgePorts::default());
-    graph.add_edge(filter, sink,    EdgePorts::default());
+    graph.add_edge(src_a, acc_a, EdgePorts::default());
+    graph.add_edge(src_b, acc_b, EdgePorts::default());
+    // port 0 = first image (top), port 1 = second image (bottom)
+    graph.add_edge(acc_a, compose, EdgePorts::default());
+    graph.add_edge(acc_b, compose, EdgePorts { from_port: 0, to_port: 1 });
+    graph.add_edge(compose, mip, EdgePorts::default());
+    graph.add_edge(mip, cache, EdgePorts::default());
+    graph.add_edge(mip, vp_sink, EdgePorts::default());
+    graph.add_edge(mip, filter, EdgePorts::default());
+    graph.add_edge(filter, sink, EdgePorts::default());
     graph.outputs.push((sink, 0));
 
     let pipeline = Pipeline::compile(&graph).map_err(|e| e.to_string())?;
@@ -100,11 +120,9 @@ pub fn open_and_run(
         }
     });
 
-    Ok((w, h, path))
+    Ok((w, h, path_a))
 }
 
-/// Fetch only the visible tiles for `mip` from disk → ViewportCacheSink → ViewportCache.
-/// Reuses the same CacheCommitFn already installed by `open_and_run`.
 pub fn fetch_mip(
     cache_dir: &Path,
     mip: u32,
@@ -113,10 +131,7 @@ pub fn fetch_mip(
     img_h: u32,
     vp_cache: Arc<Mutex<ViewportCache>>,
 ) {
-    // Re-ensure the ViewportCacheSink callback points to the current cache.
-    // OnceLock: first call wins, so this is only effective on first image open.
-    // Re-opens clear the cache but reuse the same Arc, so the callback remains valid.
-    let _ = vp_cache; // ownership kept alive via callback installed in open_and_run
+    let _ = vp_cache;
 
     let reader = CacheReader {
         cache_dir: cache_dir.to_owned(),
@@ -129,7 +144,7 @@ pub fn fetch_mip(
 
     let mut graph = ExecGraph::new();
     let src = graph.add_stage(StageNode::Source(SourceNode::CacheReader(reader)));
-    let vp  = graph.add_stage(StageNode::Sink(SinkNode::ViewportCacheSink(ViewportCacheSink)));
+    let vp = graph.add_stage(StageNode::Sink(SinkNode::ViewportCacheSink(ViewportCacheSink)));
     graph.add_edge(src, vp, EdgePorts::default());
     graph.outputs.push((vp, 0));
 

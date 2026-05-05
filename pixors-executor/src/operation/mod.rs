@@ -1,5 +1,6 @@
 pub mod blur;
 pub mod color;
+pub mod compose;
 pub mod composition;
 pub mod mip_downsample;
 pub mod mip_filter;
@@ -12,6 +13,7 @@ use crate::stage::{CpuKernel, PortSpec, Stage, StageHints};
 
 use blur::Blur;
 use color::ColorConvert;
+use compose::Compose;
 use mip_downsample::MipDownsample;
 use mip_filter::MipFilter;
 use transfer::Download;
@@ -21,6 +23,7 @@ use transfer::Upload;
 pub enum OperationNode {
     Blur(Blur),
     ColorConvert(ColorConvert),
+    Compose(Compose),
     MipDownsample(MipDownsample),
     MipFilter(MipFilter),
     Upload(Upload),
@@ -32,6 +35,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.kind(),
             Self::ColorConvert(s) => s.kind(),
+            Self::Compose(s) => s.kind(),
             Self::MipDownsample(s) => s.kind(),
             Self::MipFilter(s) => s.kind(),
             Self::Upload(s) => s.kind(),
@@ -43,6 +47,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.ports(),
             Self::ColorConvert(s) => s.ports(),
+            Self::Compose(s) => s.ports(),
             Self::MipDownsample(s) => s.ports(),
             Self::MipFilter(s) => s.ports(),
             Self::Upload(s) => s.ports(),
@@ -54,6 +59,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.hints(),
             Self::ColorConvert(s) => s.hints(),
+            Self::Compose(s) => s.hints(),
             Self::MipDownsample(s) => s.hints(),
             Self::MipFilter(s) => s.hints(),
             Self::Upload(s) => s.hints(),
@@ -65,6 +71,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.device(),
             Self::ColorConvert(s) => s.device(),
+            Self::Compose(s) => s.device(),
             Self::MipDownsample(s) => s.device(),
             Self::MipFilter(s) => s.device(),
             Self::Upload(s) => s.device(),
@@ -76,6 +83,7 @@ impl Stage for OperationNode {
         match self {
             Self::Blur(s) => s.cpu_kernel(),
             Self::ColorConvert(s) => s.cpu_kernel(),
+            Self::Compose(s) => s.cpu_kernel(),
             Self::MipDownsample(s) => s.cpu_kernel(),
             Self::MipFilter(s) => s.cpu_kernel(),
             Self::Upload(s) => s.cpu_kernel(),

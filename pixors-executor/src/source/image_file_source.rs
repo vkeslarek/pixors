@@ -13,11 +13,11 @@ use crate::graph::item::Item;
 use crate::model::color::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
 
 static IS_INPUTS: &[PortDecl] = &[];
 static IS_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
-static IS_PORTS: PortSpec = PortSpec { inputs: IS_INPUTS, outputs: IS_OUTPUTS };
+static IS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IS_INPUTS), outputs: PortGroup::Fixed(IS_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageFileSource {
@@ -44,7 +44,7 @@ pub struct ImageFileSourceRunner {
 }
 
 impl CpuKernel for ImageFileSourceRunner {
-    fn process(&mut self, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("image_file_source");
         let file = File::open(&self.path)?;
         let decoder = png::Decoder::new(BufReader::new(file));

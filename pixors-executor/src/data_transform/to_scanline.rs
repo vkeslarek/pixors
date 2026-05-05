@@ -6,14 +6,20 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::{ScanLine, Tile};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::data::Buffer;
+
 use crate::debug_stopwatch;
 
+
 static TS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static TS_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
-static TS_PORTS: PortSpec = PortSpec { inputs: TS_INPUTS, outputs: TS_OUTPUTS };
+
+static TS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToScanline;
@@ -65,7 +71,7 @@ impl TileToScanlineRunner {
 }
 
 impl CpuKernel for TileToScanlineRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_to_scanline");
         let tile = match item {
             Item::Tile(t) => t,

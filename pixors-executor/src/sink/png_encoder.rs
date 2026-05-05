@@ -8,14 +8,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::data::Buffer;
+
 use crate::debug_stopwatch;
 
+
 static PE_INPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
+
 static PE_OUTPUTS: &[PortDecl] = &[];
-static PE_PORTS: PortSpec = PortSpec { inputs: PE_INPUTS, outputs: PE_OUTPUTS };
+
+static PE_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(PE_INPUTS), outputs: PortGroup::Fixed(PE_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PngEncoder {
@@ -56,7 +62,7 @@ impl PngEncoderRunner {
 }
 
 impl CpuKernel for PngEncoderRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:consume");
         let scanline = match item {
             Item::ScanLine(s) => s,

@@ -9,15 +9,19 @@ use crate::data::ScanLine;
 use crate::model::pixel::meta::PixelMeta;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
+
 use crate::data::Buffer;
+
 use crate::debug_stopwatch;
 
 static FD_INPUTS: &[PortDecl] = &[];
 static FD_OUTPUTS: &[PortDecl] = &[PortDecl { name: "scanline", kind: DataKind::ScanLine }];
-static FD_PORTS: PortSpec = PortSpec { inputs: FD_INPUTS, outputs: FD_OUTPUTS };
+static FD_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(FD_INPUTS), outputs: PortGroup::Fixed(FD_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDecoder {
@@ -54,7 +58,7 @@ impl FileDecoderRunner {
 }
 
 impl CpuKernel for FileDecoderRunner {
-    fn process(&mut self, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("file_decoder");
         let file = File::open(&self.path)?;
         let mut decoder = png::Decoder::new(BufReader::new(file));

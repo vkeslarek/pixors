@@ -11,33 +11,18 @@ use crate::data::Device;
 use crate::error::Error;
 use crate::gpu;
 use crate::graph::graph::{ExecGraph, EdgePorts, StageId};
-use crate::graph::item::Item;
 use crate::operation::transfer::{Download, Upload};
 use crate::operation::OperationNode;
-use crate::stage::{Stage, StageNode};
+use crate::stage::{PortGroup, Stage, StageNode};
 
 use super::chain::ChainRunner;
 use super::event::PipelineEvent;
-use super::runner::{ItemReceiver, ItemSender, Runner, CHANNEL_BOUND};
+use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner, CHANNEL_BOUND};
 
 type Graph = StableDiGraph<StageNode, EdgePorts>;
 
-/// A compiled, runnable pipeline.
-///
-/// The execution graph is a **DAG** — stages may fan out to multiple
-/// consumers (e.g. several sinks), or fan in from multiple producers.
-///
-/// The compiler fuses linear, same-device sequences into *chains*, each
-/// running on its own thread. Inter-chain communication uses bounded
-/// channels.
-///
-///  * **Fan-out**: the sending chain clones every emitted item to all
-///    downstream channels.
-///  * **Fan-in**: at run-time, multiple input channels are merged into a
-///    single receiver (via lightweight forwarder threads) so runners only
-///    ever see one input stream.
 pub struct Pipeline {
-    chains: Vec<(Box<dyn Runner>, Vec<ItemReceiver>, Vec<ItemSender>)>,
+    chains: Vec<(Box<dyn Runner>, Vec<ItemReceiver>, Vec<(ItemSender, u16)>)>,
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
@@ -47,23 +32,19 @@ impl Pipeline {
         let mut g: Graph = graph.graph.clone();
         let gpu_ok = gpu::gpu_available();
 
-        // 1. Assign devices (Either stages promoted when adjacent to Gpu).
+        validate_ports(&g)?;
+
         let mut devs = assign_devices(&g, gpu_ok);
 
-        // 2. Insert Upload/Download at device-crossing tile edges.
         insert_transfers(&mut g, &mut devs);
 
-        // 3. Topological order.
         let order =
             toposort(&g, None).map_err(|_| Error::internal("pipeline graph has a cycle"))?;
 
-        // 4. Fuse linear, same-device sequences into chains.
         let (chains, node_chain) = detect_chains(&g, &devs, &order);
 
-        // 5. Create inter-chain channels.
         let (mut ch_in, mut ch_out) = build_channels(&g, &order, &node_chain, chains.len());
 
-        // 6. Build a ChainRunner per chain.
         let mut compiled = Vec::new();
         for (idx, nodes) in chains.iter().enumerate() {
             let dev = devs[&nodes[0]];
@@ -95,13 +76,11 @@ impl Pipeline {
 // ── Run ─────────────────────────────────────────────────────────────────────
 
 impl Pipeline {
-    /// Run the pipeline. Spawns one thread per chain; blocks until all finish.
     pub fn run(self, events: Option<std::sync::mpsc::Sender<PipelineEvent>>) -> Result<(), Error> {
         std::thread::scope(|s| {
             let mut handles = Vec::new();
 
             for (runner, inputs, outputs) in self.chains {
-                // Fan-in: merge N input receivers into 1 so runners stay simple.
                 let merged = merge_inputs(inputs, s);
 
                 let h = s.spawn(move || runner.run(merged, outputs));
@@ -132,13 +111,6 @@ impl Pipeline {
     }
 }
 
-/// Merge multiple input receivers into a single `Vec` with 0 or 1 elements.
-///
-/// For 0 or 1 inputs, returns them unchanged (no extra threads).
-/// For N > 1 inputs (fan-in), spawns N forwarder threads inside `scope`
-/// that funnel all items into a shared channel.  EOS (`None`) is sent
-/// only when the last forwarder finishes, so the runner sees a single
-/// contiguous stream followed by one EOS.
 fn merge_inputs<'scope, 'env: 'scope>(
     inputs: Vec<ItemReceiver>,
     scope: &'scope std::thread::Scope<'scope, 'env>,
@@ -147,7 +119,7 @@ fn merge_inputs<'scope, 'env: 'scope>(
         return inputs;
     }
     let n = inputs.len();
-    let (tx, rx) = sync_channel::<Option<Item>>(CHANNEL_BOUND);
+    let (tx, rx) = sync_channel::<Option<RoutedItem>>(CHANNEL_BOUND);
     let remaining = Arc::new(AtomicUsize::new(n));
 
     for recv in inputs {
@@ -156,13 +128,12 @@ fn merge_inputs<'scope, 'env: 'scope>(
         scope.spawn(move || {
             loop {
                 match recv.recv() {
-                    Ok(Some(item)) => {
-                        if tx.send(Some(item)).is_err() {
+                    Ok(Some(routed)) => {
+                        if tx.send(Some(routed)).is_err() {
                             break;
                         }
                     }
                     _ => {
-                        // This input exhausted. Send EOS only when we're the last.
                         if remaining.fetch_sub(1, Ordering::AcqRel) == 1 {
                             let _ = tx.send(None);
                         }
@@ -175,10 +146,70 @@ fn merge_inputs<'scope, 'env: 'scope>(
     vec![rx]
 }
 
+// ── Port validation ─────────────────────────────────────────────────────────
+
+fn validate_ports(g: &Graph) -> Result<(), Error> {
+    for edge in g.edge_indices() {
+        let (src, dst) = g.edge_endpoints(edge).unwrap();
+        let ports = *g.edge_weight(edge).unwrap();
+        let src_spec = g[src].ports();
+        let dst_spec = g[dst].ports();
+
+        let src_output_count = outport_count(g, src, &src_spec.outputs);
+        if ports.from_port as usize >= src_output_count {
+            return Err(Error::internal(format!(
+                "edge {} -> {}: from_port {} out of bounds (outputs have {} ports)",
+                g[src].kind(),
+                g[dst].kind(),
+                ports.from_port,
+                src_output_count,
+            )));
+        }
+
+        let dst_input_count = inport_count(g, dst, &dst_spec.inputs);
+        if ports.to_port as usize >= dst_input_count {
+            return Err(Error::internal(format!(
+                "edge {} -> {}: to_port {} out of bounds (inputs have {} ports)",
+                g[src].kind(),
+                g[dst].kind(),
+                ports.to_port,
+                dst_input_count,
+            )));
+        }
+
+        let src_kind = src_spec.outputs.kind_at(ports.from_port as usize);
+        let dst_kind = dst_spec.inputs.kind_at(ports.to_port as usize);
+        if let (Some(sk), Some(dk)) = (src_kind, dst_kind)
+            && sk != dk
+        {
+            return Err(Error::internal(format!(
+                "edge {} -> {}: DataKind mismatch (output {:?}, input {:?})",
+                g[src].kind(),
+                g[dst].kind(),
+                sk,
+                dk,
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn outport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
+    match group {
+        PortGroup::Fixed(ports) => ports.len(),
+        PortGroup::Variable(_) => g.edges_directed(id, Direction::Outgoing).count(),
+    }
+}
+
+fn inport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
+    match group {
+        PortGroup::Fixed(ports) => ports.len(),
+        PortGroup::Variable(_) => g.edges_directed(id, Direction::Incoming).count(),
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Assign each stage a device. `Either` stages adjacent to `Gpu` stages are
-/// promoted to `Gpu` so they stay in the same chain and avoid transfers.
 fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
     let mut devs: HashMap<StageId, Device> = g
         .node_indices()
@@ -195,8 +226,6 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
         return devs;
     }
 
-    // BFS: find connected components of Either nodes. If any member of a
-    // component has a Gpu neighbour, promote the entire component.
     let mut visited = HashMap::<StageId, bool>::new();
     let mut components: Vec<Vec<StageId>> = Vec::new();
 
@@ -232,15 +261,12 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
     devs
 }
 
-/// All direct neighbours (predecessors + successors) of a node.
 fn neighbors(g: &Graph, id: StageId) -> impl Iterator<Item = StageId> + '_ {
     g.edges_directed(id, Direction::Outgoing)
         .map(|e| e.target())
         .chain(g.edges_directed(id, Direction::Incoming).map(|e| e.source()))
 }
 
-/// Insert Upload/Download stages at edges that cross a device boundary
-/// and carry Tile data.
 fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
     let edges: Vec<_> = g
         .edge_indices()
@@ -256,8 +282,8 @@ fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
         let is_tile = g[src]
             .ports()
             .outputs
-            .get(ports.from_port as usize)
-            .is_some_and(|p| p.kind == crate::stage::DataKind::Tile);
+            .kind_at(ports.from_port as usize)
+            .is_some_and(|k| k == crate::stage::DataKind::Tile);
 
         if sd != Device::Gpu && dd == Device::Gpu && is_tile {
             let mid = g.add_node(StageNode::Operation(OperationNode::Upload(Upload)));
@@ -275,8 +301,6 @@ fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
     }
 }
 
-/// Fuse consecutive, same-device, single-edge sequences into chains.
-/// Returns `(chains, node→chain_index)`.
 fn detect_chains(
     g: &Graph,
     devs: &HashMap<StageId, Device>,
@@ -312,29 +336,27 @@ fn detect_chains(
     (chains, node_chain)
 }
 
-/// Create bounded channels between chains. Each unique (src_chain, dst_chain)
-/// pair gets one channel. Fan-out is handled by runners cloning to all
-/// output senders; fan-in is handled by `merge_inputs` at run-time.
 fn build_channels(
     g: &Graph,
     order: &[StageId],
     node_chain: &HashMap<StageId, usize>,
     num_chains: usize,
-) -> (Vec<Vec<ItemReceiver>>, Vec<Vec<ItemSender>>) {
+) -> (Vec<Vec<ItemReceiver>>, Vec<Vec<(ItemSender, u16)>>) {
     let mut ins: Vec<Vec<ItemReceiver>> = (0..num_chains).map(|_| vec![]).collect();
-    let mut outs: Vec<Vec<ItemSender>> = (0..num_chains).map(|_| vec![]).collect();
+    let mut outs: Vec<Vec<(ItemSender, u16)>> = (0..num_chains).map(|_| vec![]).collect();
     let mut seen = HashMap::new();
 
     for &src_node in order {
         let sc = node_chain[&src_node];
         for edge in g.edges_directed(src_node, Direction::Outgoing) {
             let dc = node_chain[&edge.target()];
-            if sc == dc || seen.contains_key(&(sc, dc)) {
+            let ports = *edge.weight();
+            if sc == dc || seen.contains_key(&(sc, dc, ports.to_port)) {
                 continue;
             }
-            seen.insert((sc, dc), ());
-            let (tx, rx) = sync_channel::<Option<Item>>(CHANNEL_BOUND);
-            outs[sc].push(tx);
+            seen.insert((sc, dc, ports.to_port), ());
+            let (tx, rx) = sync_channel::<Option<RoutedItem>>(CHANNEL_BOUND);
+            outs[sc].push((tx, ports.to_port));
             ins[dc].push(rx);
         }
     }

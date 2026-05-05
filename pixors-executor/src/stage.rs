@@ -16,14 +16,44 @@ pub enum DataKind {
     ScanLine,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct PortDecl {
     pub name: &'static str,
     pub kind: DataKind,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PortGroup {
+    Fixed(&'static [PortDecl]),
+    Variable(&'static PortDecl),
+}
+
+impl PortGroup {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            PortGroup::Fixed(ports) => ports.is_empty(),
+            PortGroup::Variable(_) => false,
+        }
+    }
+
+    pub fn kind_at(&self, index: usize) -> Option<DataKind> {
+        match self {
+            PortGroup::Fixed(ports) => ports.get(index).map(|p| p.kind),
+            PortGroup::Variable(decl) => Some(decl.kind),
+        }
+    }
+
+    pub fn name_at(&self, index: usize) -> Option<&'static str> {
+        match self {
+            PortGroup::Fixed(ports) => ports.get(index).map(|p| p.name),
+            PortGroup::Variable(decl) => Some(decl.name),
+        }
+    }
+}
+
 pub struct PortSpec {
-    pub inputs: &'static [PortDecl],
-    pub outputs: &'static [PortDecl],
+    pub inputs: PortGroup,
+    pub outputs: PortGroup,
 }
 
 // ── Buffer access hint ─────────────────────────────────────────────────────────
@@ -55,6 +85,7 @@ pub struct StageHints {
 pub trait CpuKernel: Send {
     fn process(
         &mut self,
+        port: u16,
         item: crate::graph::item::Item,
         emit: &mut crate::graph::emitter::Emitter<crate::graph::item::Item>,
     ) -> Result<(), Error>;

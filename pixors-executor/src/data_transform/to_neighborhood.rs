@@ -5,13 +5,18 @@ use serde::{Deserialize, Serialize};
 use crate::data::{EdgeCondition, Neighborhood, NeighborhoodCoord, Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::debug_stopwatch;
 
+
 static NA_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static NA_OUTPUTS: &[PortDecl] = &[PortDecl { name: "neighborhood", kind: DataKind::Neighborhood }];
-static NA_PORTS: PortSpec = PortSpec { inputs: NA_INPUTS, outputs: NA_OUTPUTS };
+
+static NA_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(NA_INPUTS), outputs: PortGroup::Fixed(NA_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NeighborhoodAgg {
@@ -130,7 +135,7 @@ impl NeighborhoodAggRunner {
 }
 
 impl CpuKernel for NeighborhoodAggRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("neighborhood_agg");
         let tile = match item {
             Item::Tile(t) => t,

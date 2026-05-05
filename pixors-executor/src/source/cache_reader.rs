@@ -9,11 +9,11 @@ use crate::graph::item::Item;
 use crate::model::color::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
 
 static CR_INPUTS: &[PortDecl] = &[];
 static CR_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static CR_PORTS: PortSpec = PortSpec { inputs: CR_INPUTS, outputs: CR_OUTPUTS };
+static CR_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(CR_INPUTS), outputs: PortGroup::Fixed(CR_OUTPUTS) };
 
 /// Bounding range of tile coordinates (exclusive end).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +80,7 @@ pub struct CacheReaderRunner {
 }
 
 impl CpuKernel for CacheReaderRunner {
-    fn process(&mut self, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, _item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let mip_w = (self.image_width >> self.mip_level).max(1);
         let mip_h = (self.image_height >> self.mip_level).max(1);
         let cols = mip_w.div_ceil(self.tile_size);

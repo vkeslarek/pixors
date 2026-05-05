@@ -1,20 +1,17 @@
 use crate::error::Error;
 use crate::graph::item::Item;
+use crate::graph::routed::Routed;
 
-/// Capacity of inter-runner channels. Bounded for backpressure.
 pub const CHANNEL_BOUND: usize = 16;
 
-/// `Some(item)` = data; `None` = end-of-stream sentinel.
-pub type ItemSender = std::sync::mpsc::SyncSender<Option<Item>>;
-pub type ItemReceiver = std::sync::mpsc::Receiver<Option<Item>>;
+pub type RoutedItem = Routed<Item>;
+pub type ItemSender = std::sync::mpsc::SyncSender<Option<RoutedItem>>;
+pub type ItemReceiver = std::sync::mpsc::Receiver<Option<RoutedItem>>;
 
-/// A Runner owns a thread of execution. The framework creates one Runner per
-/// chain of stages on the same device. Runners communicate via bounded channels
-/// — full channel → sender blocks, providing backpressure automatically.
 pub trait Runner: Send {
     fn run(
         self: Box<Self>,
         inputs: Vec<ItemReceiver>,
-        outputs: Vec<ItemSender>,
+        outputs: Vec<(ItemSender, u16)>,
     ) -> Result<(), Error>;
 }

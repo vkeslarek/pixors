@@ -3,15 +3,22 @@ use serde::{Deserialize, Serialize};
 use crate::data::Tile;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::gpu;
+
 use crate::data::{Buffer, GpuBuffer};
+
 use crate::debug_stopwatch;
 
+
 static UP_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static UP_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static UP_PORTS: PortSpec = PortSpec { inputs: UP_INPUTS, outputs: UP_OUTPUTS };
+
+static UP_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(UP_INPUTS), outputs: PortGroup::Fixed(UP_OUTPUTS) };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Upload;
@@ -44,7 +51,7 @@ impl UploadRunner {
 }
 
 impl CpuKernel for UploadRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("upload");
         let tile = match item {
             Item::Tile(t) => t,

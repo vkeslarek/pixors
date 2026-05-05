@@ -2,28 +2,44 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::graph::emitter::Emitter;
+
 use crate::graph::item::Item;
+
 use crate::error::Error;
+
 use crate::debug_stopwatch;
 
+
 /// Callback: invoked when a tile arrives with its pixel coordinates and RGBA8 bytes.
+
 pub type TileCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+
 
 static TILE_SINK: OnceLock<Arc<TileCommitFn>> = OnceLock::new();
 
+
 pub fn install_tile_sink(f: TileCommitFn) {
+
     let _ = TILE_SINK.set(Arc::new(f));
+
 }
+
 
 pub fn tile_sink() -> Option<Arc<TileCommitFn>> {
+
     TILE_SINK.get().cloned()
+
 }
 
+
 static TS_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static TS_OUTPUTS: &[PortDecl] = &[];
-static TS_PORTS: PortSpec = PortSpec { inputs: TS_INPUTS, outputs: TS_OUTPUTS };
+
+static TS_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
 
 // ── Stage ───────────────────────────────────────────────────────────────────
 
@@ -59,7 +75,7 @@ pub struct TileSinkRunner {
 }
 
 impl CpuKernel for TileSinkRunner {
-    fn process(&mut self, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, _emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("tile_sink:consume");
         match item {
             Item::Tile(tile) => {

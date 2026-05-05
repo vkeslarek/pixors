@@ -3,13 +3,8 @@ use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::CpuKernel;
 
-use super::runner::{ItemReceiver, ItemSender, Runner};
+use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner};
 
-/// Runs an ordered list of kernels sequentially in a single thread. Each kernel
-/// may dispatch GPU work internally. Items flow through via an `Emitter` at each
-/// step; the final stage's output goes to the output channels.
-///
-/// Fan-out: emitted items are cloned to every output channel.
 pub struct ChainRunner {
     pub kernels: Vec<Box<dyn CpuKernel>>,
 }
@@ -19,13 +14,14 @@ impl ChainRunner {
         Self { kernels }
     }
 
-    fn run_item(kernels: &mut [Box<dyn CpuKernel>], item: Item) -> Result<Vec<Item>, Error> {
+    fn run_item(kernels: &mut [Box<dyn CpuKernel>], port: u16, item: Item) -> Result<Vec<Item>, Error> {
         let mut current = vec![item];
-        for kernel in kernels.iter_mut() {
+        for (i, kernel) in kernels.iter_mut().enumerate() {
             let mut next = Vec::new();
             for item in current {
                 let mut emit = Emitter::new();
-                kernel.process(item, &mut emit)?;
+                let p = if i == 0 { port } else { 0 };
+                kernel.process(p, item, &mut emit)?;
                 next.extend(emit.into_items());
             }
             current = next;
@@ -42,7 +38,7 @@ impl ChainRunner {
             let items = emit.into_items();
             if i + 1 < n {
                 for item in items {
-                    let outputs = Self::run_item(&mut kernels[i + 1..], item)?;
+                    let outputs = Self::run_item(&mut kernels[i + 1..], 0, item)?;
                     all_outputs.extend(outputs);
                 }
             } else {
@@ -57,12 +53,11 @@ impl Runner for ChainRunner {
     fn run(
         mut self: Box<Self>,
         inputs: Vec<ItemReceiver>,
-        outputs: Vec<ItemSender>,
+        outputs: Vec<(ItemSender, u16)>,
     ) -> Result<(), Error> {
         let kernels = &mut self.kernels;
 
         if inputs.is_empty() {
-            // Source chain: kick off with a dummy item, then finish.
             use crate::data::{Buffer, Tile, TileCoord};
             use crate::model::pixel::meta::PixelMeta;
             use crate::model::pixel::{AlphaPolicy, PixelFormat};
@@ -72,7 +67,7 @@ impl Runner for ChainRunner {
                 PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
                 Buffer::cpu(vec![]),
             ));
-            let items = ChainRunner::run_item(kernels, dummy)?;
+            let items = ChainRunner::run_item(kernels, 0, dummy)?;
             send_to_all(&outputs, items);
             let finish_items = ChainRunner::run_finish(kernels)?;
             send_to_all(&outputs, finish_items);
@@ -80,8 +75,8 @@ impl Runner for ChainRunner {
             let recv = &inputs[0];
             loop {
                 match recv.recv() {
-                    Ok(Some(item)) => {
-                        let items = ChainRunner::run_item(kernels, item)?;
+                    Ok(Some(routed)) => {
+                        let items = ChainRunner::run_item(kernels, routed.port, routed.payload)?;
                         send_to_all(&outputs, items);
                     }
                     Ok(None) | Err(_) => {
@@ -93,20 +88,21 @@ impl Runner for ChainRunner {
             }
         }
 
-        for out in &outputs {
-            let _ = out.send(None);
+        for (tx, _) in &outputs {
+            let _ = tx.send(None);
         }
         Ok(())
     }
 }
 
-fn send_to_all(outputs: &[ItemSender], items: Vec<Item>) {
+fn send_to_all(outputs: &[(ItemSender, u16)], items: Vec<Item>) {
     if outputs.is_empty() || items.is_empty() {
         return;
     }
     for item in items {
-        for out in outputs.iter() {
-            let _ = out.send(Some(item.clone()));
+        for (tx, to_port) in outputs.iter() {
+            let routed = RoutedItem { port: *to_port, payload: item.clone() };
+            let _ = tx.send(Some(routed));
         }
     }
 }

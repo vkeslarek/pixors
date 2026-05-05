@@ -7,15 +7,22 @@ use crate::model::pixel::meta::PixelMeta;
 use crate::data::tile::TileCoord;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints};
+use crate::stage::{BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints};
+
 use crate::error::Error;
+
 use crate::gpu::{self, GpuContext};
+
 use crate::data::Buffer;
+
 use crate::debug_stopwatch;
 
+
 static DL_INPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
+
 static DL_OUTPUTS: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static DL_PORTS: PortSpec = PortSpec { inputs: DL_INPUTS, outputs: DL_OUTPUTS };
+
+static DL_PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(DL_INPUTS), outputs: PortGroup::Fixed(DL_OUTPUTS) };
 
 /// How many tiles to accumulate before flushing (1 submit + 1
 /// `device.poll(Wait)` per chunk). Caps peak staging memory.
@@ -129,7 +136,7 @@ impl DownloadRunner {
 }
 
 impl CpuKernel for DownloadRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("download");
         let tile = match item {
             Item::Tile(t) => t,

@@ -14,7 +14,7 @@ use crate::gpu::kernel::{
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, CpuKernel, DataKind, PortDecl, PortSpec, Stage, StageHints,
+    BufferAccess, CpuKernel, DataKind, PortDecl, PortGroup, PortSpec, Stage, StageHints,
 };
 
 const MIP_DOWNSAMPLE_SPV: &[u8] =
@@ -22,7 +22,7 @@ const MIP_DOWNSAMPLE_SPV: &[u8] =
 
 static IN: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
 static OUT: &[PortDecl] = &[PortDecl { name: "tile", kind: DataKind::Tile }];
-static PORTS: PortSpec = PortSpec { inputs: IN, outputs: OUT };
+static PORTS: PortSpec = PortSpec { inputs: PortGroup::Fixed(IN), outputs: PortGroup::Fixed(OUT) };
 
 /// Generates MIP levels from incoming level-0 tiles.
 ///
@@ -200,7 +200,7 @@ impl MipDownsampleRunner {
 }
 
 impl CpuKernel for MipDownsampleRunner {
-    fn process(&mut self, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn process(&mut self, _port: u16, item: Item, emit: &mut Emitter<Item>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("mip_downsample");
         match item {
             Item::Tile(tile) => {
