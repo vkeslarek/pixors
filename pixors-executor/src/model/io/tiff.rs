@@ -2,12 +2,7 @@
 
 use crate::error::Error;
 use crate::model::color::space::ColorSpace;
-use crate::model::image::buffer::BufferDesc;
-use crate::model::image::document::Image;
-use crate::model::image::{
-    AlphaMode, BlendMode, ImageBuffer, ImageInfo, ImageMetadata, Layer, LayerMetadata, Orientation,
-};
-use crate::model::io::ImageReader;
+use crate::model::image::buffer::{BufferDesc, ImageBuffer};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -16,175 +11,6 @@ use tiff::tags::Tag;
 
 /// TIFF format reader.
 pub struct TiffFormat;
-
-impl ImageReader for TiffFormat {
-    fn can_handle(&self, path: &Path) -> bool {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.eq_ignore_ascii_case("tiff") || e.eq_ignore_ascii_case("tif"))
-            .unwrap_or(false)
-    }
-
-    fn read_document_info(&self, path: &Path) -> Result<ImageInfo, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-        let mut decoder = Decoder::new(reader).map_err(|e| Error::Tiff(e.to_string()))?;
-        let metadata = read_tiff_document_metadata(&mut decoder, path);
-        let layer_count = count_tiff_pages(&mut decoder);
-        Ok(ImageInfo {
-            layer_count,
-            metadata,
-        })
-    }
-
-    /// Single-pass decode: open once, walk IFDs sequentially.
-    fn load_document(&self, path: &Path) -> Result<Image, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-        let mut decoder = Decoder::new(reader).map_err(|e| Error::Tiff(e.to_string()))?;
-        let metadata = read_tiff_document_metadata(&mut decoder, path);
-        let mut layers = Vec::new();
-        let mut idx = 0;
-
-        loop {
-            let (w, h) = decoder
-                .dimensions()
-                .map_err(|e| Error::Tiff(e.to_string()))?;
-            let ct = decoder
-                .colortype()
-                .map_err(|e| Error::Tiff(e.to_string()))?;
-            let cs = detect_tiff_color_space(&mut decoder);
-            let am = alpha_mode_for(ct);
-            let image = match decoder
-                .read_image()
-                .map_err(|e| Error::Tiff(e.to_string()))?
-            {
-                DecodingResult::U8(data) => decode_u8_tiff(w, h, ct, cs, am, data),
-                DecodingResult::U16(data) => decode_u16_tiff(w, h, ct, cs, am, data),
-                DecodingResult::U32(data) => decode_u32_tiff(w, h, ct, cs, am, data),
-                DecodingResult::F32(data) => decode_f32_tiff(w, h, ct, cs, am, data),
-                other => {
-                    return Err(Error::unsupported_sample_type(format!(
-                        "Unsupported: {:?}",
-                        other
-                    )));
-                }
-            }?;
-            let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", idx + 1));
-            let offset = read_page_offset(&mut decoder, w, h);
-            let orientation = read_orientation(&mut decoder);
-            layers.push(Layer {
-                name,
-                buffer: image,
-                offset,
-                opacity: 1.0,
-                blend_mode: BlendMode::Normal,
-                visible: true,
-                orientation,
-            });
-
-            if !decoder.more_images() {
-                break;
-            }
-            decoder
-                .next_image()
-                .map_err(|e| Error::Tiff(e.to_string()))?;
-            idx += 1;
-        }
-
-        Ok(Image { layers, metadata })
-    }
-
-    fn read_layer_metadata(&self, path: &Path, layer: usize) -> Result<LayerMetadata, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-        let mut decoder = Decoder::new(reader).map_err(|e| Error::Tiff(e.to_string()))?;
-
-        // Step to the requested IFD
-        for _ in 0..layer {
-            if !decoder.more_images() {
-                return Err(Error::invalid_param(format!(
-                    "TIFF layer {} out of bounds",
-                    layer
-                )));
-            }
-            decoder
-                .next_image()
-                .map_err(|e| Error::Tiff(e.to_string()))?;
-        }
-
-        let (w, h) = decoder
-            .dimensions()
-            .map_err(|e| Error::Tiff(e.to_string()))?;
-        let ct = decoder
-            .colortype()
-            .map_err(|e| Error::Tiff(e.to_string()))?;
-        let cs = detect_tiff_color_space(&mut decoder);
-        let am = alpha_mode_for(ct);
-        let desc = tiff_buffer_desc(ct, w, h, cs, am)?;
-        let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", layer + 1));
-
-        Ok(LayerMetadata {
-            desc,
-            orientation: Orientation::Identity,
-            offset: (0, 0),
-            name,
-        })
-    }
-
-    fn load_layer(&self, path: &Path, layer: usize) -> Result<Layer, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-        let mut decoder = Decoder::new(reader).map_err(|e| Error::Tiff(e.to_string()))?;
-
-        // Step to the requested IFD
-        for _ in 0..layer {
-            if !decoder.more_images() {
-                return Err(Error::invalid_param(format!(
-                    "TIFF layer {} out of bounds",
-                    layer
-                )));
-            }
-            decoder
-                .next_image()
-                .map_err(|e| Error::Tiff(e.to_string()))?;
-        }
-
-        let (w, h) = decoder
-            .dimensions()
-            .map_err(|e| Error::Tiff(e.to_string()))?;
-        let ct = decoder
-            .colortype()
-            .map_err(|e| Error::Tiff(e.to_string()))?;
-        let cs = detect_tiff_color_space(&mut decoder);
-        let am = alpha_mode_for(ct);
-        let image = match decoder
-            .read_image()
-            .map_err(|e| Error::Tiff(e.to_string()))?
-        {
-            DecodingResult::U8(data) => decode_u8_tiff(w, h, ct, cs, am, data),
-            DecodingResult::U16(data) => decode_u16_tiff(w, h, ct, cs, am, data),
-            DecodingResult::U32(data) => decode_u32_tiff(w, h, ct, cs, am, data),
-            DecodingResult::F32(data) => decode_f32_tiff(w, h, ct, cs, am, data),
-            other => Err(Error::unsupported_sample_type(format!(
-                "Unsupported TIFF: {:?}",
-                other
-            ))),
-        }?;
-        let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", layer + 1));
-        let offset = read_page_offset(&mut decoder, w, h);
-        let orientation = read_orientation(&mut decoder);
-        Ok(Layer {
-            name,
-            buffer: image,
-            offset,
-            opacity: 1.0,
-            blend_mode: BlendMode::Normal,
-            visible: true,
-            orientation,
-        })
-    }
-}
 
 /// Count pages in a TIFF by iterating IFDs.
 fn count_tiff_pages(decoder: &mut Decoder<BufReader<File>>) -> usize {
@@ -497,7 +323,8 @@ use crate::data::buffer::Buffer;
 use crate::data::scanline::ScanLine;
 use crate::graph::item::Item;
 use crate::model::image::decoder::{ImageDecoder, PageStream};
-use crate::model::image::desc::{Dpi, ImageDesc, PageInfo, PixelOffset};
+use crate::model::image::desc::{BlendMode, Dpi, ImageDesc, Orientation, PageInfo, PixelOffset};
+use crate::model::image::meta::{AlphaMode, ImageMetadata};
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
 
@@ -552,8 +379,7 @@ impl ImageDecoder for TiffDecoder {
             let pcs = detect_tiff_color_space(&mut decoder);
             let pam = alpha_mode_for(pct);
             let buffer_desc = tiff_buffer_desc(pct, pw, ph, pcs, pam)?;
-            let name = read_page_name(&mut decoder)
-                .unwrap_or_else(|| format!("Page {}", i + 1));
+            let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", i + 1));
             let (ox, oy) = read_page_offset(&mut decoder, pw, ph);
             let orientation = read_orientation(&mut decoder);
 
@@ -598,8 +424,7 @@ impl ImageDecoder for TiffDecoder {
         let cs = detect_tiff_color_space(&mut decoder);
         let am = alpha_mode_for(ct);
         let buffer_desc = tiff_buffer_desc(ct, w, h, cs, am)?;
-        let name = read_page_name(&mut decoder)
-            .unwrap_or_else(|| format!("Page {}", page + 1));
+        let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", page + 1));
         let (ox, oy) = read_page_offset(&mut decoder, w, h);
         let orientation = read_orientation(&mut decoder);
 
@@ -704,7 +529,10 @@ fn tiff_pixel_format(result: &DecodingResult, ct: tiff::ColorType) -> PixelForma
             tiff::ColorType::RGB(_) => PixelFormat::Rgb16,
             tiff::ColorType::RGBA(_) => PixelFormat::Rgba16,
             _ => {
-                tracing::warn!("Unsupported U16 TIFF color: {:?}, falling back to Rgba16", ct);
+                tracing::warn!(
+                    "Unsupported U16 TIFF color: {:?}, falling back to Rgba16",
+                    ct
+                );
                 PixelFormat::Rgba16
             }
         },
@@ -713,7 +541,10 @@ fn tiff_pixel_format(result: &DecodingResult, ct: tiff::ColorType) -> PixelForma
             tiff::ColorType::RGB(_) => PixelFormat::RgbF32,
             tiff::ColorType::RGBA(_) => PixelFormat::RgbaF32,
             _ => {
-                tracing::warn!("Unsupported F32 TIFF color: {:?}, falling back to RgbaF32", ct);
+                tracing::warn!(
+                    "Unsupported F32 TIFF color: {:?}, falling back to RgbaF32",
+                    ct
+                );
                 PixelFormat::RgbaF32
             }
         },
@@ -748,9 +579,7 @@ fn tiff_row_bytes(
     let row_end = row_start + w * spp;
 
     match result {
-        DecodingResult::U8(data) => {
-            Ok(data[row_start..row_end].to_vec())
-        }
+        DecodingResult::U8(data) => Ok(data[row_start..row_end].to_vec()),
         DecodingResult::U16(data) => Ok(data[row_start..row_end]
             .iter()
             .flat_map(|v| v.to_ne_bytes())
@@ -771,12 +600,4 @@ fn tiff_row_bytes(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_read_tiff_metadata_nonexistent() {
-        let result = TiffFormat.read_document_info(Path::new("/nonexistent/file.tiff"));
-        assert!(result.is_err());
-    }
-}
+mod tests {}

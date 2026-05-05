@@ -4,6 +4,7 @@
 //! Enables interleaved, planar, padded, and mixed layouts without hardcoding assumptions.
 
 use crate::model::color::space::ColorSpace;
+use crate::model::image::meta::AlphaMode;
 use bytemuck::Pod;
 use half::f16;
 use std::ops::Range;
@@ -173,7 +174,7 @@ pub struct BufferDesc {
     /// One PlaneDesc per channel (RGBA = 4, RGB = 3, etc.).
     pub planes: Vec<PlaneDesc>,
     pub color_space: ColorSpace,
-    pub alpha_mode: crate::model::image::AlphaMode,
+    pub alpha_mode: AlphaMode,
 }
 
 impl BufferDesc {
@@ -223,7 +224,7 @@ impl BufferDesc {
         offsets: &[usize],
         stride: usize,
         color_space: ColorSpace,
-        alpha_mode: crate::model::image::AlphaMode,
+        alpha_mode: AlphaMode,
     ) -> Self {
         let row_stride = width as usize * stride;
         let planes: Vec<_> = offsets
@@ -245,36 +246,16 @@ impl BufferDesc {
         }
     }
 
-    pub fn rgba8_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgba8_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U8, &[0, 1, 2, 3], 4, cs, a)
     }
-    pub fn rgb8_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgb8_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U8, &[0, 1, 2], 3, cs, a)
     }
-    pub fn gray8_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray8_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U8, &[0], 1, cs, a)
     }
-    pub fn gray_alpha8_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_alpha8_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U8, &[0, 1], 2, cs, a)
     }
     #[cfg(target_endian = "little")]
@@ -282,72 +263,32 @@ impl BufferDesc {
     #[cfg(target_endian = "big")]
     const U16_NATIVE: SampleFormat = SampleFormat::U16Be;
 
-    pub fn rgba16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgba16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U16_NATIVE, &[0, 2, 4, 6], 8, cs, a)
     }
-    pub fn rgb16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgb16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U16_NATIVE, &[0, 2, 4], 6, cs, a)
     }
-    pub fn gray16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U16_NATIVE, &[0], 2, cs, a)
     }
 
-    pub fn gray_alpha16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_alpha16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U16_NATIVE, &[0, 2], 4, cs, a)
     }
 
     // --- Explicit big-endian 16-bit (for PNG, which leaves data BE) ---
 
-    pub fn rgba16be_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgba16be_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U16Be, &[0, 2, 4, 6], 8, cs, a)
     }
-    pub fn rgb16be_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgb16be_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U16Be, &[0, 2, 4], 6, cs, a)
     }
-    pub fn gray16be_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray16be_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U16Be, &[0], 2, cs, a)
     }
-    pub fn gray_alpha16be_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_alpha16be_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, SampleFormat::U16Be, &[0, 2], 4, cs, a)
     }
 
@@ -370,98 +311,43 @@ impl BufferDesc {
 
     // --- f16 family (host-native, TIFF crate output) ---
 
-    pub fn rgba_f16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgba_f16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F16_NATIVE, &[0, 2, 4, 6], 8, cs, a)
     }
-    pub fn rgb_f16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgb_f16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F16_NATIVE, &[0, 2, 4], 6, cs, a)
     }
-    pub fn gray_f16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_f16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F16_NATIVE, &[0], 2, cs, a)
     }
-    pub fn gray_alpha_f16_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_alpha_f16_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F16_NATIVE, &[0, 2], 4, cs, a)
     }
 
     // --- f32 family (host-native) ---
 
-    pub fn rgba_f32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgba_f32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F32_NATIVE, &[0, 4, 8, 12], 16, cs, a)
     }
-    pub fn rgb_f32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgb_f32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F32_NATIVE, &[0, 4, 8], 12, cs, a)
     }
-    pub fn gray_f32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_f32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F32_NATIVE, &[0], 4, cs, a)
     }
-    pub fn gray_alpha_f32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray_alpha_f32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::F32_NATIVE, &[0, 4], 8, cs, a)
     }
 
     // --- u32 family (host-native) ---
 
-    pub fn rgba32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgba32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U32_NATIVE, &[0, 4, 8, 12], 16, cs, a)
     }
-    pub fn rgb32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn rgb32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U32_NATIVE, &[0, 4, 8], 12, cs, a)
     }
-    pub fn gray32_interleaved(
-        w: u32,
-        h: u32,
-        cs: ColorSpace,
-        a: crate::model::image::AlphaMode,
-    ) -> Self {
+    pub fn gray32_interleaved(w: u32, h: u32, cs: ColorSpace, a: AlphaMode) -> Self {
         Self::interleaved(w, h, Self::U32_NATIVE, &[0], 4, cs, a)
     }
 }

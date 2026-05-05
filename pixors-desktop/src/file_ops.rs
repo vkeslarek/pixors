@@ -2,14 +2,13 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-
+use iced::wgpu::hal::DynAdapter;
 use pixors_executor::data::tile::TileGridPos;
 use pixors_executor::model::image::Image;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::data_transform::DataTransformNode;
 use pixors_executor::model::color::space::ColorSpace;
-use pixors_executor::model::image::BlendMode;
 use pixors_executor::model::pixel::PixelFormat;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::compose::Compose;

@@ -1,9 +1,6 @@
-use crate::model::image::ImageBuffer;
-use crate::model::image::buffer::BufferDesc;
+use crate::model::image::buffer::{BufferDesc, ImageBuffer};
+use crate::model::image::desc::{BlendMode, Orientation};
 
-pub use crate::model::image::desc::{BlendMode, Orientation};
-
-/// Lightweight layer metadata (no pixel data).
 pub struct LayerMetadata {
     pub desc: BufferDesc,
     pub orientation: Orientation,

@@ -2,6 +2,22 @@
 //!
 //! Provides enums and types to describe image channels, alpha modes, and sample layouts.
 
+use std::collections::HashMap;
+
+#[derive(Default, Debug, Clone)]
+pub struct ImageMetadata {
+    pub source_format: Option<String>,
+    pub source_path: Option<std::path::PathBuf>,
+    pub dpi: Option<(f32, f32)>,
+    pub text: HashMap<String, String>,
+    pub raw_icc: Option<Vec<u8>>,
+}
+
+pub struct ImageInfo {
+    pub layer_count: usize,
+    pub metadata: ImageMetadata,
+}
+
 // --- From alpha.rs ---
 /// Alpha representation (straight, premultiplied, or absent).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

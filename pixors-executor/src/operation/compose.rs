@@ -7,7 +7,7 @@ use crate::data::tile::{Tile, TileGridPos};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::model::image::BlendMode;
+use crate::model::image::desc::BlendMode;
 use crate::stage::{
     BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
     ProcessorContext, Stage, StageHints,

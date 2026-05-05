@@ -9,233 +9,23 @@ use png::{BitDepth, ColorType, Decoder, Encoder, Transformations};
 
 use crate::data::buffer::Buffer;
 use crate::data::scanline::ScanLine;
+use crate::data::tile::TileCoord;
 use crate::error::Error;
 use crate::graph::item::Item;
 use crate::model::color::primaries::RgbPrimaries;
 use crate::model::color::space::ColorSpace;
 use crate::model::color::transfer::TransferFn;
-use crate::model::image::buffer::BufferDesc;
+use crate::model::image::buffer::{BufferDesc, ImageBuffer};
 use crate::model::image::decoder::{ImageDecoder, PageStream};
 use crate::model::image::desc::{BlendMode, Dpi, ImageDesc, Orientation, PageInfo, PixelOffset};
-use crate::model::image::{
-    AlphaMode, ImageBuffer, ImageInfo, ImageMetadata, Layer, LayerMetadata, TileCoord,
-};
-use crate::model::io::ImageReader;
-use crate::model::io::accumulator::RowAccumulator;
+use crate::model::image::meta::AlphaMode;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::model::storage::writer::TileWriter;
 
 /// PNG format reader.
 pub struct PngFormat;
 
-impl ImageReader for PngFormat {
-    fn can_handle(&self, path: &Path) -> bool {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.eq_ignore_ascii_case("png"))
-            .unwrap_or(false)
-    }
-
-    fn read_document_info(&self, path: &Path) -> Result<ImageInfo, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-        let mut decoder = Decoder::new(reader);
-        decoder.set_transformations(Transformations::EXPAND);
-        let reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
-        let info = reader.info();
-        let metadata = Self::document_metadata_from_info(info, path);
-        Ok(ImageInfo {
-            layer_count: 1,
-            metadata,
-        })
-    }
-
-    fn read_layer_metadata(&self, path: &Path, layer: usize) -> Result<LayerMetadata, Error> {
-        if layer != 0 {
-            return Err(Error::invalid_param(format!(
-                "PNG has only 1 layer, requested {}",
-                layer
-            )));
-        }
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-        let mut decoder = Decoder::new(reader);
-        decoder.set_transformations(Transformations::EXPAND);
-        let reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
-        let info = reader.info();
-        let (w, h) = (info.width, info.height);
-        let cs = Self::detect_color_space(info);
-        let am = AlphaMode::Straight;
-        let is_16bit = matches!(info.bit_depth, BitDepth::Sixteen);
-        let desc = Self::png_buffer_desc(info, w, h, cs, am, is_16bit);
-        Ok(LayerMetadata {
-            desc,
-            orientation: Orientation::Identity,
-            offset: (0, 0),
-            name: path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("PNG")
-                .to_string(),
-        })
-    }
-
-    fn load_layer(&self, path: &Path, layer: usize) -> Result<Layer, Error> {
-        if layer != 0 {
-            return Err(Error::invalid_param(format!(
-                "PNG has only 1 layer, requested {}",
-                layer
-            )));
-        }
-        let buf = Self::load_png(path)?;
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("PNG")
-            .to_string();
-        Ok(Layer::from_buffer(name, buf))
-    }
-
-    fn stream_tiles(
-        &self,
-        path: &Path,
-        tile_size: u32,
-        writer: &dyn TileWriter<u8>,
-        layer: usize,
-        on_progress: Option<&(dyn Fn(u8) + Send)>,
-    ) -> Result<(), Error> {
-        if layer != 0 {
-            return Err(Error::invalid_param("PNG has only 1 layer"));
-        }
-        let file = File::open(path).map_err(Error::Io)?;
-        let mut decoder = Decoder::new(BufReader::new(file));
-        decoder.set_transformations(Transformations::EXPAND);
-        let mut reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
-        let info = reader.info();
-        let (w, h) = (info.width, info.height);
-
-        // Interlaced images: fall back to full decode + band slice
-        if info.interlaced {
-            let buf = Self::load_png(path)?;
-            return Self::stream_tiles_from_buffer(&buf, tile_size, writer, on_progress);
-        }
-
-        let cs = Self::detect_color_space(info);
-        let am = AlphaMode::Straight;
-        let is_16bit = matches!(info.bit_depth, BitDepth::Sixteen);
-        let desc = Self::png_buffer_desc(info, w, h, cs, am, is_16bit);
-
-        let mut acc = RowAccumulator::new(w, h, tile_size, desc, 64 * 1024 * 1024);
-        let tiles_y = h.div_ceil(tile_size);
-
-        while let Some(row) = reader.next_row().map_err(|e| Error::Png(e.to_string()))? {
-            acc.push_row(row.data());
-            if acc.is_full() {
-                for frag in acc.extract_tiles() {
-                    writer.write_tile(frag.coord, &frag.data)?;
-                }
-                let band_ty = acc.band_ty();
-                if let Some(cb) = on_progress {
-                    cb(((band_ty + 1) * 100 / tiles_y) as u8);
-                }
-                acc.reset();
-            }
-        }
-        // Flush remaining partial band
-        if acc.rows_filled() > 0 {
-            for frag in acc.extract_tiles() {
-                writer.write_tile(frag.coord, &frag.data)?;
-            }
-        }
-        writer.finish()?;
-        Ok(())
-    }
-}
-
 impl PngFormat {
-    fn stream_tiles_from_buffer(
-        buf: &ImageBuffer,
-        tile_size: u32,
-        writer: &dyn TileWriter<u8>,
-        on_progress: Option<&(dyn Fn(u8) + Send)>,
-    ) -> Result<(), Error> {
-        let w = buf.desc.width;
-        let h = buf.desc.height;
-        let bpp = buf.desc.planes.len() * buf.desc.planes[0].encoding.byte_size();
-        let tiles_y = h.div_ceil(tile_size);
-        for band_ty in 0..tiles_y {
-            let band_start_y = band_ty * tile_size;
-            let band_height = (h - band_start_y).min(tile_size);
-            let tiles_x = w.div_ceil(tile_size);
-            let row_stride = w as usize * bpp;
-            for tx in 0..tiles_x {
-                let tile_px = tx * tile_size;
-                let actual_w = (w - tile_px).min(tile_size);
-                let coord = TileCoord::new(0, tx, band_ty, tile_size, w, h);
-                let mut tile_data = vec![0u8; (actual_w * band_height) as usize * bpp];
-                let tile_stride = actual_w as usize * bpp;
-                for r in 0..band_height as usize {
-                    let src_start =
-                        ((band_start_y as usize + r) * row_stride) + tile_px as usize * bpp;
-                    let dst_start = r * tile_stride;
-                    tile_data[dst_start..dst_start + tile_stride]
-                        .copy_from_slice(&buf.data[src_start..src_start + tile_stride]);
-                }
-                writer.write_tile(coord, &tile_data)?;
-            }
-            if let Some(cb) = on_progress {
-                cb(((band_ty + 1) * 100 / tiles_y) as u8);
-            }
-        }
-        writer.finish()?;
-        Ok(())
-    }
-
-    /// Extract document-level metadata from a PNG's Info struct.
-    fn document_metadata_from_info(info: &png::Info, path: &Path) -> ImageMetadata {
-        use std::collections::HashMap;
-
-        let source_format = Some("PNG".to_string());
-        let source_path = Some(path.to_path_buf());
-        let mut text = HashMap::new();
-        let mut raw_icc = None;
-        let mut dpi = None;
-
-        // Textual metadata
-        for t in &info.uncompressed_latin1_text {
-            text.insert(t.keyword.clone(), t.text.clone());
-        }
-        for t in &info.compressed_latin1_text {
-            text.insert(t.keyword.clone(), t.get_text().unwrap_or_default());
-        }
-        for t in &info.utf8_text {
-            text.insert(t.keyword.clone(), t.get_text().unwrap_or_default());
-        }
-
-        // ICC profile bytes
-        if let Some(icc) = &info.icc_profile {
-            raw_icc = Some(icc.to_vec());
-        }
-
-        // Physical dimensions (pHYs)
-        if let Some(pdim) = info.pixel_dims
-            && pdim.unit == png::Unit::Meter
-        {
-            let dpi_x = pdim.xppu as f32 * 0.0254;
-            let dpi_y = pdim.yppu as f32 * 0.0254;
-            dpi = Some((dpi_x, dpi_y));
-        }
-
-        ImageMetadata {
-            source_format,
-            source_path,
-            dpi,
-            text,
-            raw_icc,
-        }
-    }
-
     /// Build the correct BufferDesc for PNG color type + bit depth.
     pub(crate) fn png_buffer_desc(
         info: &png::Info,
@@ -278,42 +68,6 @@ impl PngFormat {
                 }
             }
         }
-    }
-
-    /// Loads a PNG image from a file path.
-    fn load_png(path: &Path) -> Result<ImageBuffer, Error> {
-        let _sw = crate::debug_stopwatch!("load_png");
-        tracing::info!("Reading PNG from {:?}", path);
-
-        let file = File::open(path).map_err(Error::Io)?;
-        let reader = BufReader::new(file);
-
-        let mut decoder = Decoder::new(reader);
-        decoder.set_transformations(Transformations::EXPAND);
-
-        let mut reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
-
-        let info = reader.info();
-        let width = info.width;
-        let height = info.height;
-        let bit_depth = info.bit_depth;
-
-        let color_space = Self::detect_color_space(info);
-        let alpha_mode = AlphaMode::Straight;
-        let is_16bit = matches!(bit_depth, BitDepth::Sixteen);
-
-        let desc = Self::png_buffer_desc(info, width, height, color_space, alpha_mode, is_16bit);
-
-        let buf_size = reader
-            .output_buffer_size()
-            .expect("PNG decoder output buffer size unavailable");
-        let mut buf = vec![0; buf_size];
-        let info = reader
-            .next_frame(&mut buf)
-            .map_err(|e| Error::Png(e.to_string()))?;
-        let data = buf[..info.buffer_size()].to_vec();
-
-        Ok(ImageBuffer { desc, data })
     }
 
     /// Detects the color space from PNG metadata.
@@ -580,11 +334,7 @@ impl PageStream for PngPageStream {
         let remaining = self.height.saturating_sub(self.row) as usize;
         let count = max_items.min(remaining);
         let mut items = Vec::with_capacity(count);
-        let meta = PixelMeta::new(
-            self.pixel_format,
-            self.color_space,
-            AlphaPolicy::Straight,
-        );
+        let meta = PixelMeta::new(self.pixel_format, self.color_space, AlphaPolicy::Straight);
         let w = self.width;
 
         for _ in 0..count {
