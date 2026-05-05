@@ -22,4 +22,11 @@ pub enum SinkNode {
     ViewportCacheSink(ViewportCacheSink),
 }
 
-delegate_stage!(SinkNode, Viewport, TileSink, PngEncoder, CacheWriter, ViewportCacheSink);
+delegate_stage!(
+    SinkNode,
+    Viewport,
+    TileSink,
+    PngEncoder,
+    CacheWriter,
+    ViewportCacheSink
+);

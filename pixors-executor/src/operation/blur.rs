@@ -13,20 +13,29 @@ use crate::gpu::kernel::{
 };
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 use crate::debug_stopwatch;
 
+const BLUR_SPIRV: &[u8] = include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
 
-const BLUR_SPIRV: &[u8] =
-    include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
+static BLUR_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "neighborhood",
+    kind: DataKind::Neighborhood,
+}];
 
+static BLUR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static BLUR_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "neighborhood", kind: DataKind::Neighborhood }];
-
-static BLUR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-
-static BLUR_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(BLUR_INPUTS), outputs: PortGroup::Fixed(BLUR_OUTPUTS) };
+static BLUR_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(BLUR_INPUTS),
+    outputs: PortGroup::Fixed(BLUR_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blur {
@@ -34,12 +43,21 @@ pub struct Blur {
 }
 
 impl Stage for Blur {
-    fn kind(&self) -> &'static str { "blur" }
-    fn ports(&self) -> &'static PortSpecification { &BLUR_PORTS }
-    fn hints(&self) -> StageHints {
-        StageHints { buffer_access: BufferAccess::ReadTransform, prefers_gpu: true }
+    fn kind(&self) -> &'static str {
+        "blur"
     }
-    fn device(&self) -> Device { Device::Gpu }
+    fn ports(&self) -> &'static PortSpecification {
+        &BLUR_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadTransform,
+            prefers_gpu: true,
+        }
+    }
+    fn device(&self) -> Device {
+        Device::Gpu
+    }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(BlurProcessor::new(self.radius)))
     }
@@ -74,7 +92,10 @@ impl Processor for BlurProcessor {
         let all_gpu = nbhd.tiles.iter().all(|t| t.data.is_gpu());
         if all_gpu {
             match gpu_blur_dispatch(&nbhd, self.radius) {
-                Ok(tile) => { ctx.emit.emit(Item::Tile(tile)); return Ok(()); }
+                Ok(tile) => {
+                    ctx.emit.emit(Item::Tile(tile));
+                    return Ok(());
+                }
                 Err(e) => tracing::warn!("GPU blur failed ({e}), falling back to CPU"),
             }
             let nbhd = download_neighborhood(nbhd)?;
@@ -98,10 +119,22 @@ static BLUR_RES_OUT: &[ResourceDeclaration] = &[ResourceDeclaration {
     access: BindingAccess::Write,
 }];
 static BLUR_PARAMS_DECL: &[ParameterDeclaration] = &[
-    ParameterDeclaration { name: "width",  kind: ParameterType::U32 },
-    ParameterDeclaration { name: "height", kind: ParameterType::U32 },
-    ParameterDeclaration { name: "radius", kind: ParameterType::U32 },
-    ParameterDeclaration { name: "_pad",   kind: ParameterType::U32 },
+    ParameterDeclaration {
+        name: "width",
+        kind: ParameterType::U32,
+    },
+    ParameterDeclaration {
+        name: "height",
+        kind: ParameterType::U32,
+    },
+    ParameterDeclaration {
+        name: "radius",
+        kind: ParameterType::U32,
+    },
+    ParameterDeclaration {
+        name: "_pad",
+        kind: ParameterType::U32,
+    },
 ];
 
 struct BlurGpuKernel {
@@ -110,7 +143,9 @@ struct BlurGpuKernel {
 }
 
 impl crate::gpu::kernel::GpuKernel for BlurGpuKernel {
-    fn signature(&self) -> &KernelSignature { &self.sig }
+    fn signature(&self) -> &KernelSignature {
+        &self.sig
+    }
     fn write_params(&self, dst: &mut [u8]) {
         let bytes = bytemuck::bytes_of(&self.params);
         let n = bytes.len().min(dst.len());
@@ -119,8 +154,8 @@ impl crate::gpu::kernel::GpuKernel for BlurGpuKernel {
 }
 
 fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
-    let ctx = gpu::context::try_init()
-        .ok_or_else(|| Error::internal("GPU unavailable for blur"))?;
+    let ctx =
+        gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable for blur"))?;
     let scheduler = ctx.scheduler();
     scheduler.flush();
 
@@ -155,7 +190,9 @@ fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
         let y0 = oy.max(tpy);
         let x1 = (ox + pw).min(tpx + tile.coord.width);
         let y1 = (oy + ph).min(tpy + tile.coord.height);
-        if x1 <= x0 || y1 <= y0 { continue; }
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
 
         let copy_w = (x1 - x0) as usize;
         for abs_y in y0..y1 {
@@ -169,7 +206,12 @@ fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
     }
 
     let in_gbuf = scheduler.upload_bytes(&assembled);
-    let params = BlurParams { width: pw, height: ph, radius: r, _pad: 0 };
+    let params = BlurParams {
+        width: pw,
+        height: ph,
+        radius: r,
+        _pad: 0,
+    };
     let out_size = (cw * ch * 4) as u64;
 
     let kernel = BlurGpuKernel {
@@ -187,16 +229,29 @@ fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
         params,
     };
     let out_arc = scheduler
-        .dispatch_one(&kernel, &[&in_gbuf], out_size, cw.div_ceil(8), ch.div_ceil(8))
+        .dispatch_one(
+            &kernel,
+            &[&in_gbuf],
+            out_size,
+            cw.div_ceil(8),
+            ch.div_ceil(8),
+        )
         .map_err(|e| Error::internal(format!("GPU blur: {e}")))?;
 
     tracing::info!(
         "[pixors] blur: GPU mip={} tile=({},{}) r={}",
-        mip_level, nbhd.center.tx, nbhd.center.ty, r,
+        mip_level,
+        nbhd.center.tx,
+        nbhd.center.ty,
+        r,
     );
 
     use crate::data::buffer::GpuBuffer;
-    Ok(Tile::new(nbhd.center, nbhd.meta, Buffer::Gpu(GpuBuffer::new(out_arc, out_size))))
+    Ok(Tile::new(
+        nbhd.center,
+        nbhd.meta,
+        Buffer::Gpu(GpuBuffer::new(out_arc, out_size)),
+    ))
 }
 
 /// Download all GPU-backed tiles in a neighborhood to CPU.
@@ -220,7 +275,11 @@ fn download_neighborhood(mut nbhd: Neighborhood) -> Result<Neighborhood, Error> 
 
 // ── CPU path ─────────────────────────────────────────────────────────────────
 
-fn cpu_blur_process(nbhd: &Neighborhood, radius: u32, emit: &mut Emitter<Item>) -> Result<(), Error> {
+fn cpu_blur_process(
+    nbhd: &Neighborhood,
+    radius: u32,
+    emit: &mut Emitter<Item>,
+) -> Result<(), Error> {
     let mip_level = nbhd.center.mip_level;
     let r = radius >> mip_level;
     let cx = nbhd.center.px;
@@ -232,7 +291,11 @@ fn cpu_blur_process(nbhd: &Neighborhood, radius: u32, emit: &mut Emitter<Item>) 
     if r == 0 {
         if let Some(center_tile) = nbhd.tile_at(nbhd.center.tx, nbhd.center.ty) {
             let data = center_tile.data.as_cpu_slice().unwrap();
-            emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, Buffer::cpu(data.to_vec()))));
+            emit.emit(Item::Tile(Tile::new(
+                nbhd.center,
+                nbhd.meta,
+                Buffer::cpu(data.to_vec()),
+            )));
         }
         return Ok(());
     }
@@ -255,14 +318,18 @@ fn cpu_blur_process(nbhd: &Neighborhood, radius: u32, emit: &mut Emitter<Item>) 
         let y0 = roy.max(tpy);
         let x1 = (rox + rw as u32).min(tpx + tile.coord.width);
         let y1 = (roy + rh as u32).min(tpy + tile.coord.height);
-        if x1 <= x0 || y1 <= y0 { continue; }
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
 
         let copy_w = (x1 - x0) as usize;
         for abs_y in y0..y1 {
             let src_off = ((abs_y - tpy) as usize * tw + (x0 - tpx) as usize) * bpp;
             let dst_off = ((abs_y - roy) as usize * rw + (x0 - rox) as usize) * bpp;
             let len = copy_w * bpp;
-            if src_off + len > tile_data.len() || dst_off + len > src.len() { continue; }
+            if src_off + len > tile_data.len() || dst_off + len > src.len() {
+                continue;
+            }
             src[dst_off..dst_off + len].copy_from_slice(&tile_data[src_off..src_off + len]);
         }
     }
@@ -277,19 +344,34 @@ fn cpu_blur_process(nbhd: &Neighborhood, radius: u32, emit: &mut Emitter<Item>) 
         let row_off = ((off_y + y) * rw + off_x) * bpp;
         tile_data.extend_from_slice(&blurred[row_off..row_off + cw_u * bpp]);
     }
-    emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, Buffer::cpu(tile_data))));
+    emit.emit(Item::Tile(Tile::new(
+        nbhd.center,
+        nbhd.meta,
+        Buffer::cpu(tile_data),
+    )));
     Ok(())
 }
 
 fn box_blur_rgba8(data: &[u8], w: usize, h: usize, r: usize) -> Vec<u8> {
-    if w == 0 || h == 0 { return vec![]; }
-    if r == 0 { return data.to_vec(); }
+    if w == 0 || h == 0 {
+        return vec![];
+    }
+    if r == 0 {
+        return data.to_vec();
+    }
     let stride = w * 4;
     let hpass = blur_axis(data, h, stride, w, 4, r);
     blur_axis(&hpass, w, 4, h, stride, r)
 }
 
-fn blur_axis(data: &[u8], lines: usize, line_step: usize, axis_len: usize, step: usize, r: usize) -> Vec<u8> {
+fn blur_axis(
+    data: &[u8],
+    lines: usize,
+    line_step: usize,
+    axis_len: usize,
+    step: usize,
+    r: usize,
+) -> Vec<u8> {
     let mut dst = vec![0u8; data.len()];
     for line in 0..lines {
         let line_origin = line * line_step;
@@ -298,7 +380,9 @@ fn blur_axis(data: &[u8], lines: usize, line_step: usize, axis_len: usize, step:
         let initial_end = r.min(axis_len - 1);
         for i in 0..=initial_end {
             let off = line_origin + i * step;
-            for c in 0..4 { sum[c] += data[off + c] as u32; }
+            for c in 0..4 {
+                sum[c] += data[off + c] as u32;
+            }
             count += 1;
         }
         for i in 0..axis_len {
@@ -306,18 +390,24 @@ fn blur_axis(data: &[u8], lines: usize, line_step: usize, axis_len: usize, step:
                 let new_i = i + r;
                 if new_i < axis_len {
                     let off = line_origin + new_i * step;
-                    for c in 0..4 { sum[c] += data[off + c] as u32; }
+                    for c in 0..4 {
+                        sum[c] += data[off + c] as u32;
+                    }
                     count += 1;
                 }
                 if i > r {
                     let old_i = i - r - 1;
                     let off = line_origin + old_i * step;
-                    for c in 0..4 { sum[c] -= data[off + c] as u32; }
+                    for c in 0..4 {
+                        sum[c] -= data[off + c] as u32;
+                    }
                     count -= 1;
                 }
             }
             let dst_off = line_origin + i * step;
-            for c in 0..4 { dst[dst_off + c] = (sum[c] / count) as u8; }
+            for c in 0..4 {
+                dst[dst_off + c] = (sum[c] / count) as u8;
+            }
         }
     }
     dst

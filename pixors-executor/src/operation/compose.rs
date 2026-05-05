@@ -9,8 +9,8 @@ use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::model::image::BlendMode;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext,
-    Stage, StageHints,
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
 };
 
 static COMPOSE_INPUT: PortDeclaration = PortDeclaration {

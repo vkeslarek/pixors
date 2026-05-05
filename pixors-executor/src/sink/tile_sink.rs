@@ -2,41 +2,41 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
-use crate::graph::item::Item;
 use crate::error::Error;
+use crate::graph::item::Item;
 
 use crate::debug_stopwatch;
-
 
 /// Callback: invoked when a tile arrives with its pixel coordinates and RGBA8 bytes.
 
 pub type TileCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
-
 static TILE_SINK: OnceLock<Arc<TileCommitFn>> = OnceLock::new();
 
-
 pub fn install_tile_sink(f: TileCommitFn) {
-
     let _ = TILE_SINK.set(Arc::new(f));
-
 }
-
 
 pub fn tile_sink() -> Option<Arc<TileCommitFn>> {
-
     TILE_SINK.get().cloned()
-
 }
 
-
-static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
 static TS_OUTPUTS: &[PortDeclaration] = &[];
 
-static TS_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
+static TS_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(TS_INPUTS),
+    outputs: PortGroup::Fixed(TS_OUTPUTS),
+};
 
 // ── Stage ───────────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ impl Processor for TileSinkProcessor {
         let src: &[u8] = match &tile.data {
             crate::data::buffer::Buffer::Cpu(v) => v.as_slice(),
             crate::data::buffer::Buffer::Gpu(_) => {
-                return Err(Error::internal("GPU tile not supported in tile_sink"))
+                return Err(Error::internal("GPU tile not supported in tile_sink"));
             }
         };
         (self.cb)(

@@ -1,19 +1,7 @@
-use serde::{Deserialize, Serialize};
-
 use crate::model::image::ImageBuffer;
 use crate::model::image::buffer::BufferDesc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Orientation {
-    #[default] Identity,
-    FlipH, Rotate180, FlipV, Transpose, Rotate90, Transverse, Rotate270,
-}
-
-use std::hash::Hash;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-pub enum BlendMode {
-    #[default] Normal,
-}
+pub use crate::model::image::desc::{BlendMode, Orientation};
 
 /// Lightweight layer metadata (no pixel data).
 pub struct LayerMetadata {
@@ -36,8 +24,13 @@ pub struct Layer {
 impl Layer {
     pub fn from_buffer(name: impl Into<String>, buffer: ImageBuffer) -> Self {
         Self {
-            name: name.into(), buffer, offset: (0, 0), opacity: 1.0,
-            blend_mode: BlendMode::Normal, visible: true, orientation: Orientation::Identity,
+            name: name.into(),
+            buffer,
+            offset: (0, 0),
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            visible: true,
+            orientation: Orientation::Identity,
         }
     }
 }

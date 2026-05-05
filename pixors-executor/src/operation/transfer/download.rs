@@ -3,11 +3,14 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::data::tile::Tile;
-use crate::model::pixel::meta::PixelMeta;
 use crate::data::tile::TileCoord;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::model::pixel::meta::PixelMeta;
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 use crate::error::Error;
 
@@ -18,12 +21,20 @@ use crate::data::buffer::Buffer;
 
 use crate::debug_stopwatch;
 
+static DL_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static DL_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static DL_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static DL_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-
-static DL_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(DL_INPUTS), outputs: PortGroup::Fixed(DL_OUTPUTS) };
+static DL_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(DL_INPUTS),
+    outputs: PortGroup::Fixed(DL_OUTPUTS),
+};
 
 /// How many tiles to accumulate before flushing (1 submit + 1
 /// `device.poll(Wait)` per chunk). Caps peak staging memory.
@@ -39,7 +50,9 @@ struct Pending {
 pub struct Download;
 
 impl Stage for Download {
-    fn kind(&self) -> &'static str { "download" }
+    fn kind(&self) -> &'static str {
+        "download"
+    }
 
     fn ports(&self) -> &'static PortSpecification {
         &DL_PORTS
@@ -105,9 +118,11 @@ impl DownloadProcessor {
         let (tx, rx) = std::sync::mpsc::channel::<(usize, Result<(), wgpu::BufferAsyncError>)>();
         for (idx, p) in pending.iter().enumerate() {
             let txc = tx.clone();
-            p.staging.slice(..).map_async(wgpu::MapMode::Read, move |res| {
-                let _ = txc.send((idx, res));
-            });
+            p.staging
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |res| {
+                    let _ = txc.send((idx, res));
+                });
         }
         drop(tx);
         ctx.device().poll(wgpu::Maintain::Wait);
@@ -157,9 +172,11 @@ impl Processor for DownloadProcessor {
             mapped_at_creation: false,
         });
         let encoder = self.encoder.get_or_insert_with(|| {
-            gpu_ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("download-batch"),
-            })
+            gpu_ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("download-batch"),
+                })
         });
         encoder.copy_buffer_to_buffer(&gbuf.buffer, 0, &staging, 0, size);
         self.pending.push(Pending {
@@ -177,7 +194,8 @@ impl Processor for DownloadProcessor {
         self.flush(ctx.emit)?;
         tracing::debug!(
             "[pixors] download: total {} chunks (BATCH_SIZE={})",
-            self.flushed_chunks, BATCH_SIZE
+            self.flushed_chunks,
+            BATCH_SIZE
         );
         Ok(())
     }

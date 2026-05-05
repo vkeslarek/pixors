@@ -1,8 +1,8 @@
 use crate::model::image::{Tile, TileCoord};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::hash::Hash;
+use std::sync::Arc;
 
 /// Identifies a tile within a MIP level for neighborhood accumulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -13,8 +13,16 @@ pub struct NeighborhoodCoord {
 }
 
 impl NeighborhoodCoord {
-    pub fn new(mip: u32, tx: u32, ty: u32) -> Self { Self { mip, tx, ty } }
-    pub fn from_tile(tile: &TileCoord) -> Self { Self { mip: tile.mip_level, tx: tile.tx, ty: tile.ty } }
+    pub fn new(mip: u32, tx: u32, ty: u32) -> Self {
+        Self { mip, tx, ty }
+    }
+    pub fn from_tile(tile: &TileCoord) -> Self {
+        Self {
+            mip: tile.mip_level,
+            tx: tile.tx,
+            ty: tile.ty,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

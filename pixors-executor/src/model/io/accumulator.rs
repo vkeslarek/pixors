@@ -2,8 +2,8 @@
 //!
 //! `RowAccumulator` enables streaming IO without allocating a full-image buffer.
 
-use crate::model::image::buffer::BufferDesc;
 use crate::model::image::TileCoord;
+use crate::model::image::buffer::BufferDesc;
 
 pub struct TileFragment<'a> {
     pub coord: TileCoord,
@@ -24,7 +24,13 @@ pub struct RowAccumulator {
 }
 
 impl RowAccumulator {
-    pub fn new(width: u32, height: u32, tile_dim: u32, desc: BufferDesc, max_band_bytes: usize) -> Self {
+    pub fn new(
+        width: u32,
+        height: u32,
+        tile_dim: u32,
+        desc: BufferDesc,
+        max_band_bytes: usize,
+    ) -> Self {
         let channels = desc.planes.len();
         let bpp = channels * desc.planes[0].encoding.byte_size();
         let mut effective_tile_h = tile_dim;
@@ -61,7 +67,9 @@ impl RowAccumulator {
         row
     }
 
-    pub fn is_full(&self) -> bool { self.rows_filled >= self.tile_dim }
+    pub fn is_full(&self) -> bool {
+        self.rows_filled >= self.tile_dim
+    }
 
     /// Extract tile fragments from the current band. `band_ty` is the band index.
     pub fn extract_tiles(&self) -> Vec<TileFragment<'_>> {
@@ -84,7 +92,14 @@ impl RowAccumulator {
                     .copy_from_slice(&self.buf[src_start..src_start + tile_stride]);
             }
 
-            let coord = TileCoord::new(0, tx, self.band_ty, self.tile_dim, self.image_width, self.image_height);
+            let coord = TileCoord::new(
+                0,
+                tx,
+                self.band_ty,
+                self.tile_dim,
+                self.image_width,
+                self.image_height,
+            );
             fragments.push(TileFragment {
                 coord,
                 data: tile_buf.into_boxed_slice(),
@@ -99,17 +114,23 @@ impl RowAccumulator {
         self.band_ty += 1;
     }
 
-    pub fn rows_filled(&self) -> u32 { self.rows_filled }
-    pub fn band_ty(&self) -> u32 { self.band_ty }
-    pub fn effective_tile_height(&self) -> u32 { self.tile_dim }
+    pub fn rows_filled(&self) -> u32 {
+        self.rows_filled
+    }
+    pub fn band_ty(&self) -> u32 {
+        self.band_ty
+    }
+    pub fn effective_tile_height(&self) -> u32 {
+        self.tile_dim
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::color::space::ColorSpace;
-    use crate::model::image::buffer::BufferDesc;
     use crate::model::image::AlphaMode;
+    use crate::model::image::buffer::BufferDesc;
 
     #[test]
     fn accumulator_basic() {

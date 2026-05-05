@@ -7,7 +7,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 use crate::error::Error;
 
@@ -15,12 +18,17 @@ use crate::data::buffer::Buffer;
 
 use crate::debug_stopwatch;
 
-
-static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
+static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "scanline",
+    kind: DataKind::ScanLine,
+}];
 
 static PE_OUTPUTS: &[PortDeclaration] = &[];
 
-static PE_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(PE_INPUTS), outputs: PortGroup::Fixed(PE_OUTPUTS) };
+static PE_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(PE_INPUTS),
+    outputs: PortGroup::Fixed(PE_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PngEncoder {
@@ -28,7 +36,9 @@ pub struct PngEncoder {
 }
 
 impl Stage for PngEncoder {
-    fn kind(&self) -> &'static str { "png_encoder" }
+    fn kind(&self) -> &'static str {
+        "png_encoder"
+    }
 
     fn ports(&self) -> &'static PortSpecification {
         &PE_PORTS
@@ -56,7 +66,13 @@ pub struct PngEncoderProcessor {
 
 impl PngEncoderProcessor {
     pub fn new(path: PathBuf) -> Self {
-        Self { path, rows: HashMap::new(), image_width: 0, image_height: 0, bpp: 0 }
+        Self {
+            path,
+            rows: HashMap::new(),
+            image_width: 0,
+            image_height: 0,
+            bpp: 0,
+        }
     }
 }
 
@@ -81,7 +97,9 @@ impl Processor for PngEncoderProcessor {
     fn finish(&mut self, _ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:finish");
         let bpp = self.bpp as usize;
-        if bpp == 0 { return Err(Error::internal("no data received")); }
+        if bpp == 0 {
+            return Err(Error::internal("no data received"));
+        }
         let iw = self.image_width as usize;
         let ih = self.image_height as usize;
         let mut image = vec![0u8; iw * ih * bpp];
@@ -97,10 +115,19 @@ impl Processor for PngEncoderProcessor {
         let file = File::create(&self.path)?;
         let w = BufWriter::new(file);
         let mut encoder = png::Encoder::new(w, self.image_width, self.image_height);
-        encoder.set_color(match bpp { 1=>png::ColorType::Grayscale, 2=>png::ColorType::GrayscaleAlpha, 3=>png::ColorType::Rgb, _=>png::ColorType::Rgba });
+        encoder.set_color(match bpp {
+            1 => png::ColorType::Grayscale,
+            2 => png::ColorType::GrayscaleAlpha,
+            3 => png::ColorType::Rgb,
+            _ => png::ColorType::Rgba,
+        });
         encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().map_err(|e| Error::Png(e.to_string()))?;
-        writer.write_image_data(&image).map_err(|e| Error::Png(e.to_string()))?;
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| Error::Png(e.to_string()))?;
+        writer
+            .write_image_data(&image)
+            .map_err(|e| Error::Png(e.to_string()))?;
         writer.finish().map_err(|e| Error::Png(e.to_string()))?;
         Ok(())
     }

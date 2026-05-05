@@ -1,7 +1,7 @@
 use petgraph::stable_graph::{NodeIndex, StableDiGraph};
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{StageNode, Stage};
+use crate::stage::{Stage, StageNode};
 
 /// Stable handle to a stage in an `ExecGraph`.
 pub type StageId = NodeIndex<u32>;

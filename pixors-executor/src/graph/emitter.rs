@@ -9,7 +9,10 @@ impl<T> Emitter<T> {
         Self { items: Vec::new() }
     }
     pub fn emit_to(&mut self, port: u16, item: T) {
-        self.items.push(Routed { port, payload: item });
+        self.items.push(Routed {
+            port,
+            payload: item,
+        });
     }
     pub fn emit(&mut self, item: T) {
         self.emit_to(0, item);

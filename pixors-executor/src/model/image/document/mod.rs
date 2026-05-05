@@ -4,7 +4,7 @@
 //! PNG = 1 layer, TIFF multi-page = N layers.
 
 mod layer;
-pub use layer::{Layer, LayerMetadata, BlendMode, Orientation};
+pub use layer::{BlendMode, Layer, LayerMetadata, Orientation};
 
 use crate::model::image::ImageBuffer;
 use std::collections::HashMap;
@@ -30,6 +30,9 @@ pub struct Image {
 
 impl Image {
     pub fn single_layer(name: impl Into<String>, buffer: ImageBuffer) -> Self {
-        Self { layers: vec![Layer::from_buffer(name, buffer)], metadata: ImageMetadata::default() }
+        Self {
+            layers: vec![Layer::from_buffer(name, buffer)],
+            metadata: ImageMetadata::default(),
+        }
     }
 }

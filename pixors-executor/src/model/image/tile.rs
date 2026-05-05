@@ -1,10 +1,10 @@
 use crate::model::color::conversion::ColorConversion;
-use crate::model::pixel::Rgba;
+use crate::model::color::space::ColorSpace;
 use crate::model::pixel::AlphaPolicy;
+use crate::model::pixel::Rgba;
 use half::f16;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::model::color::space::ColorSpace;
 
 /// Identity of a tile — everything the engine needs to locate any tile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -29,13 +29,37 @@ impl TileCoord {
     ) -> Self {
         let px = tx * tile_size;
         let py = ty * tile_size;
-        let width = if px >= image_width { 0 } else { (image_width - px).min(tile_size) };
-        let height = if py >= image_height { 0 } else { (image_height - py).min(tile_size) };
-        Self { mip_level, tx, ty, px, py, width, height }
+        let width = if px >= image_width {
+            0
+        } else {
+            (image_width - px).min(tile_size)
+        };
+        let height = if py >= image_height {
+            0
+        } else {
+            (image_height - py).min(tile_size)
+        };
+        Self {
+            mip_level,
+            tx,
+            ty,
+            px,
+            py,
+            width,
+            height,
+        }
     }
 
     pub fn from_xywh(mip_level: u32, px: u32, py: u32, width: u32, height: u32) -> Self {
-        Self { mip_level, tx: 0, ty: 0, px, py, width, height }
+        Self {
+            mip_level,
+            tx: 0,
+            ty: 0,
+            px,
+            py,
+            width,
+            height,
+        }
     }
 
     pub fn pixel_count(&self) -> usize {
@@ -59,11 +83,19 @@ pub struct Tile<P: Clone> {
 
 impl<P: Clone> Tile<P> {
     pub fn new(coord: TileCoord, data: Vec<P>) -> Self {
-        Self { coord, data: Arc::new(data), color_space: ColorSpace::ACES_CG }
+        Self {
+            coord,
+            data: Arc::new(data),
+            color_space: ColorSpace::ACES_CG,
+        }
     }
 
     pub fn with_color_space(coord: TileCoord, data: Vec<P>, color_space: ColorSpace) -> Self {
-        Self { coord, data: Arc::new(data), color_space }
+        Self {
+            coord,
+            data: Arc::new(data),
+            color_space,
+        }
     }
 }
 
@@ -107,13 +139,26 @@ impl TileGrid {
                 tiles.push(TileCoord::new(0, tx, ty, tile_size, width, height));
             }
         }
-        Self { image_width: width, image_height: height, tile_size, tiles }
+        Self {
+            image_width: width,
+            image_height: height,
+            tile_size,
+            tiles,
+        }
     }
 
-    pub fn width(&self) -> u32 { self.image_width }
-    pub fn height(&self) -> u32 { self.image_height }
-    pub fn tile_size(&self) -> u32 { self.tile_size }
-    pub fn tile_count(&self) -> usize { self.tiles.len() }
+    pub fn width(&self) -> u32 {
+        self.image_width
+    }
+    pub fn height(&self) -> u32 {
+        self.image_height
+    }
+    pub fn tile_size(&self) -> u32 {
+        self.tile_size
+    }
+    pub fn tile_count(&self) -> usize {
+        self.tiles.len()
+    }
 
     pub fn tiles(&self) -> impl Iterator<Item = &TileCoord> {
         self.tiles.iter()
@@ -142,19 +187,16 @@ impl TileGrid {
         let vx_max = (viewport_x + viewport_width).ceil() as i64;
         let vy_max = (viewport_y + viewport_height).ceil() as i64;
 
-        self.tiles.iter()
+        self.tiles
+            .iter()
             .filter(|t| {
                 let t_min_x = t.px as i64;
                 let t_min_y = t.py as i64;
                 let t_max_x = t_min_x + t.width as i64;
                 let t_max_y = t_min_y + t.height as i64;
-                t_max_x > vx_min && t_min_x < vx_max &&
-                t_max_y > vy_min && t_min_y < vy_max
+                t_max_x > vx_min && t_min_x < vx_max && t_max_y > vy_min && t_min_y < vy_max
             })
-            .map(|t| TileCoord {
-                mip_level,
-                ..*t
-            })
+            .map(|t| TileCoord { mip_level, ..*t })
             .collect()
     }
 }
@@ -181,8 +223,8 @@ mod tests {
         let c = TileCoord::new(0, 3, 3, 256, 1000, 800);
         assert_eq!(c.px, 768);
         assert_eq!(c.py, 768);
-        assert_eq!(c.width, 232);  // 1000 - 768
-        assert_eq!(c.height, 32);  // 800 - 768
+        assert_eq!(c.width, 232); // 1000 - 768
+        assert_eq!(c.height, 32); // 800 - 768
     }
 
     #[test]
@@ -194,7 +236,15 @@ mod tests {
     #[test]
     fn test_tile_creation() {
         let coord = TileCoord::new(0, 0, 0, 256, 1000, 800);
-        let data = vec![Rgba::new(f16::from_f32(0.5), f16::from_f32(0.3), f16::from_f32(0.2), f16::ONE); 256 * 256];
+        let data = vec![
+            Rgba::new(
+                f16::from_f32(0.5),
+                f16::from_f32(0.3),
+                f16::from_f32(0.2),
+                f16::ONE
+            );
+            256 * 256
+        ];
         let tile: Tile<Rgba<f16>> = Tile::new(coord, data);
         assert_eq!(tile.coord.width, 256);
         assert_eq!(tile.data.len(), 256 * 256);
@@ -203,7 +253,12 @@ mod tests {
     #[test]
     fn test_tile_to_srgb_u8() {
         let coord = TileCoord::new(0, 0, 0, 256, 256, 256);
-        let data = vec![Rgba::new(f16::from_f32(0.5), f16::from_f32(0.3), f16::from_f32(0.2), f16::ONE)];
+        let data = vec![Rgba::new(
+            f16::from_f32(0.5),
+            f16::from_f32(0.3),
+            f16::from_f32(0.2),
+            f16::ONE,
+        )];
         let tile = Tile::new(coord, data);
         let conv = ColorSpace::ACES_CG.converter_to(ColorSpace::SRGB).unwrap();
         let srgb = tile.to_srgb_u8(&conv);

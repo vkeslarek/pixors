@@ -1,20 +1,20 @@
 use std::collections::{HashMap, VecDeque};
 
-use petgraph::Direction;
-use petgraph::algo::toposort;
-use petgraph::visit::EdgeRef;
 use crate::data::buffer::Buffer;
 use crate::data::tile::{Tile, TileCoord};
+use crate::debug_stopwatch;
+use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::graph::{ExecGraph, StageId};
 use crate::graph::item::Item;
 use crate::graph::routed::Routed;
+use crate::model::color::space::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
 use crate::stage::{Processor, ProcessorContext, Stage};
-use crate::error::Error;
-use crate::debug_stopwatch;
-use crate::model::color::space::ColorSpace;
+use petgraph::Direction;
+use petgraph::algo::toposort;
+use petgraph::visit::EdgeRef;
 
 enum CompiledNode {
     Kernel(Box<dyn Processor>),
@@ -67,15 +67,22 @@ impl<'a> Executor<'a> {
                 if let Some(CompiledNode::Kernel(k)) = self.nodes.get_mut(&id) {
                     let dummy = Item::Tile(Tile::new(
                         TileCoord::new(0, 0, 0, 0, 0, 0),
-                        PixelMeta::new(
-                            PixelFormat::Rgba8,
-                            ColorSpace::SRGB,
-                            AlphaPolicy::Straight,
-                        ),
+                        PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
                         Buffer::cpu(vec![]),
                     ));
-                    k.process(ProcessorContext { port: 0, device: stage.device(), emit: &mut emitter }, dummy)?;
-                    k.finish(ProcessorContext { port: 0, device: stage.device(), emit: &mut emitter })?;
+                    k.process(
+                        ProcessorContext {
+                            port: 0,
+                            device: stage.device(),
+                            emit: &mut emitter,
+                        },
+                        dummy,
+                    )?;
+                    k.finish(ProcessorContext {
+                        port: 0,
+                        device: stage.device(),
+                        emit: &mut emitter,
+                    })?;
                 }
                 self.route(id, emitter.into_items(), &mut pending);
             }
@@ -83,7 +90,14 @@ impl<'a> Executor<'a> {
             while let Some(item) = pending.get_mut(&id).and_then(|q| q.pop_front()) {
                 let mut emitter = Emitter::new();
                 match self.nodes.get_mut(&id) {
-                    Some(CompiledNode::Kernel(k)) => k.process(ProcessorContext { port: item.port, device: stage.device(), emit: &mut emitter }, item.payload)?,
+                    Some(CompiledNode::Kernel(k)) => k.process(
+                        ProcessorContext {
+                            port: item.port,
+                            device: stage.device(),
+                            emit: &mut emitter,
+                        },
+                        item.payload,
+                    )?,
                     _ => return Err(Error::internal("unexpected input")),
                 }
                 self.route(id, emitter.into_items(), &mut pending);
@@ -91,7 +105,11 @@ impl<'a> Executor<'a> {
 
             let mut emitter = Emitter::new();
             match self.nodes.get_mut(&id) {
-                Some(CompiledNode::Kernel(k)) => k.finish(ProcessorContext { port: 0, device: stage.device(), emit: &mut emitter })?,
+                Some(CompiledNode::Kernel(k)) => k.finish(ProcessorContext {
+                    port: 0,
+                    device: stage.device(),
+                    emit: &mut emitter,
+                })?,
                 _ => {}
             }
             self.route(id, emitter.into_items(), &mut pending);

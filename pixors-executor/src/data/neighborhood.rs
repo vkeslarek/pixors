@@ -1,6 +1,6 @@
-use crate::model::pixel::meta::PixelMeta;
 use crate::data::tile::Tile;
 use crate::data::tile::TileCoord;
+use crate::model::pixel::meta::PixelMeta;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NeighborhoodCoord {
@@ -39,10 +39,21 @@ impl Neighborhood {
         image_height: u32,
         tile_size: u32,
     ) -> Self {
-        Self { radius, center, tiles, edge, meta, image_width, image_height, tile_size }
+        Self {
+            radius,
+            center,
+            tiles,
+            edge,
+            meta,
+            image_width,
+            image_height,
+            tile_size,
+        }
     }
 
     pub fn tile_at(&self, tx: u32, ty: u32) -> Option<&Tile> {
-        self.tiles.iter().find(|t| t.coord.tx == tx && t.coord.ty == ty)
+        self.tiles
+            .iter()
+            .find(|t| t.coord.tx == tx && t.coord.ty == ty)
     }
 }

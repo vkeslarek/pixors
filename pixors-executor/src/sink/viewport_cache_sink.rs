@@ -3,25 +3,14 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::data::buffer::Buffer;
-use crate::graph::item::Item;
 use crate::error::Error;
+use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints,
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
 };
 
-pub type CacheCommitFn = Box<
-    dyn Fn(
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            &[u8],
-        ) + Send
-        + Sync,
->;
+pub type CacheCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
 static CACHE_SINK: OnceLock<Arc<CacheCommitFn>> = OnceLock::new();
 
@@ -77,11 +66,7 @@ impl Processor for ViewportCacheSinkProcessor {
         let tile = ProcessorContext::take_tile(item)?;
         let data = match &tile.data {
             Buffer::Cpu(v) => v.as_slice(),
-            Buffer::Gpu(_) => {
-                return Err(Error::internal(
-                    "ViewportCacheSink requires CPU tiles",
-                ))
-            }
+            Buffer::Gpu(_) => return Err(Error::internal("ViewportCacheSink requires CPU tiles")),
         };
         (self.cb)(
             tile.coord.mip_level,

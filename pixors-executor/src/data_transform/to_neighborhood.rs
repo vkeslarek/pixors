@@ -1,23 +1,34 @@
 use std::collections::{HashMap, HashSet};
 
-use serde::{Deserialize, Serialize};
 use crate::data::device::Device;
 use crate::data::neighborhood::{EdgeCondition, Neighborhood};
 use crate::data::tile::{Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
 use crate::debug_stopwatch;
 
+static NA_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static NA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static NA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "neighborhood",
+    kind: DataKind::Neighborhood,
+}];
 
-static NA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "neighborhood", kind: DataKind::Neighborhood }];
-
-static NA_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(NA_INPUTS), outputs: PortGroup::Fixed(NA_OUTPUTS) };
+static NA_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(NA_INPUTS),
+    outputs: PortGroup::Fixed(NA_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToNeighborhood {
@@ -25,7 +36,9 @@ pub struct TileToNeighborhood {
 }
 
 impl Stage for TileToNeighborhood {
-    fn kind(&self) -> &'static str { "neighborhood_agg" }
+    fn kind(&self) -> &'static str {
+        "neighborhood_agg"
+    }
 
     fn ports(&self) -> &'static PortSpecification {
         &NA_PORTS
@@ -38,7 +51,9 @@ impl Stage for TileToNeighborhood {
         }
     }
 
-    fn device(&self) -> Device { Device::Either }
+    fn device(&self) -> Device {
+        Device::Either
+    }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(TileToNeighborhoodProcessor::new(self.radius)))
@@ -71,12 +86,16 @@ impl TileToNeighborhoodProcessor {
     }
 
     fn tile_radius(&self) -> u32 {
-        if self.tile_size == 0 { return 0; }
+        if self.tile_size == 0 {
+            return 0;
+        }
         self.pixel_radius.div_ceil(self.tile_size)
     }
 
     fn discover_bounds(&mut self, tile: &Tile) {
-        if self.initialized { return; }
+        if self.initialized {
+            return;
+        }
         self.meta = Some(tile.meta);
         self.tile_size = tile.coord.width.max(tile.coord.height);
         self.initialized = true;
@@ -90,8 +109,14 @@ impl TileToNeighborhoodProcessor {
     }
 
     fn try_emit(&mut self, mip: u32, tx: u32, ty: u32, emit: &mut Emitter<Item>) {
-        let key = TileGridPos { mip_level: mip, tx, ty };
-        if self.emitted.contains(&key) { return; }
+        let key = TileGridPos {
+            mip_level: mip,
+            tx,
+            ty,
+        };
+        if self.emitted.contains(&key) {
+            return;
+        }
         let r = self.tile_radius() as i32;
         let tiles_x = self.image_width.div_ceil(self.tile_size) as i32;
         let tiles_y = self.image_height.div_ceil(self.tile_size) as i32;
@@ -102,7 +127,11 @@ impl TileToNeighborhoodProcessor {
             for dx in -r..=r {
                 let gx = (tx as i32 + dx).clamp(0, tiles_x - 1).max(0) as u32;
                 let gy = (ty as i32 + dy).clamp(0, tiles_y - 1).max(0) as u32;
-                let nkey = TileGridPos { mip_level: mip, tx: gx, ty: gy };
+                let nkey = TileGridPos {
+                    mip_level: mip,
+                    tx: gx,
+                    ty: gy,
+                };
                 match self.tile_cache.get(&nkey) {
                     Some(tile) => {
                         if dx == 0 && dy == 0 {
@@ -110,13 +139,16 @@ impl TileToNeighborhoodProcessor {
                         }
                         nbhd_tiles.push(tile.clone());
                     }
-                    None => { return; }
+                    None => {
+                        return;
+                    }
                 }
             }
         }
 
         let center = center_coord.unwrap_or_else(|| {
-            nbhd_tiles.iter()
+            nbhd_tiles
+                .iter()
                 .find(|t| t.coord.tx == tx && t.coord.ty == ty)
                 .map(|t| t.coord)
                 .unwrap_or(nbhd_tiles[0].coord)
@@ -145,7 +177,11 @@ impl Processor for TileToNeighborhoodProcessor {
         self.update_bounds(&tile);
 
         let cur_ty = tile.coord.ty;
-        let pos = TileGridPos { mip_level: tile.coord.mip_level, tx: tile.coord.tx, ty: cur_ty };
+        let pos = TileGridPos {
+            mip_level: tile.coord.mip_level,
+            tx: tile.coord.tx,
+            ty: cur_ty,
+        };
         self.tile_cache.insert(pos, tile);
 
         // Tiles whose ty <= cur_ty - tile_radius have all of their south

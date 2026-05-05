@@ -3,8 +3,8 @@
 //! - `WorkingWriter`: disk-backed tile storage (ACEScg f16) — owns the tiles,
 //!   converts raw bytes → ACEScg f16, reads/writes/caches tiles on disk.
 
-use crate::model::color::space::ColorSpace;
 use crate::error::Error;
+use crate::model::color::space::ColorSpace;
 use crate::model::image::{Tile, TileCoord};
 use crate::model::pixel::Rgba;
 use bytemuck::Pod;
@@ -39,44 +39,92 @@ pub struct WorkingWriter {
 
 impl WorkingWriter {
     pub fn new(
-        base_dir: PathBuf, tile_size: u32, image_width: u32, image_height: u32,
+        base_dir: PathBuf,
+        tile_size: u32,
+        image_width: u32,
+        image_height: u32,
     ) -> Result<Self, Error> {
         std::fs::create_dir_all(&base_dir)?;
-        Ok(Self { base_dir, tile_size, image_width, image_height, mip_level: 0, auto_destroy: true })
+        Ok(Self {
+            base_dir,
+            tile_size,
+            image_width,
+            image_height,
+            mip_level: 0,
+            auto_destroy: true,
+        })
     }
 
     pub fn new_with_subdir(
-        base_dir: PathBuf, subdir: &str, tile_size: u32, image_width: u32, image_height: u32,
+        base_dir: PathBuf,
+        subdir: &str,
+        tile_size: u32,
+        image_width: u32,
+        image_height: u32,
     ) -> Result<Self, Error> {
         let base_dir = base_dir.join(subdir);
         std::fs::create_dir_all(&base_dir)?;
-        let mip_level = subdir.strip_prefix("mip_").and_then(|s| s.parse().ok()).unwrap_or(0);
-        Ok(Self { base_dir, tile_size, image_width, image_height, mip_level, auto_destroy: true })
+        let mip_level = subdir
+            .strip_prefix("mip_")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        Ok(Self {
+            base_dir,
+            tile_size,
+            image_width,
+            image_height,
+            mip_level,
+            auto_destroy: true,
+        })
     }
 
     pub fn open(
-        base_dir: PathBuf, tile_size: u32, image_width: u32, image_height: u32,
+        base_dir: PathBuf,
+        tile_size: u32,
+        image_width: u32,
+        image_height: u32,
     ) -> Result<Self, Error> {
-        Ok(Self { base_dir, tile_size, image_width, image_height, mip_level: 0, auto_destroy: false })
+        Ok(Self {
+            base_dir,
+            tile_size,
+            image_width,
+            image_height,
+            mip_level: 0,
+            auto_destroy: false,
+        })
     }
     // -- accessors ----------------------------------------------------------
 
-    pub fn base_dir(&self) -> PathBuf { self.base_dir.clone() }
-    pub fn tile_size(&self) -> u32 { self.tile_size }
-    pub fn image_width(&self) -> u32 { self.image_width }
-    pub fn image_height(&self) -> u32 { self.image_height }
-    pub fn mip_level(&self) -> u32 { self.mip_level }
+    pub fn base_dir(&self) -> PathBuf {
+        self.base_dir.clone()
+    }
+    pub fn tile_size(&self) -> u32 {
+        self.tile_size
+    }
+    pub fn image_width(&self) -> u32 {
+        self.image_width
+    }
+    pub fn image_height(&self) -> u32 {
+        self.image_height
+    }
+    pub fn mip_level(&self) -> u32 {
+        self.mip_level
+    }
 
     // -- internal helpers ---------------------------------------------------
 
     fn tile_path(&self, tile: &TileCoord) -> PathBuf {
-        self.base_dir
-            .join(format!("tile_{}_{}_{}.raw", tile.mip_level, tile.tx, tile.ty))
+        self.base_dir.join(format!(
+            "tile_{}_{}_{}.raw",
+            tile.mip_level, tile.tx, tile.ty
+        ))
     }
 
     fn serialize_le(data: &[Rgba<f16>]) -> Vec<u8> {
         #[cfg(target_endian = "little")]
-        { bytemuck::cast_slice::<Rgba<f16>, u8>(data).to_vec() }
+        {
+            bytemuck::cast_slice::<Rgba<f16>, u8>(data).to_vec()
+        }
         #[cfg(not(target_endian = "little"))]
         {
             let mut out = Vec::with_capacity(data.len() * 8);
@@ -92,15 +140,20 @@ impl WorkingWriter {
 
     fn deserialize_le(bytes: &[u8]) -> Vec<Rgba<f16>> {
         #[cfg(target_endian = "little")]
-        { bytemuck::cast_slice::<u8, Rgba<f16>>(bytes).to_vec() }
+        {
+            bytemuck::cast_slice::<u8, Rgba<f16>>(bytes).to_vec()
+        }
         #[cfg(not(target_endian = "little"))]
         {
-            bytes.chunks_exact(8).map(|c| Rgba {
-                r: f16::from_le_bytes([c[0], c[1]]),
-                g: f16::from_le_bytes([c[2], c[3]]),
-                b: f16::from_le_bytes([c[4], c[5]]),
-                a: f16::from_le_bytes([c[6], c[7]]),
-            }).collect()
+            bytes
+                .chunks_exact(8)
+                .map(|c| Rgba {
+                    r: f16::from_le_bytes([c[0], c[1]]),
+                    g: f16::from_le_bytes([c[2], c[3]]),
+                    b: f16::from_le_bytes([c[4], c[5]]),
+                    a: f16::from_le_bytes([c[6], c[7]]),
+                })
+                .collect()
         }
     }
 
@@ -108,13 +161,19 @@ impl WorkingWriter {
 
     pub fn read_tile(&self, coord: TileCoord) -> Result<Option<Tile<Rgba<f16>>>, Error> {
         let path = self.tile_path(&coord);
-        if !path.exists() { return Ok(None); }
+        if !path.exists() {
+            return Ok(None);
+        }
         let bytes = std::fs::read(&path).map_err(Error::Io)?;
         if bytes.len() != coord.pixel_count() * 8 {
             return Err(Error::invalid_param("Tile file size mismatch"));
         }
         let pixels = Self::deserialize_le(&bytes);
-        Ok(Some(Tile { coord, data: Arc::new(pixels), color_space: ColorSpace::ACES_CG }))
+        Ok(Some(Tile {
+            coord,
+            data: Arc::new(pixels),
+            color_space: ColorSpace::ACES_CG,
+        }))
     }
 
     pub fn write_tile_f16(&self, tile: &Tile<Rgba<f16>>) -> Result<(), Error> {
@@ -125,21 +184,31 @@ impl WorkingWriter {
     pub fn sample(&self, x: u32, y: u32) -> Result<Rgba<f16>, Error> {
         if x >= self.image_width || y >= self.image_height {
             return Err(Error::invalid_param(format!(
-                "sample ({},{}) out of bounds ({}x{})", x, y, self.image_width, self.image_height
+                "sample ({},{}) out of bounds ({}x{})",
+                x, y, self.image_width, self.image_height
             )));
         }
         let tx = x / self.tile_size;
         let ty = y / self.tile_size;
-        let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, self.image_width, self.image_height);
-        let tile = self.read_tile(coord)?.ok_or_else(|| {
-            Error::invalid_param(format!("Tile ({},{}) not stored", tx, ty))
-        })?;
+        let coord = TileCoord::new(
+            self.mip_level,
+            tx,
+            ty,
+            self.tile_size,
+            self.image_width,
+            self.image_height,
+        );
+        let tile = self
+            .read_tile(coord)?
+            .ok_or_else(|| Error::invalid_param(format!("Tile ({},{}) not stored", tx, ty)))?;
         let lx = x - tile.coord.px;
         let ly = y - tile.coord.py;
         Ok(tile.data[(ly * tile.coord.width + lx) as usize])
     }
 
-    pub fn has(&self, tile: &TileCoord) -> bool { self.tile_path(tile).exists() }
+    pub fn has(&self, tile: &TileCoord) -> bool {
+        self.tile_path(tile).exists()
+    }
 
     pub fn destroy(&self) -> Result<(), Error> {
         if self.base_dir.exists() {
@@ -158,7 +227,6 @@ impl Drop for WorkingWriter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,7 +236,7 @@ mod tests {
         std::env::temp_dir().join("pixors").join(id.to_string())
     }
 
-#[test]
+    #[test]
     fn test_write_read_roundtrip() {
         let id = Uuid::new_v4();
         let store = WorkingWriter::new(test_dir(&id), 256, 512, 512).unwrap();
@@ -199,7 +267,15 @@ mod tests {
         let id = Uuid::new_v4();
         let store = WorkingWriter::new(test_dir(&id), 256, 512, 512).unwrap();
         let coord = TileCoord::new(0, 0, 0, 256, 512, 512);
-        let pixels = vec![Rgba::new(f16::from_f32(0.5), f16::from_f32(0.3), f16::from_f32(0.2), f16::ONE); 256 * 256];
+        let pixels = vec![
+            Rgba::new(
+                f16::from_f32(0.5),
+                f16::from_f32(0.3),
+                f16::from_f32(0.2),
+                f16::ONE
+            );
+            256 * 256
+        ];
         let tile = Tile::new(coord, pixels);
         store.write_tile_f16(&tile).unwrap();
         let px = store.sample(10, 10).unwrap();

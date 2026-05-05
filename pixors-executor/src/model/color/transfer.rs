@@ -1,8 +1,10 @@
 //! Transfer functions (OETF/EOTF) for color spaces.
 
+use serde::{Deserialize, Serialize};
+
 /// Invertible mapping between encoded and linear light values.
 #[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransferFn {
     Linear,
     SrgbGamma,

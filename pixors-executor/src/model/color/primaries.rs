@@ -2,10 +2,12 @@
 //!
 //! Based on kolor's `RgbPrimaries` and `WhitePoint`.
 
+use serde::{Deserialize, Serialize};
+
 use crate::model::color::chromaticity::Chromaticity;
 
 /// A set of primary colors that define an RGB color space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub enum RgbPrimaries {
     /// No primaries (placeholder).
@@ -110,7 +112,7 @@ impl RgbPrimaries {
 }
 
 /// Defines the white point ("achromatic point") of a color space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub enum WhitePoint {
     /// No white point (placeholder).

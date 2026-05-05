@@ -1,24 +1,34 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::pixel::meta::PixelMeta;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::model::pixel::meta::PixelMeta;
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 use crate::error::Error;
-
 
 use crate::data::buffer::Buffer;
 use crate::data::device::Device;
 use crate::data::tile::{Tile, TileCoord};
 use crate::debug_stopwatch;
 
+static SA_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "scanline",
+    kind: DataKind::ScanLine,
+}];
 
-static SA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
+static SA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static SA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-
-static SA_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(SA_INPUTS), outputs: PortGroup::Fixed(SA_OUTPUTS) };
+static SA_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(SA_INPUTS),
+    outputs: PortGroup::Fixed(SA_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanLineToTile {
@@ -26,7 +36,9 @@ pub struct ScanLineToTile {
 }
 
 impl Stage for ScanLineToTile {
-    fn kind(&self) -> &'static str { "scanline_accumulator" }
+    fn kind(&self) -> &'static str {
+        "scanline_accumulator"
+    }
 
     fn ports(&self) -> &'static PortSpecification {
         &SA_PORTS
@@ -39,7 +51,9 @@ impl Stage for ScanLineToTile {
         }
     }
 
-    fn device(&self) -> Device { Device::Either }
+    fn device(&self) -> Device {
+        Device::Either
+    }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(ScanLineToTileProcessor::new(self.tile_size)))

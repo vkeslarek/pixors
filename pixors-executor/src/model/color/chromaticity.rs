@@ -1,5 +1,6 @@
+use serde::{Deserialize, Serialize};
 /// A point in CIE xy chromaticity space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Chromaticity {
     pub x: f32,
     pub y: f32,

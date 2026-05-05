@@ -2,7 +2,6 @@
 //!
 //! Used by PNG and TIFF readers. Pure functions, no I/O.
 
-
 // ---------------------------------------------------------------------------
 // Chromaticity matching
 // ---------------------------------------------------------------------------
@@ -213,8 +212,8 @@ impl IccClassification {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::color::transfer::TransferFn;
     use super::*;
+    use crate::model::color::transfer::TransferFn;
 
     #[test]
     fn match_srgb_chromaticities() {

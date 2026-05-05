@@ -1,13 +1,17 @@
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use pixors_executor::data::tile::TileGridPos;
-use pixors_executor::model::image::ImageFile;
+use pixors_executor::model::image::Image;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::data_transform::DataTransformNode;
+use pixors_executor::model::color::space::ColorSpace;
 use pixors_executor::model::image::BlendMode;
+use pixors_executor::model::pixel::PixelFormat;
+use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::compose::Compose;
 use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
@@ -20,6 +24,7 @@ use pixors_executor::sink::viewport_cache_sink::{
 };
 use pixors_executor::sink::SinkNode;
 use pixors_executor::source::cache_reader::{CacheReader, TileRange};
+use pixors_executor::source::image_stream::ImageStreamSource;
 use pixors_executor::source::SourceNode;
 use pixors_executor::stage::StageNode;
 
@@ -34,23 +39,16 @@ fn ensure_tile_sink_installed() {
 pub fn open_and_run(
     vp_cache: Option<Arc<Mutex<ViewportCache>>>,
 ) -> Result<(u32, u32, PathBuf), String> {
-    let path_a = rfd::FileDialog::new()
+    let path = rfd::FileDialog::new()
         .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
         .pick_file()
         .ok_or_else(|| "cancelled".to_string())?;
 
-    let path_b = rfd::FileDialog::new()
-        .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
-        .set_title("Pick second image to overlay")
-        .pick_file()
-        .ok_or_else(|| "cancelled".to_string())?;
+    let img = Image::open(&path).map_err(|e| e.to_string())?;
+    let w = img.desc.width;
+    let h = img.desc.height;
 
-    let img_a = ImageFile::open(&path_a).map_err(|e| e.to_string())?;
-    let img_b = ImageFile::open(&path_b).map_err(|e| e.to_string())?;
-    let w = img_a.width.max(img_b.width);
-    let h = img_a.height.max(img_b.height);
-
-    let cache_dir = path_a.with_extension("pixors_cache");
+    let cache_dir = path.with_extension("pixors_cache");
 
     if let Some(ref cache) = vp_cache {
         if let Ok(mut guard) = cache.lock() {
@@ -77,19 +75,19 @@ pub fn open_and_run(
 
     let mut graph = ExecGraph::new();
 
-    let src_a = graph.add_stage(StageNode::Source(SourceNode::ImageFile(img_a.source(0))));
-    let acc_a = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
+    let src = graph.add_stage(StageNode::Source(SourceNode::ImageStream(
+        ImageStreamSource {
+            stream: std::rc::Rc::new(RefCell::new(Some(
+                img.open_page(0).map_err(|e| e.to_string())?
+            ))),
+        },
+    )));
+    let acc = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
         ScanLineToTile { tile_size: TILE_SIZE },
     )));
-    let src_b = graph.add_stage(StageNode::Source(SourceNode::ImageFile(img_b.source(0))));
-    let acc_b = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
-        ScanLineToTile { tile_size: TILE_SIZE },
+    let cc = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
+        ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB },
     )));
-
-    let compose = graph.add_stage(StageNode::Operation(OperationNode::Compose(
-        Compose { layer_count: 2, blend_modes: vec![BlendMode::Normal; 2] },
-    )));
-
     let mip = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
         MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
     )));
@@ -104,16 +102,13 @@ pub fn open_and_run(
     )));
     let sink = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
 
-    graph.add_edge(src_a, acc_a, EdgePorts::default());
-    graph.add_edge(src_b, acc_b, EdgePorts::default());
-    // port 0 = first image (top), port 1 = second image (bottom)
-    graph.add_edge(acc_a, compose, EdgePorts::default());
-    graph.add_edge(acc_b, compose, EdgePorts { from_port: 0, to_port: 1 });
-    graph.add_edge(compose, mip, EdgePorts::default());
-    graph.add_edge(mip, cache, EdgePorts::default());
-    graph.add_edge(mip, vp_sink, EdgePorts::default());
-    graph.add_edge(mip, filter, EdgePorts::default());
-    graph.add_edge(filter, sink, EdgePorts::default());
+    graph.add_edge(src,  acc,     EdgePorts::default());
+    graph.add_edge(acc,  cc,      EdgePorts::default());
+    graph.add_edge(cc,   mip,     EdgePorts::default());
+    graph.add_edge(mip,  cache,   EdgePorts::default());
+    graph.add_edge(mip,  vp_sink, EdgePorts::default());
+    graph.add_edge(mip,  filter,  EdgePorts::default());
+    graph.add_edge(filter, sink,  EdgePorts::default());
     graph.outputs.push((sink, 0));
 
     let pipeline = Pipeline::compile(&graph).map_err(|e| e.to_string())?;
@@ -123,7 +118,7 @@ pub fn open_and_run(
         }
     });
 
-    Ok((w, h, path_a))
+    Ok((w, h, path))
 }
 
 pub fn fetch_mip(
@@ -163,5 +158,7 @@ pub fn fetch_mip(
 }
 
 pub fn probe_dimensions(path: &Path) -> Result<(u32, u32), String> {
-    ImageFile::open(path).map(|i| (i.width, i.height)).map_err(|e| e.to_string())
+    Image::open(path)
+        .map(|i| (i.desc.width, i.desc.height))
+        .map_err(|e| e.to_string())
 }

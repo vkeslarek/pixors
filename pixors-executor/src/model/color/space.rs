@@ -1,5 +1,7 @@
 //! Color space definition — primaries + white point + transfer function.
 
+use serde::{Deserialize, Serialize};
+
 use super::conversion::ColorConversion;
 use super::matrix::Matrix3x3;
 use super::primaries::{RgbPrimaries, WhitePoint};
@@ -7,7 +9,7 @@ use super::transfer::TransferFn;
 use crate::error::Error;
 
 /// A color space: primaries + white point + transfer function.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorSpace {
     primaries: RgbPrimaries,
     white_point: WhitePoint,

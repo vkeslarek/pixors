@@ -1,19 +1,16 @@
 pub mod cache_reader;
-pub mod file_decoder;
-pub mod image_file_source;
+pub mod image_stream;
 
 use serde::{Deserialize, Serialize};
 
 use crate::delegate_stage;
 use crate::source::cache_reader::CacheReader;
-use crate::source::file_decoder::FileDecoder;
-use crate::source::image_file_source::ImageFileSource;
+use crate::source::image_stream::ImageStreamSource;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SourceNode {
-    ImageFile(ImageFileSource),
-    FileDecoder(FileDecoder),
+    ImageStream(ImageStreamSource),
     CacheReader(CacheReader),
 }
 
-delegate_stage!(SourceNode, ImageFile, FileDecoder, CacheReader);
+delegate_stage!(SourceNode, ImageStream, CacheReader);

@@ -28,4 +28,13 @@ pub enum OperationNode {
     Download(Download),
 }
 
-delegate_stage!(OperationNode, Blur, ColorConvert, Compose, MipDownsample, MipFilter, Upload, Download);
+delegate_stage!(
+    OperationNode,
+    Blur,
+    ColorConvert,
+    Compose,
+    MipDownsample,
+    MipFilter,
+    Upload,
+    Download
+);

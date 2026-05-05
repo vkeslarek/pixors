@@ -1,31 +1,43 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
 use crate::data::buffer::Buffer;
 use crate::data::device::Device;
 use crate::data::scanline::ScanLine;
 use crate::data::tile::Tile;
-use crate::model::pixel::meta::PixelMeta;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::model::pixel::meta::PixelMeta;
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-
 use crate::debug_stopwatch;
 
+static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static TS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "scanline",
+    kind: DataKind::ScanLine,
+}];
 
-static TS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
-
-static TS_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(TS_INPUTS), outputs: PortGroup::Fixed(TS_OUTPUTS) };
+static TS_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(TS_INPUTS),
+    outputs: PortGroup::Fixed(TS_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToScanline;
 
 impl Stage for TileToScanline {
-    fn kind(&self) -> &'static str { "tile_to_scanline" }
+    fn kind(&self) -> &'static str {
+        "tile_to_scanline"
+    }
 
     fn ports(&self) -> &'static PortSpecification {
         &TS_PORTS
@@ -38,7 +50,9 @@ impl Stage for TileToScanline {
         }
     }
 
-    fn device(&self) -> Device { Device::Either }
+    fn device(&self) -> Device {
+        Device::Either
+    }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(TileToScanlineProcessor::new()))
@@ -119,8 +133,7 @@ impl Processor for TileToScanlineProcessor {
                     let len = (tw * bpp)
                         .min(data.len() - src_off)
                         .min(full_row.len() - dst_off);
-                    full_row[dst_off..dst_off + len]
-                        .copy_from_slice(&data[src_off..src_off + len]);
+                    full_row[dst_off..dst_off + len].copy_from_slice(&data[src_off..src_off + len]);
                 }
                 ctx.emit.emit(Item::ScanLine(ScanLine::new(
                     self.mip_level,

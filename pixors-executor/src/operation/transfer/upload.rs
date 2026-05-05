@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::data::tile::Tile;
 use crate::graph::item::Item;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 use crate::error::Error;
 
@@ -12,18 +15,28 @@ use crate::data::buffer::{Buffer, GpuBuffer};
 
 use crate::debug_stopwatch;
 
+static UP_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static UP_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static UP_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
-static UP_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-
-static UP_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(UP_INPUTS), outputs: PortGroup::Fixed(UP_OUTPUTS) };
+static UP_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(UP_INPUTS),
+    outputs: PortGroup::Fixed(UP_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Upload;
 
 impl Stage for Upload {
-    fn kind(&self) -> &'static str { "upload" }
+    fn kind(&self) -> &'static str {
+        "upload"
+    }
 
     fn ports(&self) -> &'static PortSpecification {
         &UP_PORTS
@@ -71,7 +84,11 @@ impl Processor for UploadProcessor {
         gpu_ctx.queue().write_buffer(&buf_arc, 0, bytes);
 
         let gbuf = GpuBuffer::new(buf_arc, size);
-        ctx.emit.emit(Item::Tile(Tile::new(tile.coord, tile.meta, Buffer::Gpu(gbuf))));
+        ctx.emit.emit(Item::Tile(Tile::new(
+            tile.coord,
+            tile.meta,
+            Buffer::Gpu(gbuf),
+        )));
         Ok(())
     }
 }

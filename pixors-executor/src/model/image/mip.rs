@@ -3,7 +3,7 @@
 use crate::error::Error;
 use crate::model::image::{TileCoord, TileGrid};
 use crate::model::pixel::Rgba;
-        use crate::model::storage::WorkingWriter;
+use crate::model::storage::WorkingWriter;
 use half::f16;
 use std::path::{Path, PathBuf};
 
@@ -45,7 +45,7 @@ impl MipLevel {
             width,
             height,
         )?;
-        
+
         Ok(Self {
             index,
             width,
@@ -56,7 +56,7 @@ impl MipLevel {
             generated: false,
         })
     }
-    
+
     /// Returns tile at given tile coordinates (tx, ty).
     pub fn tile_at(&self, tx: u32, ty: u32) -> Option<&TileCoord> {
         self.tile_grid.tile_at(tx, ty)
@@ -101,22 +101,22 @@ impl MipPyramid {
 
         Ok(Self { levels })
     }
-    
+
     /// Returns the number of MIP levels (excluding level 0).
     pub fn level_count(&self) -> usize {
         self.levels.len()
     }
-    
+
     /// Returns a reference to a specific MIP level (1-indexed).
     pub fn level(&self, index: usize) -> Option<&MipLevel> {
         self.levels.get(index.saturating_sub(1))
     }
-    
+
     /// Returns a mutable reference to a specific MIP level (1-indexed).
     pub fn level_mut(&mut self, index: usize) -> Option<&mut MipLevel> {
         self.levels.get_mut(index.saturating_sub(1))
     }
-    
+
     /// Returns all levels.
     pub fn levels(&self) -> &[MipLevel] {
         &self.levels
@@ -144,7 +144,9 @@ impl MipPyramid {
 
     /// Select the appropriate MIP level for the given zoom.
     pub fn level_for_zoom(zoom: f32) -> usize {
-        if zoom >= 0.5 { return 0; }
+        if zoom >= 0.5 {
+            return 0;
+        }
         (-(zoom.max(1e-6).log2())).floor() as usize
     }
 
@@ -156,7 +158,12 @@ impl MipPyramid {
         let mut width = mip0.image_width();
         let mut height = mip0.image_height();
 
-        tracing::debug!("generate_from_mip0: {}x{} tile_size={}", width, height, tile_size);
+        tracing::debug!(
+            "generate_from_mip0: {}x{} tile_size={}",
+            width,
+            height,
+            tile_size
+        );
 
         let mut levels: Vec<MipLevel> = Vec::new();
         let mut level_idx = 1u32;
@@ -166,16 +173,31 @@ impl MipPyramid {
             height = (height + 1).max(1) / 2;
 
             let store = WorkingWriter::new_with_subdir(
-                base_dir.to_path_buf(), &format!("mip_{}", level_idx), tile_size, width, height,
+                base_dir.to_path_buf(),
+                &format!("mip_{}", level_idx),
+                tile_size,
+                width,
+                height,
             )?;
             downsample_level_rayon(
-                levels.last().map(|l: &MipLevel| &l.tile_store).unwrap_or(mip0), &store, level_idx,
+                levels
+                    .last()
+                    .map(|l: &MipLevel| &l.tile_store)
+                    .unwrap_or(mip0),
+                &store,
+                level_idx,
             )?;
 
             let scale = 0.5_f32.powi(level_idx as i32);
             let tile_grid = TileGrid::new(width, height, tile_size);
             levels.push(MipLevel {
-                index: level_idx as usize, width, height, scale, tile_grid, tile_store: store, generated: true,
+                index: level_idx as usize,
+                width,
+                height,
+                scale,
+                tile_grid,
+                tile_store: store,
+                generated: true,
             });
             level_idx += 1;
         }
@@ -208,16 +230,20 @@ fn downsample_level_rayon(
     (0..tiles_y).into_par_iter().try_for_each(|ty| {
         (0..tiles_x).try_for_each(|tx| {
             let coord = TileCoord::new(
-                dst_mip, tx, ty,
-                tile_size, dst.image_width(), dst.image_height(),
+                dst_mip,
+                tx,
+                ty,
+                tile_size,
+                dst.image_width(),
+                dst.image_height(),
             );
-            
+
             // PERFORMANCE CRITICAL: Pre-load the 4 source tiles needed for this destination tile.
             // By fetching these 4 tiles outside the pixel loop, we eliminate tens of millions of
-            // `RwLock::write` cache contentions that would otherwise happen if we called `src.sample(x, y)` 
+            // `RwLock::write` cache contentions that would otherwise happen if we called `src.sample(x, y)`
             // for every single pixel. This reduces generation time from ~1 minute down to ~10ms!
             let mut src_tiles = vec![None; 4];
-            for (i, (dy, dx)) in [(0,0), (0,1), (1,0), (1,1)].iter().enumerate() {
+            for (i, (dy, dx)) in [(0, 0), (0, 1), (1, 0), (1, 1)].iter().enumerate() {
                 let stx = 2 * tx + dx;
                 let sty = 2 * ty + dy;
                 let scoord = TileCoord::new(src_mip, stx, sty, tile_size, src_w, src_h);
@@ -234,11 +260,15 @@ fn downsample_level_rayon(
                 let dy = y % tile_size;
                 let t_idx = ((sty - 2 * ty) * 2 + (stx - 2 * tx)) as usize;
                 if let Some(t) = &src_tiles[t_idx]
-                    && dx < t.coord.width && dy < t.coord.height
+                    && dx < t.coord.width
+                    && dy < t.coord.height
                 {
                     return Ok(t.data[(dy * t.coord.width + dx) as usize]);
                 }
-                Err(Error::invalid_param(format!("Tile ({},{}) missing during downsample", stx, sty)))
+                Err(Error::invalid_param(format!(
+                    "Tile ({},{}) missing during downsample",
+                    stx, sty
+                )))
             };
 
             let mut data = Vec::with_capacity(coord.pixel_count());
@@ -266,10 +296,19 @@ fn downsample_level_rayon(
 
 #[inline]
 fn avg4(a: Rgba<f16>, b: Rgba<f16>, c: Rgba<f16>, d: Rgba<f16>) -> Rgba<f16> {
-    macro_rules! avg { ($ch:ident) => {
-        f16::from_f32((a.$ch.to_f32() + b.$ch.to_f32() + c.$ch.to_f32() + d.$ch.to_f32()) * 0.25)
-    }}
-    Rgba { r: avg!(r), g: avg!(g), b: avg!(b), a: avg!(a) }
+    macro_rules! avg {
+        ($ch:ident) => {
+            f16::from_f32(
+                (a.$ch.to_f32() + b.$ch.to_f32() + c.$ch.to_f32() + d.$ch.to_f32()) * 0.25,
+            )
+        };
+    }
+    Rgba {
+        r: avg!(r),
+        g: avg!(g),
+        b: avg!(b),
+        a: avg!(a),
+    }
 }
 
 #[cfg(test)]
@@ -298,7 +337,7 @@ mod tests {
     #[test]
     fn generate_from_mip0_test() {
         use crate::model::image::Tile;
-use crate::model::storage::WorkingWriter;
+        use crate::model::storage::WorkingWriter;
 
         let tab_id = uuid::Uuid::new_v4();
         let tile_size = 16;
@@ -311,7 +350,9 @@ use crate::model::storage::WorkingWriter;
                 let mut data = Vec::with_capacity(coord.pixel_count());
                 for y in 0..coord.height {
                     for x in 0..coord.width {
-                        let v = f16::from_f32(((coord.py + y) * 32 + (coord.px + x)) as f32 / (32.0 * 32.0));
+                        let v = f16::from_f32(
+                            ((coord.py + y) * 32 + (coord.px + x)) as f32 / (32.0 * 32.0),
+                        );
                         data.push(Rgba::new(v, v, v, f16::ONE));
                     }
                 }
@@ -321,7 +362,10 @@ use crate::model::storage::WorkingWriter;
 
         // Generate MIP levels
         let pyramid = MipPyramid::generate_from_mip0(&mip0, &test_dir(&tab_id)).unwrap();
-        assert!(!pyramid.levels.is_empty(), "should have at least one MIP level");
+        assert!(
+            !pyramid.levels.is_empty(),
+            "should have at least one MIP level"
+        );
 
         // Level 1: 16×16, 1 tile
         let l1 = &pyramid.levels[0];
@@ -339,7 +383,9 @@ use crate::model::storage::WorkingWriter;
         let expected = avg4(p00, p10, p01, p11);
         let actual = l1_tile.data[0];
         let diff = (actual.r.to_f32() - expected.r.to_f32()).abs();
-        assert!(diff < 0.001, "MIP 1 first pixel should equal avg of 4 MIP 0 pixels: diff={diff}");
+        assert!(
+            diff < 0.001,
+            "MIP 1 first pixel should equal avg of 4 MIP 0 pixels: diff={diff}"
+        );
     }
 }
-

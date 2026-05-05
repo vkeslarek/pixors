@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::data::buffer::Buffer;
+    use crate::data::device::Device;
     use crate::data::neighborhood::{EdgeCondition, Neighborhood};
     use crate::data::tile::{Tile, TileCoord};
     use crate::gpu;
@@ -10,7 +11,6 @@ mod tests {
     use crate::model::pixel::meta::PixelMeta;
     use crate::model::pixel::{AlphaPolicy, PixelFormat};
     use crate::operation::blur::BlurProcessor;
-    use crate::data::device::Device;
     use crate::stage::{Processor, ProcessorContext};
 
     #[test]
@@ -34,11 +34,7 @@ mod tests {
                 data[o + 3] = 255;
             }
         }
-        let meta = PixelMeta::new(
-            PixelFormat::Rgba8,
-            ColorSpace::SRGB,
-            AlphaPolicy::Straight,
-        );
+        let meta = PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight);
         let coord = TileCoord::new(0, 0, 0, w, w, h);
 
         // CPU reference.
@@ -56,7 +52,14 @@ mod tests {
         let mut processor = BlurProcessor::new(r);
         let mut cpu_emit = Emitter::new();
         processor
-            .process(ProcessorContext { port: 0, device: Device::Cpu, emit: &mut cpu_emit }, Item::Neighborhood(cpu_nbhd))
+            .process(
+                ProcessorContext {
+                    port: 0,
+                    device: Device::Cpu,
+                    emit: &mut cpu_emit,
+                },
+                Item::Neighborhood(cpu_nbhd),
+            )
             .unwrap();
         let cpu_out = match cpu_emit.into_items().remove(0).payload {
             Item::Tile(t) => t,

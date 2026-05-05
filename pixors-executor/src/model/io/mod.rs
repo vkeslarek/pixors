@@ -1,13 +1,14 @@
 //! I/O modules for image formats.
 
 use crate::error::Error;
-use crate::model::image::{Image, Layer, LayerMetadata, ImageInfo, TileCoord};
+use crate::model::image::document::Image;
+use crate::model::image::{ImageInfo, Layer, LayerMetadata, TileCoord};
 use crate::model::storage::writer::TileWriter;
 use std::path::Path;
 
+pub mod accumulator;
 pub mod png;
 pub mod tiff;
-pub mod accumulator;
 
 // ---------------------------------------------------------------------------
 // ImageReader trait — layer-aware
@@ -62,7 +63,8 @@ pub trait ImageReader: Send + Sync {
                 let row_stride = w as usize * bytes_per_pixel;
                 let tile_stride = actual_w as usize * bytes_per_pixel;
                 for r in 0..band_height as usize {
-                    let src_start = ((band_start_y as usize + r) * row_stride) + tile_px as usize * bytes_per_pixel;
+                    let src_start = ((band_start_y as usize + r) * row_stride)
+                        + tile_px as usize * bytes_per_pixel;
                     let dst_start = r * tile_stride;
                     tile_data[dst_start..dst_start + tile_stride]
                         .copy_from_slice(&buf.data[src_start..src_start + tile_stride]);
@@ -84,7 +86,10 @@ pub trait ImageReader: Send + Sync {
         let layers = (0..info.layer_count)
             .map(|i| self.load_layer(path, i))
             .collect::<Result<_, _>>()?;
-        Ok(Image { layers, metadata: info.metadata })
+        Ok(Image {
+            layers,
+            metadata: info.metadata,
+        })
     }
 }
 

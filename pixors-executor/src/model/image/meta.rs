@@ -110,7 +110,9 @@ impl ChannelLayoutKind {
     /// Returns `true` if the layout contains an alpha channel.
     pub fn has_alpha(&self) -> bool {
         match self {
-            ChannelLayoutKind::GrayAlpha | ChannelLayoutKind::Rgba | ChannelLayoutKind::YuvA => true,
+            ChannelLayoutKind::GrayAlpha | ChannelLayoutKind::Rgba | ChannelLayoutKind::YuvA => {
+                true
+            }
             ChannelLayoutKind::Custom(v) => v.iter().any(|k| matches!(k, ChannelKind::A)),
             _ => false,
         }

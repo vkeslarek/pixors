@@ -1,12 +1,12 @@
 //! Color conversion engine — precomputed LUTs for fast pixel conversion.
 
 use crate::error::Error;
-use crate::model::pixel::{AlphaPolicy, Pixel};
-use wide::f32x4;
 use crate::model::color::matrix::Matrix3x3;
 use crate::model::color::sample::SampleFormat;
 use crate::model::color::space::ColorSpace;
 use crate::model::color::transfer::TransferFn;
+use crate::model::pixel::{AlphaPolicy, Pixel};
+use wide::f32x4;
 
 /// Precomputed converter between two color spaces.
 ///

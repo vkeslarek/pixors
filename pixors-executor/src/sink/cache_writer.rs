@@ -3,15 +3,24 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::data::buffer::Buffer;
-use crate::graph::item::Item;
 use crate::error::Error;
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::graph::item::Item;
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
-static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
 static CW_OUTPUTS: &[PortDeclaration] = &[];
 
-static CW_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(CW_INPUTS), outputs: PortGroup::Fixed(CW_OUTPUTS) };
+static CW_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(CW_INPUTS),
+    outputs: PortGroup::Fixed(CW_OUTPUTS),
+};
 
 /// Writes tiles to disk as raw RGBA8, organised by MIP level.
 ///
@@ -92,7 +101,9 @@ impl Processor for CacheWriterProcessor {
         std::fs::write(&path, data)?;
         tracing::debug!(
             "[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {}×{} to {}",
-            w, h, path.display(),
+            w,
+            h,
+            path.display(),
         );
         Ok(())
     }

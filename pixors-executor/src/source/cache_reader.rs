@@ -9,11 +9,20 @@ use crate::graph::item::Item;
 use crate::model::color::space::ColorSpace;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 static CR_INPUTS: &[PortDeclaration] = &[];
-static CR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-static CR_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(CR_INPUTS), outputs: PortGroup::Fixed(CR_OUTPUTS) };
+static CR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
+static CR_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(CR_INPUTS),
+    outputs: PortGroup::Fixed(CR_OUTPUTS),
+};
 
 /// Bounding range of tile coordinates (exclusive end).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,11 +105,7 @@ impl Processor for CacheReaderProcessor {
             None => (0, cols, 0, rows),
         };
 
-        let meta = PixelMeta::new(
-            PixelFormat::Rgba8,
-            ColorSpace::SRGB,
-            AlphaPolicy::Straight,
-        );
+        let meta = PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight);
         let dir = self.cache_dir.join(format!("mip_{}", self.mip_level));
 
         if !dir.is_dir() {
@@ -126,18 +131,12 @@ impl Processor for CacheReaderProcessor {
                     }
                 };
 
-                let coord = TileCoord::new(
-                    self.mip_level,
-                    tx,
-                    ty,
-                    self.tile_size,
-                    mip_w,
-                    mip_h,
-                );
+                let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, mip_w, mip_h);
                 if coord.width == 0 || coord.height == 0 {
                     continue;
                 }
-                ctx.emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
+                ctx.emit
+                    .emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
             }
         }
         Ok(())

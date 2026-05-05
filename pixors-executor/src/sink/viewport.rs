@@ -2,46 +2,45 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{BufferAccess, Processor, ProcessorContext, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage, StageHints};
+use crate::stage::{
+    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage, StageHints,
+};
 
 use crate::data::device::Device;
 
-use crate::graph::item::Item;
 use crate::error::Error;
+use crate::graph::item::Item;
 
 use crate::debug_stopwatch;
 
-
 // ── Installed by desktop, consumed by sink ──────────────────────────────────
 
-
 pub struct ViewportTarget {
-
     pub texture: Arc<wgpu::Texture>,
 
     pub queue: Arc<wgpu::Queue>,
-
 }
-
 
 static TARGET: OnceLock<ViewportTarget> = OnceLock::new();
 
-
 pub fn install_viewport(target: ViewportTarget) {
-
     let _ = TARGET.set(target);
-
 }
-
 
 // ── Stage ───────────────────────────────────────────────────────────────────
 
-
-static VS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static VS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 
 static VS_OUTPUTS: &[PortDeclaration] = &[];
 
-static VS_PORTS: PortSpecification = PortSpecification { inputs: PortGroup::Fixed(VS_INPUTS), outputs: PortGroup::Fixed(VS_OUTPUTS) };
+static VS_PORTS: PortSpecification = PortSpecification {
+    inputs: PortGroup::Fixed(VS_INPUTS),
+    outputs: PortGroup::Fixed(VS_OUTPUTS),
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewportSink {
@@ -50,14 +49,26 @@ pub struct ViewportSink {
 }
 
 impl Stage for ViewportSink {
-    fn kind(&self) -> &'static str { "viewport_sink" }
-    fn ports(&self) -> &'static PortSpecification { &VS_PORTS }
-    fn hints(&self) -> StageHints {
-        StageHints { buffer_access: BufferAccess::ReadOnly, prefers_gpu: false }
+    fn kind(&self) -> &'static str {
+        "viewport_sink"
     }
-    fn device(&self) -> Device { Device::Either }
+    fn ports(&self) -> &'static PortSpecification {
+        &VS_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints {
+            buffer_access: BufferAccess::ReadOnly,
+            prefers_gpu: false,
+        }
+    }
+    fn device(&self) -> Device {
+        Device::Either
+    }
     fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(ViewportSinkProcessor { width: self.width, height: self.height }))
+        Some(Box::new(ViewportSinkProcessor {
+            width: self.width,
+            height: self.height,
+        }))
     }
 }
 
@@ -73,7 +84,9 @@ impl Processor for ViewportSinkProcessor {
         let _sw = debug_stopwatch!("viewport_sink");
         let tile = ProcessorContext::take_tile(item)?;
 
-        let target = TARGET.get().ok_or_else(|| Error::internal("viewport not installed"))?;
+        let target = TARGET
+            .get()
+            .ok_or_else(|| Error::internal("viewport not installed"))?;
 
         let (buf, _) = match &tile.data {
             crate::data::buffer::Buffer::Gpu(g) => (&g.buffer, g.size),
@@ -84,23 +97,38 @@ impl Processor for ViewportSinkProcessor {
         let th = tile.coord.height;
         let px = tile.coord.px;
         let py = tile.coord.py;
-        if px + tw > self.width || py + th > self.height { return Ok(()); }
+        if px + tw > self.width || py + th > self.height {
+            return Ok(());
+        }
 
         let padded = ((tw * 4 + 255) / 256) * 256;
-        let ctx = crate::gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
-        let mut enc = ctx.device().create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("vpsink_copy") });
+        let ctx =
+            crate::gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
+        let mut enc = ctx
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("vpsink_copy"),
+            });
         enc.copy_buffer_to_texture(
             wgpu::ImageCopyBuffer {
                 buffer: buf,
-                layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: None },
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: None,
+                },
             },
             wgpu::ImageCopyTexture {
-                texture: &target.texture, mip_level: 0,
+                texture: &target.texture,
+                mip_level: 0,
                 origin: wgpu::Origin3d { x: px, y: py, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::Extent3d { width: tw, height: th, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: tw,
+                height: th,
+                depth_or_array_layers: 1,
+            },
         );
         target.queue.submit(std::iter::once(enc.finish()));
         Ok(())

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc::sync_channel, Arc};
+use std::sync::{Arc, mpsc::sync_channel};
 
 use petgraph::Direction;
 use petgraph::algo::toposort;
@@ -10,20 +10,24 @@ use petgraph::visit::EdgeRef;
 use crate::data::device::Device;
 use crate::error::Error;
 use crate::gpu;
-use crate::graph::graph::{ExecGraph, EdgePorts, StageId};
+use crate::graph::graph::{EdgePorts, ExecGraph, StageId};
+use crate::operation::OperationNode;
 use crate::operation::transfer::download::Download;
 use crate::operation::transfer::upload::Upload;
-use crate::operation::OperationNode;
 use crate::stage::{PortGroup, Stage, StageNode};
 
 use super::chain::ChainRunner;
 use super::event::PipelineEvent;
-use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner, CHANNEL_BOUND};
+use super::runner::{CHANNEL_BOUND, ItemReceiver, ItemSender, RoutedItem, Runner};
 
 type Graph = StableDiGraph<StageNode, EdgePorts>;
 
 pub struct Pipeline {
-    chains: Vec<(Box<dyn Runner>, Vec<ItemReceiver>, Vec<(ItemSender, u16, u16)>)>,
+    chains: Vec<(
+        Box<dyn Runner>,
+        Vec<ItemReceiver>,
+        Vec<(ItemSender, u16, u16)>,
+    )>,
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
@@ -61,12 +65,16 @@ impl Pipeline {
             let kernels = nodes
                 .iter()
                 .map(|&id| {
-                    g[id].processor().ok_or_else(|| {
-                        Error::internal(format!("'{}': no kernel", g[id].kind()))
-                    })
+                    g[id]
+                        .processor()
+                        .ok_or_else(|| Error::internal(format!("'{}': no kernel", g[id].kind())))
                 })
                 .collect::<Result<_, _>>()?;
-            compiled.push((Box::new(ChainRunner::new(kernels, dev)) as Box<dyn Runner>, inputs, outputs));
+            compiled.push((
+                Box::new(ChainRunner::new(kernels, dev)) as Box<dyn Runner>,
+                inputs,
+                outputs,
+            ));
         }
 
         tracing::info!("[pixors] compile: {} chains built", compiled.len());
@@ -198,24 +206,22 @@ fn validate_ports(g: &Graph) -> Result<(), Error> {
 fn outport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
     match group {
         PortGroup::Fixed(ports) => ports.len(),
-        PortGroup::Variable(_) => {
-            g.edges_directed(id, Direction::Outgoing)
-                .map(|e| e.weight().from_port as usize + 1)
-                .max()
-                .unwrap_or(0)
-        }
+        PortGroup::Variable(_) => g
+            .edges_directed(id, Direction::Outgoing)
+            .map(|e| e.weight().from_port as usize + 1)
+            .max()
+            .unwrap_or(0),
     }
 }
 
 fn inport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
     match group {
         PortGroup::Fixed(ports) => ports.len(),
-        PortGroup::Variable(_) => {
-            g.edges_directed(id, Direction::Incoming)
-                .map(|e| e.weight().to_port as usize + 1)
-                .max()
-                .unwrap_or(0)
-        }
+        PortGroup::Variable(_) => g
+            .edges_directed(id, Direction::Incoming)
+            .map(|e| e.weight().to_port as usize + 1)
+            .max()
+            .unwrap_or(0),
     }
 }
 
@@ -260,9 +266,9 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
     }
 
     for comp in &components {
-        let touches_gpu = comp.iter().any(|&id| {
-            neighbors(g, id).any(|n| devs[&n] == Device::Gpu)
-        });
+        let touches_gpu = comp
+            .iter()
+            .any(|&id| neighbors(g, id).any(|n| devs[&n] == Device::Gpu));
         if touches_gpu {
             for &id in comp {
                 devs.insert(id, Device::Gpu);
@@ -275,7 +281,10 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
 fn neighbors(g: &Graph, id: StageId) -> impl Iterator<Item = StageId> + '_ {
     g.edges_directed(id, Direction::Outgoing)
         .map(|e| e.target())
-        .chain(g.edges_directed(id, Direction::Incoming).map(|e| e.source()))
+        .chain(
+            g.edges_directed(id, Direction::Incoming)
+                .map(|e| e.source()),
+        )
 }
 
 fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
@@ -298,15 +307,47 @@ fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
 
         if sd != Device::Gpu && dd == Device::Gpu && is_tile {
             let mid = g.add_node(StageNode::Operation(OperationNode::Upload(Upload)));
-            if let Some(e) = g.find_edge(src, dst) { g.remove_edge(e); }
-            g.add_edge(src, mid, EdgePorts { from_port: ports.from_port, to_port: 0 });
-            g.add_edge(mid, dst, EdgePorts { from_port: 0, to_port: ports.to_port });
+            if let Some(e) = g.find_edge(src, dst) {
+                g.remove_edge(e);
+            }
+            g.add_edge(
+                src,
+                mid,
+                EdgePorts {
+                    from_port: ports.from_port,
+                    to_port: 0,
+                },
+            );
+            g.add_edge(
+                mid,
+                dst,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: ports.to_port,
+                },
+            );
             devs.insert(mid, Device::Cpu);
         } else if sd == Device::Gpu && dd != Device::Gpu && is_tile {
             let mid = g.add_node(StageNode::Operation(OperationNode::Download(Download)));
-            if let Some(e) = g.find_edge(src, dst) { g.remove_edge(e); }
-            g.add_edge(src, mid, EdgePorts { from_port: ports.from_port, to_port: 0 });
-            g.add_edge(mid, dst, EdgePorts { from_port: 0, to_port: ports.to_port });
+            if let Some(e) = g.find_edge(src, dst) {
+                g.remove_edge(e);
+            }
+            g.add_edge(
+                src,
+                mid,
+                EdgePorts {
+                    from_port: ports.from_port,
+                    to_port: 0,
+                },
+            );
+            g.add_edge(
+                mid,
+                dst,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: ports.to_port,
+                },
+            );
             devs.insert(mid, Device::Cpu);
         }
     }
@@ -323,7 +364,11 @@ fn detect_chains(
     for &id in order {
         let dev = devs[&id];
         let merged_into = if g.edges_directed(id, Direction::Incoming).count() == 1 {
-            let pred = g.edges_directed(id, Direction::Incoming).next().unwrap().source();
+            let pred = g
+                .edges_directed(id, Direction::Incoming)
+                .next()
+                .unwrap()
+                .source();
             let pred_out = g.edges_directed(pred, Direction::Outgoing).count();
             let same_device = (devs[&pred] != Device::Gpu) == (dev != Device::Gpu);
             if pred_out == 1 && same_device {

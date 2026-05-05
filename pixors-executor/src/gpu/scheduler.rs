@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::{Arc, Mutex};
 use crate::data::buffer::Buffer;
 use crate::data::tile::Tile;
 use crate::error::Error;
 use crate::gpu::kernel::{GpuKernel, KernelSignature};
 use crate::gpu::pool::BufferPool;
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Arc, Mutex};
 
 const BATCH_SIZE: usize = 16;
 
@@ -164,14 +164,18 @@ impl Scheduler {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("sched-download"),
-        });
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("sched-download"),
+            });
         enc.copy_buffer_to_buffer(&gbuf.buffer, 0, &staging, 0, size);
         self.queue.submit(std::iter::once(enc.finish()));
 
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), wgpu::BufferAsyncError>>();
-        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
         self.device.poll(wgpu::Maintain::Wait);
         rx.recv()
             .map_err(|_| Error::internal("download recv"))?
@@ -215,7 +219,11 @@ impl Scheduler {
         let entry = cache.entry(sig_hash).or_insert_with(|| {
             build_pipeline(&self.device, sig).expect("failed to build pipeline")
         });
-        Ok(entry.bgls.first().cloned().ok_or_else(|| "no BGL".to_string())?)
+        Ok(entry
+            .bgls
+            .first()
+            .cloned()
+            .ok_or_else(|| "no BGL".to_string())?)
     }
 }
 
@@ -230,10 +238,7 @@ fn compute_param_size(sig: &KernelSignature) -> u64 {
         .sum()
 }
 
-fn build_pipeline(
-    device: &wgpu::Device,
-    sig: &KernelSignature,
-) -> Result<CachedPipeline, String> {
+fn build_pipeline(device: &wgpu::Device, sig: &KernelSignature) -> Result<CachedPipeline, String> {
     let has_params = !sig.params.is_empty();
 
     let mut bgls: Vec<Arc<wgpu::BindGroupLayout>> = Vec::new();
@@ -269,14 +274,17 @@ fn build_pipeline(
             binding += 1;
         }
         bgls.push(Arc::new(device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor { label: Some("group0"), entries: &entries },
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("group0"),
+                entries: &entries,
+            },
         )));
     }
 
     // Group 1: params uniform
     if has_params {
-        let bgl = Arc::new(device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
+        let bgl = Arc::new(
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("group1"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -288,8 +296,8 @@ fn build_pipeline(
                     },
                     count: None,
                 }],
-            },
-        ));
+            }),
+        );
         bgls.push(bgl);
     }
 
@@ -306,23 +314,22 @@ fn build_pipeline(
         source,
     });
 
-    let pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("kernel_layout"),
-            bind_group_layouts: &bgl_refs,
-            push_constant_ranges: &[],
-        });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("kernel_layout"),
+        bind_group_layouts: &bgl_refs,
+        push_constant_ranges: &[],
+    });
 
-        let pipeline = Arc::new(
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(sig.name),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: sig.entry,
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            }),
-        );
+    let pipeline = Arc::new(
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(sig.name),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: sig.entry,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        }),
+    );
 
     Ok(CachedPipeline {
         pipeline,

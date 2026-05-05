@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
 use crate::data::device::Device;
 use crate::data_transform::DataTransformNode;
 use crate::error::Error;
 use crate::operation::OperationNode;
 use crate::sink::SinkNode;
 use crate::source::SourceNode;
+use serde::{Deserialize, Serialize};
 
 // ── Data kinds ────────────────────────────────────────────────────────────────
 
@@ -86,7 +86,10 @@ impl<'a> ProcessorContext<'a> {
         if self.device == Device::Cpu {
             Ok(())
         } else {
-            Err(Error::internal(format!("expected CPU, got {:?}", self.device)))
+            Err(Error::internal(format!(
+                "expected CPU, got {:?}",
+                self.device
+            )))
         }
     }
 
@@ -94,35 +97,56 @@ impl<'a> ProcessorContext<'a> {
         if self.device == Device::Gpu {
             Ok(())
         } else {
-            Err(Error::internal(format!("expected GPU, got {:?}", self.device)))
+            Err(Error::internal(format!(
+                "expected GPU, got {:?}",
+                self.device
+            )))
         }
     }
 
     pub fn take_tile(item: crate::graph::item::Item) -> Result<crate::data::tile::Tile, Error> {
         match item {
             crate::graph::item::Item::Tile(t) => Ok(t),
-            other => Err(Error::internal(format!("expected Tile, got {:?}", other.kind()))),
+            other => Err(Error::internal(format!(
+                "expected Tile, got {:?}",
+                other.kind()
+            ))),
         }
     }
 
-    pub fn take_scanline(item: crate::graph::item::Item) -> Result<crate::data::scanline::ScanLine, Error> {
+    pub fn take_scanline(
+        item: crate::graph::item::Item,
+    ) -> Result<crate::data::scanline::ScanLine, Error> {
         match item {
             crate::graph::item::Item::ScanLine(s) => Ok(s),
-            other => Err(Error::internal(format!("expected ScanLine, got {:?}", other.kind()))),
+            other => Err(Error::internal(format!(
+                "expected ScanLine, got {:?}",
+                other.kind()
+            ))),
         }
     }
 
-    pub fn take_neighborhood(item: crate::graph::item::Item) -> Result<crate::data::neighborhood::Neighborhood, Error> {
+    pub fn take_neighborhood(
+        item: crate::graph::item::Item,
+    ) -> Result<crate::data::neighborhood::Neighborhood, Error> {
         match item {
             crate::graph::item::Item::Neighborhood(n) => Ok(n),
-            other => Err(Error::internal(format!("expected Neighborhood, got {:?}", other.kind()))),
+            other => Err(Error::internal(format!(
+                "expected Neighborhood, got {:?}",
+                other.kind()
+            ))),
         }
     }
 
-    pub fn take_tile_block(item: crate::graph::item::Item) -> Result<crate::data::tile_block::TileBlock, Error> {
+    pub fn take_tile_block(
+        item: crate::graph::item::Item,
+    ) -> Result<crate::data::tile_block::TileBlock, Error> {
         match item {
             crate::graph::item::Item::TileBlock(b) => Ok(b),
-            other => Err(Error::internal(format!("expected TileBlock, got {:?}", other.kind()))),
+            other => Err(Error::internal(format!(
+                "expected TileBlock, got {:?}",
+                other.kind()
+            ))),
         }
     }
 }
@@ -133,10 +157,7 @@ pub trait Processor: Send {
         ctx: ProcessorContext<'_>,
         item: crate::graph::item::Item,
     ) -> Result<(), Error>;
-    fn finish(
-        &mut self,
-        _ctx: ProcessorContext<'_>,
-    ) -> Result<(), Error> {
+    fn finish(&mut self, _ctx: ProcessorContext<'_>) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -147,7 +168,9 @@ pub trait Stage {
     fn kind(&self) -> &'static str;
     fn ports(&self) -> &'static PortSpecification;
     fn hints(&self) -> StageHints;
-    fn device(&self) -> Device { Device::Cpu }
+    fn device(&self) -> Device {
+        Device::Cpu
+    }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         None
     }
