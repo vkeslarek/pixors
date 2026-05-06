@@ -2,7 +2,7 @@
 
 use crate::error::Error;
 use crate::model::color::matrix::Matrix3x3;
-use crate::model::color::sample::SampleFormat;
+use crate::model::pixel::PixelFormat;
 use crate::model::color::space::ColorSpace;
 use crate::model::color::transfer::TransferFn;
 use crate::model::pixel::{AlphaPolicy, Pixel};
@@ -163,10 +163,11 @@ impl ColorConversion {
         out
     }
 
-    pub fn decode_sample(&self, raw: f32, fmt: SampleFormat) -> f32 {
-        match fmt {
-            SampleFormat::U8 => self.decode_u8[raw as u8 as usize],
-            _ => self.src.transfer().decode(raw),
+    pub fn decode_sample(&self, raw: f32, fmt: PixelFormat) -> f32 {
+        if fmt.sample_bytes() == 1 && fmt.is_integer() {
+            self.decode_u8[raw as u8 as usize]
+        } else {
+            self.src.transfer().decode(raw)
         }
     }
 
@@ -343,7 +344,7 @@ mod tests {
     #[test]
     fn decode_sample_u8_vs_formula() {
         let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-        let val = conv.decode_sample(128.0, SampleFormat::U8);
+        let val = conv.decode_sample(128.0, PixelFormat::Gray8);
         let expected = conv.src().transfer().decode(128.0 / 255.0);
         assert!((val - expected).abs() < 1e-5);
     }
@@ -351,7 +352,7 @@ mod tests {
     #[test]
     fn decode_sample_f32_unclamped() {
         let conv = ColorSpace::SRGB.converter_to(ColorSpace::ACES_CG).unwrap();
-        let val = conv.decode_sample(2.0, SampleFormat::F32Le);
+        let val = conv.decode_sample(2.0, PixelFormat::GrayF32);
         assert!(val > 1.0, "HDR float must not be clamped to [0,1]");
     }
 

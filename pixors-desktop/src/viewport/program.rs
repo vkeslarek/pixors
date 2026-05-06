@@ -20,28 +20,19 @@ pub struct ViewportProgram {
 }
 
 impl<Msg> shader::Program<Msg> for ViewportProgram {
-    type State = ViewportState;
+    type State = std::cell::RefCell<ViewportState>;
     type Primitive = ViewportPrimitive;
 
     fn draw(
         &self,
         state: &Self::State,
         _cursor: mouse::Cursor,
-        _bounds: Rectangle,
-    ) -> Self::Primitive {
-        ViewportPrimitive {
-            camera: state.camera.to_uniform(state.current_mip),
-            cache: self.cache.clone(),
-        }
-    }
-
-    fn update(
-        &self,
-        state: &mut Self::State,
-        event: &Event,
         bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<shader::Action<Msg>> {
+    ) -> Self::Primitive {
+        let mut state = state.borrow_mut();
+
+        let old_mip = state.current_mip;
+
         if let Some(ref cache) = self.cache {
             if let Ok(mut guard) = cache.lock() {
                 if let Some((img_w, img_h)) = guard.take_new_img() {
@@ -62,6 +53,69 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 state.current_mip = state.camera.visible_mip_level();
             }
             state.last_bounds = Some(size);
+        }
+
+        let mut target_mip = state.camera.visible_mip_level();
+
+        // Fallback to lower MIPs (higher resolution) if the target MIP hasn't generated enough tiles yet.
+        // This allows progressively showing the image during initial load (where mip=0 is generated first).
+        if let Some(ref cache) = self.cache {
+            if let Ok(guard) = cache.lock() {
+                if target_mip > 0 && !guard.has_mip(target_mip) && guard.has_mip(0) {
+                    tracing::info!("[pixors] viewport: fallback from target {} to mip 0", target_mip);
+                    target_mip = 0;
+                }
+            }
+        }
+        
+        if state.current_mip != target_mip {
+            tracing::info!("[pixors] viewport: draw() setting current_mip to {}", target_mip);
+        }
+        state.current_mip = target_mip;
+
+        if state.current_mip != old_mip {
+            tracing::info!(
+                "[pixors] viewport: MIP changed {} → {}",
+                old_mip,
+                state.current_mip,
+            );
+            let mut reqs = Vec::new();
+            reqs.push((state.current_mip, state.camera.visible_tile_range(state.current_mip, TILE_SIZE)));
+            
+            // Preemptively fetch lower resolution (zoomed out, MIP + 1)
+            let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
+            if state.current_mip < max_mip {
+                reqs.push((state.current_mip + 1, state.camera.visible_tile_range(state.current_mip + 1, TILE_SIZE)));
+            }
+            // Preemptively fetch higher resolution (zoomed in, MIP - 1)
+            if state.current_mip > 0 {
+                reqs.push((state.current_mip - 1, state.camera.visible_tile_range(state.current_mip - 1, TILE_SIZE)));
+            }
+            
+            if let Ok(mut sig) = self.mip_fetch_signal.lock() {
+                *sig = reqs;
+            }
+        }
+
+        ViewportPrimitive {
+            camera: state.camera.to_uniform(state.current_mip),
+            cache: self.cache.clone(),
+        }
+    }
+
+    fn update(
+        &self,
+        state_cell: &mut Self::State,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<shader::Action<Msg>> {
+        let state = state_cell.get_mut();
+
+        if self.tile_generation != state.last_generation.get() {
+            tracing::info!("[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw", state.last_generation.get(), self.tile_generation);
+            state.last_generation.set(self.tile_generation);
+            return Some(shader::Action::request_redraw());
         }
 
         let old_mip = state.current_mip;
@@ -104,7 +158,6 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                     let pos =
                         cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
                     state.camera.zoom_at(factor, pos.x, pos.y);
-                    state.current_mip = state.camera.visible_mip_level();
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
                     None
@@ -113,38 +166,16 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             _ => None,
         };
 
-        if state.current_mip != old_mip {
-            tracing::info!(
-                "[pixors] viewport: MIP changed {} → {}",
-                old_mip,
-                state.current_mip,
-            );
-            let mut reqs = Vec::new();
-            reqs.push((state.current_mip, state.camera.visible_tile_range(state.current_mip, TILE_SIZE)));
-            
-            // Preemptively fetch lower resolution (zoomed out, MIP + 1)
-            let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
-            if state.current_mip < max_mip {
-                reqs.push((state.current_mip + 1, state.camera.visible_tile_range(state.current_mip + 1, TILE_SIZE)));
-            }
-            // Preemptively fetch higher resolution (zoomed in, MIP - 1)
-            if state.current_mip > 0 {
-                reqs.push((state.current_mip - 1, state.camera.visible_tile_range(state.current_mip - 1, TILE_SIZE)));
-            }
-            
-            *self.mip_fetch_signal.lock().unwrap() = reqs;
-            Some(shader::Action::request_redraw().and_capture())
-        } else {
-            action
-        }
+        action
     }
 
     fn mouse_interaction(
         &self,
-        state: &Self::State,
+        state_cell: &Self::State,
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
+        let state = state_cell.borrow();
         if state.dragging {
             mouse::Interaction::Grabbing
         } else {
@@ -156,6 +187,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 pub struct ViewportState {
     pub(super) camera: Camera,
     pub(super) current_mip: u32,
+    pub(super) last_generation: std::cell::Cell<u64>,
     dragging: bool,
     fitted: bool,
     last_pos: Option<Point>,
@@ -167,6 +199,7 @@ impl Default for ViewportState {
         Self {
             camera: Camera::new(1.0, 1.0),
             current_mip: 0,
+            last_generation: std::cell::Cell::new(0),
             dragging: false,
             fitted: false,
             last_pos: None,

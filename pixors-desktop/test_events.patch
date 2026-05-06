@@ -1,0 +1,10 @@
+--- src/viewport/program.rs
++++ src/viewport/program.rs
+@@ -107,6 +107,10 @@
+ 
+         let action = match event {
++            Event::Window(w) => {
++                // tracing::info!("Window event: {:?}", w);
++                None
++            }
+             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {

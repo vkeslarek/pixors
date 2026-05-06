@@ -19,6 +19,7 @@ fn main() -> iced::Result {
         .init();
 
     iced::application(App::default, App::update, App::view)
+        .subscription(App::subscription)
         .title("Pixors Ultra Test")
         .window_size((1280.0, 720.0))
         .font(icons::FONT_BYTES)

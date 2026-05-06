@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::model::image::decoder::PageStream;
+use crate::model::io::PageStream;
 use crate::stage::{
     BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
     ProcessorContext, Stage, StageHints,

@@ -227,6 +227,18 @@ impl shader::Primitive for ViewportPrimitive {
         let Some(ref cache_arc) = self.cache else { return; };
         let Ok(mut cache) = cache_arc.lock() else { return; };
 
+        cache.set_active_mip(mip);
+
+        let img_w0 = self.camera.img_w0 as u32;
+        let img_h0 = self.camera.img_h0 as u32;
+
+        // If the primitive was created before the cache's image dimensions were updated,
+        // it is stale. Abort preparation so we don't prematurely drain pending tiles into
+        // an incorrectly sized texture, which would cause a wgpu out-of-bounds panic.
+        if (img_w0, img_h0) != cache.active_dims {
+            return;
+        }
+
         // Full re-upload when MIP level changes or texture was resized (new image).
         let full_reload = pipeline.last_mip != Some(mip)
             || pipeline.texture_dims != Some((tex_w, tex_h));
@@ -302,6 +314,14 @@ impl shader::Primitive for ViewportPrimitive {
             clip_bounds.y,
             clip_bounds.width,
             clip_bounds.height,
+        );
+        pass.set_viewport(
+            clip_bounds.x as f32,
+            clip_bounds.y as f32,
+            clip_bounds.width as f32,
+            clip_bounds.height as f32,
+            0.0,
+            1.0,
         );
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_bind_group(0, &pipeline.bind_group, &[]);

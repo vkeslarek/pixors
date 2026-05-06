@@ -34,6 +34,7 @@ pub enum Msg {
     KeyPressed(keyboard::Event),
     OpenFile,
     Tick,
+    Frames,
 }
 
 pub struct App {
@@ -89,10 +90,21 @@ impl Default for App {
 
 impl App {
     pub fn subscription(&self) -> Subscription<Msg> {
-        Subscription::batch([
+        let mut subs = vec![
             keyboard::listen().map(Msg::KeyPressed),
             iced::time::every(std::time::Duration::from_millis(33)).map(|_| Msg::Tick),
-        ])
+        ];
+
+        let has_pending = self.cache.as_ref()
+            .and_then(|c| c.lock().ok())
+            .map(|g| g.has_pending())
+            .unwrap_or(false);
+
+        if self.loading || has_pending {
+            subs.push(iced::window::frames().map(|_| Msg::Frames));
+        }
+
+        Subscription::batch(subs)
     }
 
     fn find_pane(&self, kind: PaneKind) -> Option<pane_grid::Pane> {
@@ -129,6 +141,7 @@ impl App {
             Msg::KeyPressed(event) => self.handle_keyboard(event),
             Msg::OpenFile => self.open_file_dialog(),
             Msg::Tick => self.handle_tick(),
+            Msg::Frames => {} // Just to wake up the event loop
             Msg::MenuBar(m) => self.handle_menu_msg(m),
             Msg::WorkspaceBar(m) => self.workspace.update(m),
             Msg::Toolbar(m) => {
@@ -196,7 +209,6 @@ impl App {
             Err(e) if e == "cancelled" => {}
             Err(e) => self.push_error(e),
         }
-        self.loading = false;
     }
 
     fn handle_tick(&mut self) {
@@ -205,11 +217,7 @@ impl App {
             if self.progress >= 1.0 {
                 self.progress = 1.0;
                 self.progress_dir = -1.0;
-            } else if self.progress <= 0.0 {
-                self.progress = 0.0;
-                self.progress_dir = 1.0;
-            }
-            if self.progress >= 1.0 && self.progress_dir == -1.0 {
+            } else if self.progress <= 0.0 && self.progress_dir == -1.0 {
                 self.loading = false;
             }
         }
@@ -218,11 +226,13 @@ impl App {
         if let Some(ref cache) = self.cache {
             if cache.lock().map_or(false, |g| g.has_pending()) {
                 self.tile_generation = self.tile_generation.wrapping_add(1);
+                tracing::info!("[pixors] handle_tick: tile_generation is now {}", self.tile_generation);
             }
         }
 
-        if let Ok(mut sig) = self.mip_fetch_signal.lock() {
-            let reqs = std::mem::take(&mut *sig);
+        let mut sigs = self.mip_fetch_signal.lock().unwrap();
+        if !sigs.is_empty() {
+            let reqs: Vec<_> = sigs.drain(..).collect();
             for (mip, range) in reqs {
                 self.fetch_mip_from_cache(mip, range);
             }
@@ -309,11 +319,9 @@ impl App {
 
         let overlays = self.toasts_view();
 
-        if !self.errors.is_empty() {
-            iced::widget::stack![content, overlays].into()
-        } else {
-            content.into()
-        }
+        // Always return a stack at the root to avoid destroying the entire widget tree state
+        // (including ViewportState) when toasts appear or disappear.
+        iced::widget::stack![content, overlays].into()
     }
 
     fn loading_bar_view(&self) -> Element<'_, Msg> {

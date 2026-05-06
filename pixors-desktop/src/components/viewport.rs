@@ -19,9 +19,16 @@ pub fn view<'a, Msg: 'a>(
 ) -> Element<'a, Msg> {
     let program = ViewportProgram { cache, tile_generation, mip_fetch_signal };
 
-    let canvas_bg = shader_widget(program)
-        .width(Length::Fill)
-        .height(Length::Fill);
+    // By alternating the width of a sibling space widget slightly, we force
+    // iced to invalidate the shader widget's bounds cache and call draw(),
+    // allowing new tiles to be displayed immediately without waiting for events.
+    let pad = if tile_generation % 2 == 0 { 0.0 } else { 1.0 };
+    let canvas_bg = iced::widget::row![
+        shader_widget(program)
+            .width(Length::Fill)
+            .height(Length::Fill),
+        iced::widget::Space::new().width(pad)
+    ];
 
     let overlay = container(pill(format!("{}×{}", canvas_w, canvas_h)))
         .padding(12)

@@ -15,63 +15,60 @@ use crate::graph::item::Item;
 use crate::model::color::primaries::RgbPrimaries;
 use crate::model::color::space::ColorSpace;
 use crate::model::color::transfer::TransferFn;
-use crate::model::image::buffer::{BufferDesc, ImageBuffer};
-use crate::model::image::decoder::{ImageDecoder, PageStream};
-use crate::model::image::desc::{BlendMode, Dpi, ImageDesc, Orientation, PageInfo, PixelOffset};
+use crate::model::image::buffer::{BufferDescriptor, ImageBuffer};
+use crate::model::io::{ImageDecoder, PageStream};
+use crate::model::image::desc::{BlendMode, Dpi, ImageDescriptor, Orientation, PageInfo, PixelOffset};
 use crate::model::image::meta::AlphaMode;
 use crate::model::pixel::meta::PixelMeta;
 use crate::model::pixel::{AlphaPolicy, PixelFormat};
 
 /// PNG format reader.
-pub struct PngFormat;
 
-impl PngFormat {
-    /// Build the correct BufferDesc for PNG color type + bit depth.
-    pub(crate) fn png_buffer_desc(
+    pub fn png_buffer_desc(
         info: &png::Info,
         w: u32,
         h: u32,
         color_space: ColorSpace,
         alpha_mode: AlphaMode,
         is_16bit: bool,
-    ) -> BufferDesc {
+    ) -> BufferDescriptor {
         match (info.color_type, is_16bit) {
             (png::ColorType::Grayscale, false) => {
-                BufferDesc::gray8_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::gray8_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::Grayscale, true) => {
-                BufferDesc::gray16be_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::gray16be_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::GrayscaleAlpha, false) => {
-                BufferDesc::gray_alpha8_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::gray_alpha8_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::GrayscaleAlpha, true) => {
-                BufferDesc::gray_alpha16be_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::gray_alpha16be_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::Rgb, false) => {
-                BufferDesc::rgb8_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::rgb8_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::Rgb, true) => {
-                BufferDesc::rgb16be_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::rgb16be_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::Rgba, false) => {
-                BufferDesc::rgba8_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::rgba8_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::Rgba, true) => {
-                BufferDesc::rgba16be_interleaved(w, h, color_space, alpha_mode)
+                BufferDescriptor::rgba16be_interleaved(w, h, color_space, alpha_mode)
             }
             (png::ColorType::Indexed, _) => {
                 if info.trns.is_some() {
-                    BufferDesc::rgba8_interleaved(w, h, color_space, alpha_mode)
+                    BufferDescriptor::rgba8_interleaved(w, h, color_space, alpha_mode)
                 } else {
-                    BufferDesc::rgb8_interleaved(w, h, color_space, alpha_mode)
+                    BufferDescriptor::rgb8_interleaved(w, h, color_space, alpha_mode)
                 }
             }
         }
     }
 
     /// Detects the color space from PNG metadata.
-    pub(crate) fn detect_color_space(info: &png::Info) -> ColorSpace {
+    pub fn detect_color_space(info: &png::Info) -> ColorSpace {
         use crate::model::color::detect;
 
         // Priority 1: cICP chunk (new, explicit)
@@ -156,7 +153,6 @@ impl PngFormat {
         tracing::warn!("No color space metadata in PNG, assuming sRGB");
         ColorSpace::SRGB
     }
-}
 
 // ---------------------------------------------------------------------------
 // PngDecoder — implements the new ImageDecoder trait
@@ -173,7 +169,7 @@ impl ImageDecoder for PngDecoder {
             .unwrap_or(false))
     }
 
-    fn decode(&self, path: &Path) -> Result<ImageDesc, Error> {
+    fn decode(&self, path: &Path) -> Result<ImageDescriptor, Error> {
         let file = File::open(path).map_err(Error::Io)?;
         let reader = BufReader::new(file);
         let mut decoder = Decoder::new(reader);
@@ -181,7 +177,7 @@ impl ImageDecoder for PngDecoder {
         let reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
         let info = reader.info();
 
-        let color_space = PngFormat::detect_color_space(info);
+        let color_space = detect_color_space(info);
         let is_16bit = matches!(info.bit_depth, BitDepth::Sixteen);
         let dpi = info.pixel_dims.and_then(|pdim| {
             if pdim.unit == png::Unit::Meter {
@@ -221,7 +217,7 @@ impl ImageDecoder for PngDecoder {
             .unwrap_or("PNG")
             .to_string();
 
-        let buffer_desc = PngFormat::png_buffer_desc(
+        let buffer_desc = png_buffer_desc(
             info,
             info.width,
             info.height,
@@ -230,7 +226,7 @@ impl ImageDecoder for PngDecoder {
             is_16bit,
         );
 
-        Ok(ImageDesc {
+        Ok(ImageDescriptor {
             format: "PNG".to_string(),
             width: info.width,
             height: info.height,
@@ -264,10 +260,10 @@ impl ImageDecoder for PngDecoder {
         let reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
         let info = reader.info();
 
-        let color_space = PngFormat::detect_color_space(info);
+        let color_space = detect_color_space(info);
         let is_16bit = matches!(info.bit_depth, BitDepth::Sixteen);
         let pixel_format = png_pixel_format(info, is_16bit);
-        let buffer_desc = PngFormat::png_buffer_desc(
+        let buffer_desc = png_buffer_desc(
             info,
             info.width,
             info.height,

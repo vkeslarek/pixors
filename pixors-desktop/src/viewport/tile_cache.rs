@@ -15,6 +15,8 @@ pub struct ViewportCache {
     entries: HashMap<TileGridPos, CachedTile>,
     pending: HashSet<TileGridPos>,
     new_img: Option<(u32, u32)>,
+    pub active_dims: (u32, u32),
+    pub active_mip: u32,
 }
 
 impl ViewportCache {
@@ -23,6 +25,8 @@ impl ViewportCache {
             entries: HashMap::new(),
             pending: HashSet::new(),
             new_img: None,
+            active_dims: (1, 1),
+            active_mip: 0,
         }))
     }
 
@@ -60,7 +64,11 @@ impl ViewportCache {
     }
 
     pub fn has_pending(&self) -> bool {
-        !self.pending.is_empty()
+        self.pending.iter().any(|k| k.mip_level == self.active_mip)
+    }
+
+    pub fn set_active_mip(&mut self, mip: u32) {
+        self.active_mip = mip;
     }
 
     /// Clear everything — call before loading a new image.
@@ -68,10 +76,13 @@ impl ViewportCache {
         self.entries.clear();
         self.pending.clear();
         self.new_img = None;
+        self.active_dims = (1, 1);
+        self.active_mip = 0;
     }
 
     pub fn signal_new_img(&mut self, w: u32, h: u32) {
         self.new_img = Some((w, h));
+        self.active_dims = (w, h);
     }
 
     pub fn take_new_img(&mut self) -> Option<(u32, u32)> {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::model::color::space::ColorSpace;
-use crate::model::image::buffer::BufferDesc;
+use crate::model::image::buffer::BufferDescriptor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Dpi {
@@ -39,7 +39,7 @@ pub enum Orientation {
 #[derive(Debug, Clone)]
 pub struct PageInfo {
     pub name: String,
-    pub buffer_desc: BufferDesc,
+    pub buffer_desc: BufferDescriptor,
     pub offset: PixelOffset,
     pub opacity: f32,
     pub blend_mode: BlendMode,
@@ -48,7 +48,7 @@ pub struct PageInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct ImageDesc {
+pub struct ImageDescriptor {
     pub format: String,
     pub width: u32,
     pub height: u32,

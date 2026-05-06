@@ -2,7 +2,16 @@
 
 use crate::error::Error;
 use crate::model::color::space::ColorSpace;
-use crate::model::image::buffer::{BufferDesc, ImageBuffer};
+use crate::data::buffer::Buffer;
+use crate::data::scanline::ScanLine;
+use crate::graph::item::Item;
+use crate::model::image::buffer::{BufferDescriptor, ImageBuffer};
+use crate::model::image::desc::{BlendMode, Dpi, ImageDescriptor, Orientation, PageInfo, PixelOffset};
+use crate::model::io::{ImageDecoder, PageStream};
+use crate::model::image::meta::AlphaMode;
+use crate::model::pixel::PixelFormat;
+use crate::model::pixel::meta::PixelMeta;
+use crate::model::pixel::AlphaPolicy;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -10,7 +19,6 @@ use tiff::decoder::{Decoder, DecodingResult};
 use tiff::tags::Tag;
 
 /// TIFF format reader.
-pub struct TiffFormat;
 
 /// Count pages in a TIFF by iterating IFDs.
 fn count_tiff_pages(decoder: &mut Decoder<BufReader<File>>) -> usize {
@@ -32,19 +40,19 @@ fn tiff_buffer_desc(
     h: u32,
     cs: ColorSpace,
     am: AlphaMode,
-) -> Result<BufferDesc, Error> {
+) -> Result<BufferDescriptor, Error> {
     Ok(match ct {
-        tiff::ColorType::Gray(8) => BufferDesc::gray8_interleaved(w, h, cs, am),
-        tiff::ColorType::GrayA(8) => BufferDesc::gray_alpha8_interleaved(w, h, cs, am),
-        tiff::ColorType::RGB(8) => BufferDesc::rgb8_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(8) => BufferDesc::rgba8_interleaved(w, h, cs, am),
-        tiff::ColorType::Gray(16) => BufferDesc::gray16_interleaved(w, h, cs, am),
-        tiff::ColorType::GrayA(16) => BufferDesc::gray_alpha16_interleaved(w, h, cs, am),
-        tiff::ColorType::RGB(16) => BufferDesc::rgb16_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(16) => BufferDesc::rgba16_interleaved(w, h, cs, am),
-        tiff::ColorType::Gray(32) => BufferDesc::gray32_interleaved(w, h, cs, am),
-        tiff::ColorType::RGB(32) => BufferDesc::rgb32_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(32) => BufferDesc::rgba32_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(8) => BufferDescriptor::gray8_interleaved(w, h, cs, am),
+        tiff::ColorType::GrayA(8) => BufferDescriptor::gray_alpha8_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(8) => BufferDescriptor::rgb8_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(8) => BufferDescriptor::rgba8_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(16) => BufferDescriptor::gray16_interleaved(w, h, cs, am),
+        tiff::ColorType::GrayA(16) => BufferDescriptor::gray_alpha16_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(16) => BufferDescriptor::rgb16_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(16) => BufferDescriptor::rgba16_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(32) => BufferDescriptor::gray32_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(32) => BufferDescriptor::rgb32_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(32) => BufferDescriptor::rgba32_interleaved(w, h, cs, am),
         _ => {
             return Err(Error::unsupported_sample_type(format!(
                 "BufferDesc for {:?}",
@@ -110,10 +118,10 @@ fn decode_u8_tiff(
     data: Vec<u8>,
 ) -> Result<ImageBuffer, Error> {
     let desc = match ct {
-        tiff::ColorType::RGB(8) => BufferDesc::rgb8_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(8) => BufferDesc::rgba8_interleaved(w, h, cs, am),
-        tiff::ColorType::Gray(8) => BufferDesc::gray8_interleaved(w, h, cs, am),
-        tiff::ColorType::GrayA(8) => BufferDesc::gray_alpha8_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(8) => BufferDescriptor::rgb8_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(8) => BufferDescriptor::rgba8_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(8) => BufferDescriptor::gray8_interleaved(w, h, cs, am),
+        tiff::ColorType::GrayA(8) => BufferDescriptor::gray_alpha8_interleaved(w, h, cs, am),
         tiff::ColorType::YCbCr(8) => {
             return Err(Error::unsupported_sample_type(
                 "YCbCr decode not implemented",
@@ -152,10 +160,10 @@ fn decode_u16_tiff(
 ) -> Result<ImageBuffer, Error> {
     let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let desc = match ct {
-        tiff::ColorType::RGB(16) => BufferDesc::rgb16_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(16) => BufferDesc::rgba16_interleaved(w, h, cs, am),
-        tiff::ColorType::Gray(16) => BufferDesc::gray16_interleaved(w, h, cs, am),
-        tiff::ColorType::GrayA(16) => BufferDesc::gray_alpha16_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(16) => BufferDescriptor::rgb16_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(16) => BufferDescriptor::rgba16_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(16) => BufferDescriptor::gray16_interleaved(w, h, cs, am),
+        tiff::ColorType::GrayA(16) => BufferDescriptor::gray_alpha16_interleaved(w, h, cs, am),
         tiff::ColorType::CMYK(16) => {
             return Err(Error::unsupported_sample_type(
                 "CMYK without ICC not supported — convert to RGB first",
@@ -189,9 +197,9 @@ fn decode_u32_tiff(
 ) -> Result<ImageBuffer, Error> {
     let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let desc = match ct {
-        tiff::ColorType::RGB(32) => BufferDesc::rgb32_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(32) => BufferDesc::rgba32_interleaved(w, h, cs, am),
-        tiff::ColorType::Gray(32) => BufferDesc::gray32_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(32) => BufferDescriptor::rgb32_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(32) => BufferDescriptor::rgba32_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(32) => BufferDescriptor::gray32_interleaved(w, h, cs, am),
         _ => {
             return Err(Error::unsupported_sample_type(format!(
                 "Unsupported 32-bit color: {:?}",
@@ -212,9 +220,9 @@ fn decode_f32_tiff(
 ) -> Result<ImageBuffer, Error> {
     let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_ne_bytes()).collect();
     let desc = match ct {
-        tiff::ColorType::RGB(32) => BufferDesc::rgb_f32_interleaved(w, h, cs, am),
-        tiff::ColorType::RGBA(32) => BufferDesc::rgba_f32_interleaved(w, h, cs, am),
-        tiff::ColorType::Gray(32) => BufferDesc::gray_f32_interleaved(w, h, cs, am),
+        tiff::ColorType::RGB(32) => BufferDescriptor::rgb_f32_interleaved(w, h, cs, am),
+        tiff::ColorType::RGBA(32) => BufferDescriptor::rgba_f32_interleaved(w, h, cs, am),
+        tiff::ColorType::Gray(32) => BufferDescriptor::gray_f32_interleaved(w, h, cs, am),
         _ => {
             return Err(Error::unsupported_sample_type(format!(
                 "Unsupported F32 color: {:?}",
@@ -253,81 +261,6 @@ fn detect_tiff_color_space(decoder: &mut Decoder<BufReader<File>>) -> ColorSpace
 }
 
 /// Extract document-level metadata from a TIFF decoder.
-pub fn read_tiff_document_metadata(
-    decoder: &mut Decoder<BufReader<File>>,
-    path: &Path,
-) -> ImageMetadata {
-    use std::collections::HashMap;
-
-    let source_format = Some("TIFF".to_string());
-    let source_path = Some(path.to_path_buf());
-    let text = HashMap::new();
-
-    // DPI from XResolution/YResolution (tags 282/283) and ResolutionUnit (296)
-    let dpi = {
-        let (Ok(Some(xres)), Ok(Some(yres))) = (
-            decoder.find_tag_unsigned::<u32>(Tag::XResolution),
-            decoder.find_tag_unsigned::<u32>(Tag::YResolution),
-        ) else {
-            return ImageMetadata {
-                source_format,
-                source_path,
-                dpi: None,
-                text,
-                raw_icc: None,
-            };
-        };
-        let unit = decoder
-            .find_tag_unsigned::<u32>(Tag::ResolutionUnit)
-            .ok()
-            .flatten()
-            .unwrap_or(2);
-        let scale = if unit == 3 { 2.54 } else { 1.0 };
-        Some((xres as f32 * scale, yres as f32 * scale))
-    };
-
-    // ICC profile (tag 34675)
-    let raw_icc = read_tag_bytes(decoder, Tag::Unknown(34675));
-
-    ImageMetadata {
-        source_format,
-        source_path,
-        dpi,
-        text,
-        raw_icc,
-    }
-}
-
-#[allow(dead_code)]
-fn read_tag_string(decoder: &mut Decoder<BufReader<File>>, tag: Tag) -> Option<String> {
-    decoder
-        .find_tag_unsigned::<u32>(tag)
-        .ok()
-        .flatten()
-        .map(|_| format!("(see raw tag {})", tag.to_u16()))
-}
-
-fn read_tag_bytes(decoder: &mut Decoder<BufReader<File>>, tag: Tag) -> Option<Vec<u8>> {
-    decoder
-        .find_tag_unsigned::<u32>(tag)
-        .ok()
-        .flatten()
-        .map(|_| Vec::new())
-}
-
-// ===========================================================================
-// TiffDecoder — new ImageDecoder trait implementation
-// ===========================================================================
-
-use crate::data::buffer::Buffer;
-use crate::data::scanline::ScanLine;
-use crate::graph::item::Item;
-use crate::model::image::decoder::{ImageDecoder, PageStream};
-use crate::model::image::desc::{BlendMode, Dpi, ImageDesc, Orientation, PageInfo, PixelOffset};
-use crate::model::image::meta::{AlphaMode, ImageMetadata};
-use crate::model::pixel::meta::PixelMeta;
-use crate::model::pixel::{AlphaPolicy, PixelFormat};
-
 pub struct TiffDecoder;
 
 impl ImageDecoder for TiffDecoder {
@@ -339,7 +272,7 @@ impl ImageDecoder for TiffDecoder {
             .unwrap_or(false))
     }
 
-    fn decode(&self, path: &Path) -> Result<ImageDesc, Error> {
+    fn decode(&self, path: &Path) -> Result<ImageDescriptor, Error> {
         let file = File::open(path).map_err(Error::Io)?;
         let reader = BufReader::new(file);
         let mut decoder = Decoder::new(reader).map_err(|e| Error::Tiff(e.to_string()))?;
@@ -352,11 +285,25 @@ impl ImageDecoder for TiffDecoder {
             .map_err(|e| Error::Tiff(e.to_string()))?;
         let bit_depth = ct.bit_depth();
         let color_space = detect_tiff_color_space(&mut decoder);
-        let metadata = read_tiff_document_metadata(&mut decoder, path);
-        let dpi = metadata.dpi.map(|(x, y)| Dpi { x, y });
-        let icc_profile = metadata.raw_icc;
 
-        let mut exif_tags = metadata.text;
+        let dpi = {
+            let xres = decoder.find_tag_unsigned::<u32>(Tag::XResolution).ok().flatten();
+            let yres = decoder.find_tag_unsigned::<u32>(Tag::YResolution).ok().flatten();
+            match (xres, yres) {
+                (Some(x), Some(y)) => {
+                    let unit = decoder.find_tag_unsigned::<u32>(Tag::ResolutionUnit).ok().flatten().unwrap_or(2);
+                    let scale = if unit == 3 { 2.54 } else { 1.0 };
+                    Some(Dpi { x: x as f32 * scale, y: y as f32 * scale })
+                }
+                _ => None,
+            }
+        };
+        let icc_profile = decoder.find_tag_unsigned::<u32>(Tag::Unknown(34675))
+            .ok()
+            .flatten()
+            .map(|_| Vec::new());
+
+        let mut exif_tags = std::collections::HashMap::new();
         let first_orientation = read_orientation(&mut decoder);
         exif_tags.insert(
             "Orientation".to_string(),
@@ -394,7 +341,7 @@ impl ImageDecoder for TiffDecoder {
             });
         }
 
-        Ok(ImageDesc {
+        Ok(ImageDescriptor {
             format: "TIFF".to_string(),
             width: w,
             height: h,

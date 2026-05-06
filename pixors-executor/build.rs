@@ -49,8 +49,6 @@ fn compile_dir(dir: &Path, shaders_root: &Path, kernels_dir: &Path, slangc: &str
             let dest = kernels_dir.join(format!("{stem}.spv"));
 
             if compile_slang(slangc, &path, shaders_root, &dest) {
-                let rel = path.strip_prefix(shaders_root).unwrap_or(&path);
-                println!("cargo:warning=compiled {} → kernels/{stem}.spv", rel.display());
             } else if !dest.exists() {
                 eprintln!("WARNING: {stem}.spv not found and slangc failed");
             }

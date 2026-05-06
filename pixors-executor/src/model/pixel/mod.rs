@@ -60,7 +60,6 @@ pub trait Pixel: Copy + Pod {
 // Sub-modules
 // ---------------------------------------------------------------------------
 
-mod accumulator;
 mod format;
 mod gray;
 pub mod meta;
@@ -68,7 +67,6 @@ mod pack;
 mod rgb;
 mod rgba;
 
-pub use accumulator::PixelAccumulator;
 pub use format::PixelFormat;
 pub use gray::{Gray, GrayAlpha};
 pub use meta::PixelMeta;
