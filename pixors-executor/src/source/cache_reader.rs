@@ -25,12 +25,24 @@ static CR_PORTS: PortSpecification = PortSpecification {
 };
 
 /// Bounding range of tile coordinates (exclusive end).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Bounding range of tile coordinates (exclusive end).
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TileRange {
     pub tx_start: u32,
     pub tx_end: u32,
     pub ty_start: u32,
     pub ty_end: u32,
+}
+
+impl Clone for TileRange {
+    fn clone(&self) -> Self {
+        Self {
+            tx_start: self.tx_start,
+            tx_end: self.tx_end,
+            ty_start: self.ty_start,
+            ty_end: self.ty_end,
+        }
+    }
 }
 
 /// Reads tiles from a disk cache written by [`CacheWriter`](crate::sink::cache_writer::CacheWriter).
@@ -75,7 +87,29 @@ impl Stage for CacheReader {
             image_width: self.image_width,
             image_height: self.image_height,
             tile_range: self.tile_range.clone(),
+            use_compression: false,
         }))
+    }
+
+    fn source_items(&self) -> usize {
+        let mip_w = (self.image_width >> self.mip_level).max(1);
+        let mip_h = (self.image_height >> self.mip_level).max(1);
+        let cols = mip_w.div_ceil(self.tile_size);
+        let rows = mip_h.div_ceil(self.tile_size);
+
+        let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
+            Some(r) => (
+                r.tx_start,
+                r.tx_end.min(cols),
+                r.ty_start,
+                r.ty_end.min(rows),
+            ),
+            None => (0, cols, 0, rows),
+        };
+
+        let width = tx_end.saturating_sub(tx_start);
+        let height = ty_end.saturating_sub(ty_start);
+        (width * height) as usize
     }
 }
 
@@ -86,6 +120,7 @@ pub struct CacheReaderProcessor {
     image_width: u32,
     image_height: u32,
     tile_range: Option<TileRange>,
+    use_compression: bool,
 }
 
 impl Processor for CacheReaderProcessor {
@@ -129,6 +164,21 @@ impl Processor for CacheReaderProcessor {
                         );
                         continue;
                     }
+                };
+                
+                let bytes = if self.use_compression {
+                    match lz4_flex::decompress_size_prepended(&bytes) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            tracing::warn!(
+                                "[pixors] cache_reader: failed to decompress {}: {e}",
+                                path.display(),
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    bytes
                 };
 
                 let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, mip_w, mip_h);

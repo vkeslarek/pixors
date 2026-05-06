@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 pixors-executor = { path = "../pixors-executor" }
 iced = { version = "0.14", features = ["advanced", "tokio"] }
+tokio = { version = "1", features = ["sync", "rt"] }
 iced_aw = { version = "0.13", default-features = false, features = ["menu"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 half = { version = "2.7.1", features = ["bytemuck"] }

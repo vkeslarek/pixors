@@ -3,7 +3,7 @@ use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::theme::{
-    ACCENT, BG_BASE, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE,
+    ACCENT, BG_BASE, BORDER_SUBTLE,
     TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 

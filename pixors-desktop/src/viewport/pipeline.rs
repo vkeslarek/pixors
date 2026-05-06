@@ -195,10 +195,20 @@ impl ViewportPipeline {
     }
 }
 
-#[derive(Clone)]
 pub struct ViewportPrimitive {
     pub(super) camera: CameraUniform,
     pub(super) cache: Option<Arc<Mutex<ViewportCache>>>,
+    pub(super) visible_range: pixors_executor::source::cache_reader::TileRange,
+}
+
+impl Clone for ViewportPrimitive {
+    fn clone(&self) -> Self {
+        Self {
+            camera: self.camera.clone(),
+            cache: self.cache.clone(),
+            visible_range: pixors_executor::source::cache_reader::TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 },
+        }
+    }
 }
 
 impl std::fmt::Debug for ViewportPrimitive {
@@ -247,33 +257,23 @@ impl shader::Primitive for ViewportPrimitive {
 
         if let Some(ref tex_arc) = pipeline.tiled_texture {
             let tex = tex_arc.lock().unwrap();
-            if full_reload {
-                // Clear pending for this MIP (all covered by the full upload below).
-                let _ = cache.take_pending_keys_for_mip(mip);
-                for (_, tile) in cache.all_for_mip(mip) {
-                    tex.write_tile_cpu(
-                        queue,
-                        tile.px,
-                        tile.py,
-                        tile.width,
-                        tile.height,
-                        &tile.bytes,
-                    );
-                }
+            let mut pending = cache.take_pending_keys_for_mip(mip);
+            
+            let tiles: Vec<_> = if full_reload {
+                cache.tiles_in_range(mip, &self.visible_range)
             } else {
-                let pending = cache.take_pending_keys_for_mip(mip);
-                for key in &pending {
-                    if let Some(tile) = cache.get(key) {
-                        tex.write_tile_cpu(
-                            queue,
-                            tile.px,
-                            tile.py,
-                            tile.width,
-                            tile.height,
-                            &tile.bytes,
-                        );
-                    }
-                }
+                pending.drain(..).filter_map(|k| cache.get(&k).map(|v| (k, v))).collect()
+            };
+
+            for (_, tile) in tiles {
+                tex.write_tile_cpu(
+                    queue,
+                    tile.px,
+                    tile.py,
+                    tile.width,
+                    tile.height,
+                    &tile.bytes,
+                );
             }
         }
 
@@ -337,19 +337,14 @@ fn ensure_texture(
     height: u32,
     mip: u32,
 ) {
-    match tex {
-        Some(arc) => {
-            if let Ok(mut guard) = arc.lock() {
-                if guard.mip_level() != mip || guard.dims() != (width, height) {
-                    guard.resize(device, queue, width, height, mip);
-                }
-            }
+    if let Some(arc) = tex {
+        if let Ok(mut guard) = arc.lock() {
+            guard.resize(device, queue, width, height, mip);
         }
-        None => {
-            *tex = Some(Arc::new(Mutex::new(TiledTexture::new(
-                device, queue, width, height, 256, mip,
-            ))));
-        }
+    } else {
+        *tex = Some(Arc::new(Mutex::new(TiledTexture::new(
+            device, queue, width, height, 256, mip,
+        ))));
     }
 }
 
@@ -392,10 +387,18 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let scale_y = cam.img_h0 / cam.img_h;
     let img_xy = img_xy_mip0 / vec2<f32>(scale_x, scale_y);
 
+    let bg = vec4<f32>(0.067, 0.067, 0.075, 1.0);
     if img_xy.x < 0.0 || img_xy.y < 0.0 || img_xy.x >= cam.img_w || img_xy.y >= cam.img_h {
-        return vec4<f32>(0.067, 0.067, 0.075, 1.0);
+        return bg;
     }
+    
     var color = textureSample(t, s, img_xy / vec2<f32>(cam.img_w, cam.img_h));
+    
+    // Composite over background (both for unwritten zeroed tiles and transparent image pixels)
+    color = vec4<f32>(
+        color.rgb + bg.rgb * (1.0 - color.a),
+        color.a + bg.a * (1.0 - color.a)
+    );
 
     // Pixel grid — fades in smoothly from 4× to 10× zoom.
     let grid_alpha = smoothstep(4.0, 10.0, cam.zoom);

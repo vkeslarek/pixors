@@ -41,9 +41,7 @@ impl ViewportCache {
             .filter(|k| k.mip_level == mip)
             .copied()
             .collect();
-        for k in &keys {
-            self.pending.remove(k);
-        }
+        self.pending.retain(|k| k.mip_level != mip);
         keys
     }
 
@@ -59,8 +57,33 @@ impl ViewportCache {
             .collect()
     }
 
+    pub fn tiles_in_range(&self, mip: u32, range: &pixors_executor::source::cache_reader::TileRange) -> Vec<(TileGridPos, &CachedTile)> {
+        let mut res = Vec::new();
+        for ty in range.ty_start..range.ty_end {
+            for tx in range.tx_start..range.tx_end {
+                let pos = TileGridPos { mip_level: mip, tx, ty };
+                if let Some(tile) = self.entries.get(&pos) {
+                    res.push((pos, tile));
+                }
+            }
+        }
+        res
+    }
+
     pub fn has_mip(&self, mip: u32) -> bool {
         self.entries.keys().any(|k| k.mip_level == mip)
+    }
+
+    pub fn has_all_tiles(&self, mip: u32, range: &pixors_executor::source::cache_reader::TileRange) -> bool {
+        for ty in range.ty_start..range.ty_end {
+            for tx in range.tx_start..range.tx_end {
+                let pos = TileGridPos { mip_level: mip, tx, ty };
+                if !self.entries.contains_key(&pos) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     pub fn has_pending(&self) -> bool {

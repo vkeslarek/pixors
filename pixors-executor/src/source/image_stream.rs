@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -24,25 +24,27 @@ static IMG_STREAM_PORTS: PortSpecification = PortSpecification {
 #[derive(Serialize, Deserialize)]
 pub struct ImageStreamSource {
     #[serde(skip, default = "empty_stream")]
-    pub stream: std::rc::Rc<RefCell<Option<Box<dyn PageStream>>>>,
+    pub stream: Arc<Mutex<Option<Box<dyn PageStream>>>>,
+    pub image_height: u32,
 }
 
 impl fmt::Debug for ImageStreamSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ImageStreamSource")
-            .field("stream", &self.stream.borrow().is_some())
+            .field("stream", &self.stream.lock().unwrap().is_some())
             .finish()
     }
 }
 
-fn empty_stream() -> std::rc::Rc<RefCell<Option<Box<dyn PageStream>>>> {
-    std::rc::Rc::new(RefCell::new(None))
+fn empty_stream() -> Arc<Mutex<Option<Box<dyn PageStream>>>> {
+    Arc::new(Mutex::new(None))
 }
 
 impl Clone for ImageStreamSource {
     fn clone(&self) -> Self {
         Self {
-            stream: std::rc::Rc::clone(&self.stream),
+            stream: Arc::clone(&self.stream),
+            image_height: self.image_height,
         }
     }
 }
@@ -62,9 +64,13 @@ impl Stage for ImageStreamSource {
     }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         self.stream
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .take()
             .map(|s| Box::new(ImageStreamProcessor { stream: s }) as Box<dyn Processor>)
+    }
+    fn source_items(&self) -> usize {
+        self.image_height as usize
     }
 }
 

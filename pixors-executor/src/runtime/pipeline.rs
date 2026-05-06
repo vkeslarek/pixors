@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, mpsc::sync_channel};
 
 use petgraph::Direction;
@@ -16,7 +17,7 @@ use crate::operation::transfer::download::Download;
 use crate::operation::transfer::upload::Upload;
 use crate::stage::{PortGroup, Stage, StageNode};
 
-use super::chain::ChainRunner;
+use super::chain::{ChainRunner, ProgressState};
 use super::event::PipelineEvent;
 use super::runner::{CHANNEL_BOUND, ItemReceiver, ItemSender, RoutedItem, Runner};
 
@@ -28,12 +29,16 @@ pub struct Pipeline {
         Vec<ItemReceiver>,
         Vec<(ItemSender, u16, u16)>,
     )>,
+    total_work: usize,
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
 
 impl Pipeline {
-    pub fn compile(graph: &ExecGraph) -> Result<Self, Error> {
+    pub fn compile(
+        graph: &ExecGraph,
+        progress_tx: Option<SyncSender<PipelineEvent>>,
+    ) -> Result<Self, Error> {
         let mut g: Graph = graph.graph.clone();
         let gpu_ok = gpu::context::gpu_available();
 
@@ -49,6 +54,17 @@ impl Pipeline {
         let (chains, node_chain) = detect_chains(&g, &devs, &order);
 
         let (mut ch_in, mut ch_out) = build_channels(&g, &order, &node_chain, chains.len());
+
+        let total_work = compute_work_total(&g, &order);
+
+        let progress = match progress_tx {
+            Some(ref tx) if total_work > 0 => Some(Arc::new(ProgressState {
+                done: AtomicUsize::new(0),
+                total: total_work,
+                tx: tx.clone(),
+            })),
+            _ => None,
+        };
 
         let mut compiled = Vec::new();
         for (idx, nodes) in chains.iter().enumerate() {
@@ -71,14 +87,17 @@ impl Pipeline {
                 })
                 .collect::<Result<_, _>>()?;
             compiled.push((
-                Box::new(ChainRunner::new(kernels, dev)) as Box<dyn Runner>,
+                Box::new(ChainRunner::new(kernels, dev, progress.clone())) as Box<dyn Runner>,
                 inputs,
                 outputs,
             ));
         }
 
-        tracing::info!("[pixors] compile: {} chains built", compiled.len());
-        Ok(Pipeline { chains: compiled })
+        tracing::info!("[pixors] compile: {} chains built, total_work={total_work}", compiled.len());
+        Ok(Pipeline {
+            chains: compiled,
+            total_work,
+        })
     }
 }
 
@@ -417,4 +436,35 @@ fn build_channels(
         }
     }
     (ins, outs)
+}
+
+fn compute_work_total(g: &Graph, order: &[StageId]) -> usize {
+    let mut output_work: HashMap<StageId, usize> = HashMap::new();
+    let mut total_received = 0usize;
+
+    for &id in order {
+        let stage = &g[id];
+        let input_work = g
+            .edges_directed(id, Direction::Incoming)
+            .map(|e| output_work.get(&e.source()).copied().unwrap_or(0))
+            .max()
+            .unwrap_or(0);
+
+        let received = if g.edges_directed(id, Direction::Incoming).count() == 0 {
+            1
+        } else {
+            input_work
+        };
+        total_received += received;
+
+        let ow = if g.edges_directed(id, Direction::Incoming).count() == 0 {
+            stage.source_items()
+        } else {
+            (input_work as f64 * stage.work_multiplier()).ceil() as usize
+        };
+        output_work.insert(id, ow);
+    }
+
+    tracing::info!("[pixors] compute_work_total: total_received={}", total_received);
+    total_received
 }

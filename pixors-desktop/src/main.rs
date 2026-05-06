@@ -1,4 +1,5 @@
 mod app;
+mod controller;
 mod components;
 mod file_ops;
 mod icons;

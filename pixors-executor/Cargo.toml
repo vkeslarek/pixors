@@ -20,6 +20,7 @@ petgraph = { version = "0.8", default-features = false, features = ["stable_grap
 wgpu = { version = "22.1", default-features = false, features = ["spirv"] }
 pollster = "0.3"
 uuid = { version = "1.23.1", features = ["serde", "v4"] }
+lz4_flex = "0.13.0"
 
 [lints]
 workspace = true

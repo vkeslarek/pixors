@@ -77,6 +77,17 @@ impl Camera {
         self.pan_y = a_img_y - anchor_y / self.zoom;
     }
 
+    pub fn floor_mip(&self) -> u32 {
+        const MAX_TEX_DIM: u32 = 8192;
+        let max_img_dim = self.img_w.max(self.img_h) as u32;
+        if max_img_dim <= MAX_TEX_DIM {
+            0
+        } else {
+            ((max_img_dim as f64 / MAX_TEX_DIM as f64).log2().ceil() as u32)
+                .min(compute_max_mip(max_img_dim, max_img_dim))
+        }
+    }
+
     /// Select a MIP level appropriate for the current zoom.
     ///
     /// Two constraints:
@@ -96,21 +107,11 @@ impl Camera {
                 .min(compute_max_mip(self.img_w as u32, self.img_h as u32))
         };
 
-        // ── Texture cap (keep tile count + VRAM under control) ─────────────
-        const MAX_TEX_DIM: u32 = 8192;
-        let max_img_dim = self.img_w.max(self.img_h) as u32;
-        let floor_mip = if max_img_dim <= MAX_TEX_DIM {
-            0
-        } else {
-            ((max_img_dim as f64 / MAX_TEX_DIM as f64).log2().ceil() as u32)
-                .min(compute_max_mip(max_img_dim, max_img_dim))
-        };
-
-        zoom_mip.max(floor_mip)
+        zoom_mip.max(self.floor_mip())
     }
 
-    /// Tile indices visible at the given MIP level, with 1-tile padding for smooth scroll.
-    pub fn visible_tile_range(&self, mip: u32, tile_size: u32) -> TileRange {
+    /// Tile indices visible at the given MIP level, with configurable tile padding.
+    pub fn padded_tile_range(&self, mip: u32, tile_size: u32, padding: u32) -> TileRange {
         let mip_scale = (1u32 << mip) as f32;
         let ts = tile_size as f32;
 
@@ -124,10 +125,10 @@ impl Camera {
         let ntx = mip_w.div_ceil(tile_size);
         let nty = mip_h.div_ceil(tile_size);
 
-        let tx_start = ((x0 / mip_scale / ts).floor() as u32).saturating_sub(1);
-        let ty_start = ((y0 / mip_scale / ts).floor() as u32).saturating_sub(1);
-        let tx_end = (((x1 / mip_scale / ts).ceil() as u32) + 1).min(ntx);
-        let ty_end = (((y1 / mip_scale / ts).ceil() as u32) + 1).min(nty);
+        let tx_start = ((x0 / mip_scale / ts).floor() as u32).saturating_sub(padding);
+        let ty_start = ((y0 / mip_scale / ts).floor() as u32).saturating_sub(padding);
+        let tx_end = (((x1 / mip_scale / ts).ceil() as u32) + padding).min(ntx);
+        let ty_end = (((y1 / mip_scale / ts).ceil() as u32) + padding).min(nty);
 
         TileRange { tx_start, tx_end, ty_start, ty_end }
     }

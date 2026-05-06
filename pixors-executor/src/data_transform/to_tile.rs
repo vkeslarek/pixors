@@ -33,6 +33,8 @@ static SA_PORTS: PortSpecification = PortSpecification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanLineToTile {
     pub tile_size: u32,
+    pub image_width: u32,
+    pub image_height: u32,
 }
 
 impl Stage for ScanLineToTile {
@@ -57,6 +59,11 @@ impl Stage for ScanLineToTile {
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(ScanLineToTileProcessor::new(self.tile_size)))
+    }
+    fn work_multiplier(&self) -> f64 {
+        let cols = self.image_width.div_ceil(self.tile_size) as f64;
+        let rows = self.image_height.div_ceil(self.tile_size) as f64;
+        (cols * rows) / (self.image_height as f64).max(1.0)
     }
 }
 

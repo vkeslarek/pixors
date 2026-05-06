@@ -1,5 +1,5 @@
 use crate::theme::{
-    ACCENT, ACCENT_DIM, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY,
+    ACCENT, ACCENT_DIM, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED,
     TEXT_SECONDARY, TOOLBAR_W,
 };
 use iced::widget::{button, column, container, mouse_area, row, text};

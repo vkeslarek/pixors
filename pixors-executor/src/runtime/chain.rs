@@ -1,75 +1,131 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::SyncSender;
+use std::sync::Arc;
+
 use crate::data::device::Device;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{Processor, ProcessorContext};
 
+use super::event::PipelineEvent;
 use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner};
+
+pub struct ProgressState {
+    pub done: AtomicUsize,
+    pub total: usize,
+    pub tx: SyncSender<PipelineEvent>,
+}
 
 pub struct ChainRunner {
     pub kernels: Vec<Box<dyn Processor>>,
     pub device: Device,
+    pub progress: Option<Arc<ProgressState>>,
 }
 
 impl ChainRunner {
-    pub fn new(kernels: Vec<Box<dyn Processor>>, device: Device) -> Self {
-        Self { kernels, device }
+    pub fn new(
+        kernels: Vec<Box<dyn Processor>>,
+        device: Device,
+        progress: Option<Arc<ProgressState>>,
+    ) -> Self {
+        Self {
+            kernels,
+            device,
+            progress,
+        }
     }
 
-    fn run_item(
+    fn bump_progress(progress: &Option<Arc<ProgressState>>) {
+        if let Some(p) = progress {
+            let done = p.done.fetch_add(1, Ordering::Relaxed) + 1;
+            if done % 128 == 0 || done >= p.total || done == 1 {
+                tracing::info!("[pixors] bump_progress: done={} total={}", done, p.total);
+                let _ = p.tx.try_send(PipelineEvent::Progress {
+                    done,
+                    total: p.total,
+                });
+            }
+        }
+    }
+
+    fn run_item_streaming(
         kernels: &mut [Box<dyn Processor>],
+        device: Device,
+        kernel_idx: usize,
         port: u16,
-        device: Device,
         item: Item,
-    ) -> Result<Vec<RoutedItem>, Error> {
-        let mut current = vec![RoutedItem {
-            port,
-            payload: item,
-        }];
-        for (i, kernel) in kernels.iter_mut().enumerate() {
-            let mut next = Vec::new();
-            for routed_item in current {
-                let mut emit = Emitter::new();
-                let p = if i == 0 { routed_item.port } else { 0 };
-                let ctx = ProcessorContext {
-                    port: p,
-                    device,
-                    emit: &mut emit,
-                };
-                kernel.process(ctx, routed_item.payload)?;
-                next.extend(emit.into_items());
-            }
-            current = next;
+        outputs: &[(ItemSender, u16, u16)],
+        progress: &Option<Arc<ProgressState>>,
+    ) -> Result<(), Error> {
+        if kernel_idx >= kernels.len() {
+            send_to_all(outputs, vec![RoutedItem { port, payload: item }]);
+            return Ok(());
         }
-        Ok(current)
+
+        let mut emit = Emitter::new();
+        let p = if kernel_idx == 0 { port } else { 0 };
+        let ctx = ProcessorContext {
+            port: p,
+            device,
+            emit: &mut emit,
+        };
+
+        Self::bump_progress(progress);
+        kernels[kernel_idx].process(ctx, item)?;
+        let items = emit.into_items();
+
+        for next_item in items {
+            Self::run_item_streaming(
+                kernels,
+                device,
+                kernel_idx + 1,
+                next_item.port,
+                next_item.payload,
+                outputs,
+                progress,
+            )?;
+        }
+
+        Ok(())
     }
 
-    fn run_finish(
+    fn run_finish_streaming(
         kernels: &mut [Box<dyn Processor>],
         device: Device,
-    ) -> Result<Vec<RoutedItem>, Error> {
-        let mut all_outputs: Vec<RoutedItem> = Vec::new();
-        let n = kernels.len();
-        for i in 0..n {
-            let mut emit = Emitter::new();
-            let ctx = ProcessorContext {
-                port: 0,
-                device,
-                emit: &mut emit,
-            };
-            kernels[i].finish(ctx)?;
-            let items = emit.into_items();
-            if i + 1 < n {
-                for routed_item in items {
-                    let outputs =
-                        Self::run_item(&mut kernels[i + 1..], 0, device, routed_item.payload)?;
-                    all_outputs.extend(outputs);
-                }
-            } else {
-                all_outputs.extend(items);
-            }
+        kernel_idx: usize,
+        outputs: &[(ItemSender, u16, u16)],
+        progress: &Option<Arc<ProgressState>>,
+    ) -> Result<(), Error> {
+        if kernel_idx >= kernels.len() {
+            return Ok(());
         }
-        Ok(all_outputs)
+
+        let mut emit = Emitter::new();
+        let ctx = ProcessorContext {
+            port: 0,
+            device,
+            emit: &mut emit,
+        };
+
+        kernels[kernel_idx].finish(ctx)?;
+        let items = emit.into_items();
+
+        for next_item in items {
+            Self::run_item_streaming(
+                kernels,
+                device,
+                kernel_idx + 1,
+                next_item.port,
+                next_item.payload,
+                outputs,
+                progress,
+            )?;
+        }
+
+        Self::run_finish_streaming(kernels, device, kernel_idx + 1, outputs, progress)?;
+
+        Ok(())
     }
 }
 
@@ -79,6 +135,7 @@ impl Runner for ChainRunner {
         inputs: Vec<ItemReceiver>,
         outputs: Vec<(ItemSender, u16, u16)>,
     ) -> Result<(), Error> {
+        let progress = self.progress.clone();
         let kernels = &mut self.kernels;
         let device = self.device;
 
@@ -93,22 +150,25 @@ impl Runner for ChainRunner {
                 PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
                 Buffer::cpu(vec![]),
             ));
-            let items = ChainRunner::run_item(kernels, 0, device, dummy)?;
-            send_to_all(&outputs, items);
-            let finish_items = ChainRunner::run_finish(kernels, device)?;
-            send_to_all(&outputs, finish_items);
+            Self::run_item_streaming(kernels, device, 0, 0, dummy, &outputs, &progress)?;
+            Self::run_finish_streaming(kernels, device, 0, &outputs, &progress)?;
         } else {
             let recv = &inputs[0];
             loop {
                 match recv.recv() {
                     Ok(Some(routed)) => {
-                        let items =
-                            ChainRunner::run_item(kernels, routed.port, device, routed.payload)?;
-                        send_to_all(&outputs, items);
+                        Self::run_item_streaming(
+                            kernels,
+                            device,
+                            0,
+                            routed.port,
+                            routed.payload,
+                            &outputs,
+                            &progress,
+                        )?;
                     }
                     Ok(None) | Err(_) => {
-                        let finish_items = ChainRunner::run_finish(kernels, device)?;
-                        send_to_all(&outputs, finish_items);
+                        Self::run_finish_streaming(kernels, device, 0, &outputs, &progress)?;
                         break;
                     }
                 }

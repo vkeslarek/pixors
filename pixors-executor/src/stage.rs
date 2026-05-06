@@ -174,6 +174,14 @@ pub trait Stage {
     fn processor(&self) -> Option<Box<dyn Processor>> {
         None
     }
+    /// How many items this stage emits per item received (1.0 = passthrough).
+    fn work_multiplier(&self) -> f64 {
+        1.0
+    }
+    /// How many items a source stage emits total (0 for non-sources).
+    fn source_items(&self) -> usize {
+        0
+    }
 }
 
 // ── Enum dispatch macro ────────────────────────────────────────────────────────
@@ -196,6 +204,12 @@ macro_rules! delegate_stage {
             }
             fn processor(&self) -> Option<Box<dyn $crate::stage::Processor>> {
                 match self { $(Self::$variant(n) => n.processor()),+ }
+            }
+            fn work_multiplier(&self) -> f64 {
+                match self { $(Self::$variant(n) => n.work_multiplier()),+ }
+            }
+            fn source_items(&self) -> usize {
+                match self { $(Self::$variant(n) => n.source_items()),+ }
             }
         }
     };

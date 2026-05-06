@@ -59,12 +59,14 @@ impl Stage for CacheWriter {
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(CacheWriterProcessor {
             cache_dir: self.cache_dir.clone(),
+            use_compression: false,
         }))
     }
 }
 
 pub struct CacheWriterProcessor {
     cache_dir: PathBuf,
+    use_compression: bool,
 }
 
 impl Processor for CacheWriterProcessor {
@@ -98,7 +100,14 @@ impl Processor for CacheWriterProcessor {
         let dir = self.cache_dir.join(format!("mip_{mip}"));
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(format!("tile_{mip}_{tx}_{ty}.raw"));
-        std::fs::write(&path, data)?;
+        
+        let data_to_write = if self.use_compression {
+            lz4_flex::compress_prepend_size(data)
+        } else {
+            data.to_vec()
+        };
+        
+        std::fs::write(&path, &data_to_write)?;
         tracing::debug!(
             "[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {}×{} to {}",
             w,

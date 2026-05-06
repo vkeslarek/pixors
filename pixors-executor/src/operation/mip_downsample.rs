@@ -75,6 +75,9 @@ impl Stage for MipDownsample {
             self.tile_size,
         )))
     }
+    fn work_multiplier(&self) -> f64 {
+        1.33
+    }
 }
 
 // ── Runner ──────────────────────────────────────────────────────────────────

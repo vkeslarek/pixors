@@ -1,7 +1,7 @@
 use iced::widget::{button, container, row, text};
-use iced::{Background, Border, Color, Element, Length, Shadow};
+use iced::{Background, Border, Color, Element, Length};
 
-use iced_aw::menu::{self, Item, Menu};
+use iced_aw::menu::{self, Menu};
 use iced_aw::style::menu_bar::primary;
 use iced_aw::style::status::Status;
 use iced_aw::{menu_bar, menu_items};
