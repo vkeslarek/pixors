@@ -14,15 +14,20 @@ pub fn detect_color_space(info: &png::Info) -> ColorSpace {
         let primaries = match cicp.color_primaries {
             1 => Some(RgbPrimaries::Bt709),
             9 => Some(RgbPrimaries::Bt2020),
+            10 => Some(RgbPrimaries::Adobe1998),
             11 => Some(RgbPrimaries::P3),
+            12 => Some(RgbPrimaries::ProPhoto),
             _ => None,
         };
         let transfer = match cicp.transfer_function {
-            1 => Some(TransferFn::Rec709Gamma),
+            1 | 6 | 14 | 15 => Some(TransferFn::Rec709Gamma),
+            2 | 3 => Some(TransferFn::Gamma22),
+            4 | 5 => Some(TransferFn::Gamma24),
+            7 | 11 => Some(TransferFn::SrgbGamma),
+            8 => Some(TransferFn::Linear),
             13 => Some(TransferFn::SrgbGamma),
-            14 => Some(TransferFn::Gamma22),
-            15 => Some(TransferFn::Gamma24),
-            16 => Some(TransferFn::ProPhotoGamma),
+            16 => Some(TransferFn::Pq),
+            17 | 18 => Some(TransferFn::Hlg),
             _ => None,
         };
         if primaries.is_some() && transfer.is_some() {

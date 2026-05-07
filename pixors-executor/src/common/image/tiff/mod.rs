@@ -4,7 +4,7 @@ mod stream;
 pub use stream::{tiff_pixel_format, tiff_row_bytes, TiffPageStream};
 pub use tags::{
     count_tiff_pages, detect_tiff_color_space, read_exif_blob, read_extra_samples,
-    read_icc_profile, read_orientation, read_page_name, read_page_offset,
+    read_icc_profile, read_orientation, read_page_name, read_page_offset, read_tag_ascii,
 };
 
 use std::fs::File;
@@ -88,6 +88,22 @@ impl ImageDecoder for TiffDecoder {
         if let Some(ref icc) = icc_profile {
             metadata.push(Metadata::IccProfile(icc.clone()));
         }
+
+        // ── Standard TIFF tags → Metadata ──────────────────────────────
+        macro_rules! push_tag {
+            ($decoder:expr, $tag:expr, $variant:ident) => {
+                if let Some(v) = read_tag_ascii($decoder, $tag) {
+                    metadata.push(Metadata::$variant(v));
+                }
+            };
+        }
+        push_tag!(&mut decoder, tiff::tags::Tag::Make, Make);
+        push_tag!(&mut decoder, tiff::tags::Tag::Model, Model);
+        push_tag!(&mut decoder, tiff::tags::Tag::Software, Software);
+        push_tag!(&mut decoder, tiff::tags::Tag::DateTime, DateTime);
+        push_tag!(&mut decoder, tiff::tags::Tag::Artist, Artist);
+        push_tag!(&mut decoder, tiff::tags::Tag::Copyright, Copyright);
+        push_tag!(&mut decoder, tiff::tags::Tag::ImageDescription, Description);
 
         // ── EXIF extraction ────────────────────────────────────────────
         if let Some(exif_bytes) = read_exif_blob(&mut decoder)

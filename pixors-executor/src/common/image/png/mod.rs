@@ -103,6 +103,37 @@ impl ImageDecoder for PngDecoder {
             metadata.push(Metadata::IccProfile(icc.clone()));
         }
 
+        // ── HDR metadata (mDCV, cLLi) ────────────────────────────────
+        if let Some(ref mdcv) = info.mastering_display_color_volume {
+            metadata.push(Metadata::MasteringDisplayLuminance {
+                min: mdcv.min_luminance as f64,
+                max: mdcv.max_luminance as f64,
+            });
+        }
+        if let Some(ref clli) = info.content_light_level {
+            metadata.push(Metadata::ContentLightLevel {
+                max_fall: clli.max_frame_average_light_level as f64,
+                max_cll: clli.max_content_light_level as f64,
+            });
+        }
+
+        // ── sBIT / bKGD ───────────────────────────────────────────────
+        if let Some(ref sbit) = info.sbit {
+            let vals: Vec<String> = sbit.iter().map(|b| b.to_string()).collect();
+            metadata.push(Metadata::Custom {
+                key: "SignificantBits".into(),
+                value: vals.join(", "),
+            });
+        }
+        if let Some(ref bkgd) = info.bkgd
+            && bkgd.len() >= 3
+        {
+            metadata.push(Metadata::Custom {
+                key: "BackgroundColor".into(),
+                value: format!("r:{} g:{} b:{}", bkgd[0], bkgd[1], bkgd[2]),
+            });
+        }
+
         let bit_depth = match info.bit_depth {
             png::BitDepth::One => 1,
             png::BitDepth::Two => 2,

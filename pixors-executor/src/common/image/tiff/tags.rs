@@ -129,3 +129,11 @@ pub fn read_icc_profile(
         .ok()
         .filter(|v| !v.is_empty())
 }
+
+/// Read an ASCII string tag.
+pub fn read_tag_ascii(
+    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
+    tag: tiff::tags::Tag,
+) -> Option<String> {
+    decoder.get_tag_ascii_string(tag).ok()
+}
