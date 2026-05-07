@@ -191,20 +191,32 @@ impl ImageDecoder for PngDecoder {
     }
 
     fn open_stream(&self, path: &Path, page: usize) -> Result<Box<dyn PageStream>, Error> {
-        if page != 0 {
-            return Err(Error::invalid_param(format!(
-                "PNG page {page} — APNG frame reading not yet implemented"
-            )));
-        }
         let file = File::open(path).map_err(Error::Io)?;
         let mut decoder = png::Decoder::new(BufReader::new(file));
         decoder.set_transformations(png::Transformations::EXPAND);
-        let reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
-        let info = reader.info();
+        let mut reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
 
+        // Skip preceding APNG frames by reading and discarding their pixel data.
+        for i in 0..page {
+            let buf_size = reader.output_buffer_size().unwrap_or(0);
+            let mut discard = vec![0u8; buf_size];
+            reader
+                .next_frame(&mut discard)
+                .map_err(|e| Error::Png(format!("APNG skip frame {i}: {e}")))?;
+        }
+
+        let info = reader.info();
         let color_space = detect_color_space(info);
         let is_16bit = matches!(info.bit_depth, png::BitDepth::Sixteen);
         let pixel_format = png_pixel_format(info, is_16bit);
+        let bit_depth = match info.bit_depth {
+            png::BitDepth::One => 1,
+            png::BitDepth::Two => 2,
+            png::BitDepth::Four => 4,
+            png::BitDepth::Eight => 8,
+            png::BitDepth::Sixteen => 16,
+        };
+        let color_type = info.color_type;
         let width = info.width;
         let height = info.height;
 
@@ -213,11 +225,16 @@ impl ImageDecoder for PngDecoder {
             .and_then(|s| s.to_str())
             .unwrap_or("PNG")
             .to_string();
+        let frame_name = if page == 0 {
+            name.clone()
+        } else {
+            format!("{name} frame {page}")
+        };
 
         Ok(Box::new(PngPageStream::new(
             reader,
             PageInfo {
-                name,
+                name: frame_name,
                 color_space,
                 alpha_policy: AlphaPolicy::Straight,
                 offset: PixelOffset::default(),
@@ -231,6 +248,8 @@ impl ImageDecoder for PngDecoder {
             pixel_format,
             color_space,
             is_16bit,
+            bit_depth,
+            color_type,
             width,
             height,
         )))

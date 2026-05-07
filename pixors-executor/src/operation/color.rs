@@ -137,48 +137,56 @@ struct GpuKernelSpec {
 
 fn precision(fmt: PixelFormat) -> Option<Precision> {
     match fmt {
-        PixelFormat::Rgba8  | PixelFormat::Rgb8 |
-        PixelFormat::Gray8  | PixelFormat::GrayA8 |
-        PixelFormat::Cmyk8 | PixelFormat::CmykA8 | PixelFormat::YCbCr8 => Some(Precision::U8),
-        PixelFormat::Rgba16 | PixelFormat::Rgb16   => Some(Precision::U16),
-        PixelFormat::RgbaF16| PixelFormat::RgbF16  => Some(Precision::F16),
-        PixelFormat::RgbaF32| PixelFormat::RgbF32  => Some(Precision::F32),
+        PixelFormat::Rgba8 | PixelFormat::Rgb8 | PixelFormat::Gray8 | PixelFormat::GrayA8
+        | PixelFormat::Cmyk8 | PixelFormat::CmykA8 | PixelFormat::YCbCr8
+        | PixelFormat::Lab8 => Some(Precision::U8),
+
+        PixelFormat::Rgba16 | PixelFormat::Rgb16 | PixelFormat::Gray16 | PixelFormat::GrayA16
+        | PixelFormat::Cmyk16 | PixelFormat::CmykA16 | PixelFormat::Lab16 => Some(Precision::U16),
+
+        PixelFormat::RgbaF16 | PixelFormat::RgbF16 | PixelFormat::GrayF16 | PixelFormat::GrayAF16
+        | PixelFormat::CmykF16 | PixelFormat::CmykAF16 | PixelFormat::YCbCrF16 => Some(Precision::F16),
+
+        PixelFormat::RgbaF32 | PixelFormat::RgbF32 | PixelFormat::GrayF32 | PixelFormat::GrayAF32
+        | PixelFormat::CmykF32 | PixelFormat::CmykAF32 | PixelFormat::YCbCrF32 => Some(Precision::F32),
+
         _ => None,
     }
 }
 
 fn channels(fmt: PixelFormat) -> Option<u32> {
     match fmt {
-        PixelFormat::Rgba8 | PixelFormat::Rgba16 |
-        PixelFormat::RgbaF16 | PixelFormat::RgbaF32 => Some(0), // CH_RGBA
-        PixelFormat::Rgb8  | PixelFormat::Rgb16  |
-        PixelFormat::RgbF16  | PixelFormat::RgbF32  |
-        PixelFormat::YCbCr8 => Some(1), // CH_RGB (3-ch interleaved)
-        PixelFormat::Gray8   => Some(2), // CH_GRAY
-        PixelFormat::GrayA8  => Some(3), // CH_GRAYA
-        PixelFormat::Cmyk8 => Some(0), // CH_RGBA (4-ch interleaved)
-        PixelFormat::CmykA8 => Some(4), // CH_CMYKA (5-ch interleaved)
+        // CH_RGBA = 0: 4-ch interleaved (RGBA or CMYK treated as 4-ch)
+        PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::RgbaF16 | PixelFormat::RgbaF32
+        | PixelFormat::Cmyk8 | PixelFormat::Cmyk16 | PixelFormat::CmykF16
+        | PixelFormat::CmykF32 => Some(0),
+
+        // CH_RGB = 1: 3-ch interleaved
+        PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::RgbF16 | PixelFormat::RgbF32
+        | PixelFormat::YCbCr8 | PixelFormat::YCbCrF16 | PixelFormat::YCbCrF32
+        | PixelFormat::Lab8 | PixelFormat::Lab16 => Some(1),
+
+        // CH_GRAY = 2: 1-ch
+        PixelFormat::Gray8 | PixelFormat::Gray16
+        | PixelFormat::GrayF16 | PixelFormat::GrayF32 => Some(2),
+
+        // CH_GRAYA = 3: 2-ch (gray + alpha)
+        PixelFormat::GrayA8 | PixelFormat::GrayA16
+        | PixelFormat::GrayAF16 | PixelFormat::GrayAF32 => Some(3),
+
+        // CH_CMYKA = 4: 5-ch interleaved
+        PixelFormat::CmykA8 | PixelFormat::CmykA16
+        | PixelFormat::CmykAF16 | PixelFormat::CmykAF32 => Some(4),
+
         _ => None,
     }
 }
 
 fn bytes_per_pixel(fmt: PixelFormat) -> Option<u64> {
-    match fmt {
-        PixelFormat::Rgba8   => Some(4),
-        PixelFormat::Rgb8    => Some(3),
-        PixelFormat::Gray8   => Some(1),
-        PixelFormat::GrayA8  => Some(2),
-        PixelFormat::Cmyk8   => Some(4),
-        PixelFormat::CmykA8  => Some(5),
-        PixelFormat::YCbCr8  => Some(3),
-        PixelFormat::Rgba16  => Some(8),
-        PixelFormat::Rgb16   => Some(6),
-        PixelFormat::RgbaF16 => Some(8),
-        PixelFormat::RgbF16  => Some(6),
-        PixelFormat::RgbaF32 => Some(16),
-        PixelFormat::RgbF32  => Some(12),
-        _ => None,
-    }
+    Some(fmt.bytes_per_pixel() as u64).filter(|&b| b > 0 && {
+        // Only return Some for formats already wired through precision()/channels()
+        precision(fmt).is_some() && channels(fmt).is_some()
+    })
 }
 
 impl GpuKernelSpec {
@@ -188,13 +196,25 @@ impl GpuKernelSpec {
         let src_ch   = channels(src_fmt)?;
         let dst_ch   = channels(dst_fmt)?;
 
-        // src_ch == 4 → CH_CMYKA (5-byte stride); needs dedicated decode_extra kernels
+        // src_ch == 4 → CH_CMYKA: needs decode_extra for 5th channel (alpha)
         let entry: &'static str = if src_ch == 4 {
-            match dst_prec {
-                Precision::U8  => "cs_cc_5ch_u8",
-                Precision::U16 => "cs_cc_5ch_u16",
-                Precision::F16 => "cs_cc_5ch_f16",
-                Precision::F32 => "cs_cc_5ch_f32",
+            match (src_prec, dst_prec) {
+                (Precision::U8,  Precision::U8)  => "cs_cc_5ch_u8_u8",
+                (Precision::U8,  Precision::U16) => "cs_cc_5ch_u8_u16",
+                (Precision::U8,  Precision::F16) => "cs_cc_5ch_u8_f16",
+                (Precision::U8,  Precision::F32) => "cs_cc_5ch_u8_f32",
+                (Precision::U16, Precision::U8)  => "cs_cc_5ch_u16_u8",
+                (Precision::U16, Precision::U16) => "cs_cc_5ch_u16_u16",
+                (Precision::U16, Precision::F16) => "cs_cc_5ch_u16_f16",
+                (Precision::U16, Precision::F32) => "cs_cc_5ch_u16_f32",
+                (Precision::F16, Precision::U8)  => "cs_cc_5ch_f16_u8",
+                (Precision::F16, Precision::U16) => "cs_cc_5ch_f16_u16",
+                (Precision::F16, Precision::F16) => "cs_cc_5ch_f16_f16",
+                (Precision::F16, Precision::F32) => "cs_cc_5ch_f16_f32",
+                (Precision::F32, Precision::U8)  => "cs_cc_5ch_f32_u8",
+                (Precision::F32, Precision::U16) => "cs_cc_5ch_f32_u16",
+                (Precision::F32, Precision::F16) => "cs_cc_5ch_f32_f16",
+                (Precision::F32, Precision::F32) => "cs_cc_5ch_f32_f32",
             }
         } else {
             match (src_prec, dst_prec) {

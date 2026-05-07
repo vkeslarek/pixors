@@ -3,9 +3,10 @@ mod stream;
 
 pub use stream::{tiff_pixel_format, tiff_row_bytes, TiffPageStream};
 pub use tags::{
-    count_tiff_pages, detect_tiff_color_space, read_exif_blob, read_extra_samples,
-    read_icc_profile, read_orientation, read_page_name, read_page_offset,
-    read_planar_config, read_tag_ascii,
+    count_tiff_pages, detect_tiff_color_space, read_color_map, read_exif_blob,
+    read_extra_samples, read_icc_profile, read_orientation, read_page_name,
+    read_page_offset, read_planar_config, read_rational_tag, read_tag_ascii,
+    read_white_is_zero, read_ycbcr_subsampling,
 };
 
 use std::fs::File;
@@ -49,14 +50,8 @@ impl ImageDecoder for TiffDecoder {
         let color_space = detect_tiff_color_space(&mut decoder, icc_profile.as_deref());
 
         let dpi = {
-            let xres = decoder
-                .find_tag_unsigned::<u32>(tiff::tags::Tag::XResolution)
-                .ok()
-                .flatten();
-            let yres = decoder
-                .find_tag_unsigned::<u32>(tiff::tags::Tag::YResolution)
-                .ok()
-                .flatten();
+            let xres = read_rational_tag(&mut decoder, tiff::tags::Tag::XResolution);
+            let yres = read_rational_tag(&mut decoder, tiff::tags::Tag::YResolution);
             match (xres, yres) {
                 (Some(x), Some(y)) => {
                     let unit = decoder
@@ -65,7 +60,7 @@ impl ImageDecoder for TiffDecoder {
                         .flatten()
                         .unwrap_or(2);
                     let scale = if unit == 3 { 2.54 } else { 1.0 };
-                    Some(Dpi { x: x as f32 * scale, y: y as f32 * scale })
+                    Some(Dpi { x: x * scale, y: y * scale })
                 }
                 _ => None,
             }
@@ -192,12 +187,23 @@ impl ImageDecoder for TiffDecoder {
         let orientation = read_orientation(&mut decoder);
         let extra = read_extra_samples(&mut decoder);
         let planar = read_planar_config(&mut decoder);
+        let white_is_zero = read_white_is_zero(&mut decoder);
+        let photometric = decoder
+            .find_tag_unsigned::<u32>(tiff::tags::Tag::PhotometricInterpretation)
+            .ok()
+            .flatten();
+        let palette = if matches!(ct, tiff::ColorType::Palette(_)) {
+            read_color_map(&mut decoder)
+        } else {
+            None
+        };
+        let _subsampling = read_ycbcr_subsampling(&mut decoder);
 
         let image_data = decoder
             .read_image()
             .map_err(|e| Error::Tiff(e.to_string()))?;
 
-        let pixel_format = tiff_pixel_format(&image_data, ct);
+        let pixel_format = tiff_pixel_format(&image_data, ct, photometric);
         let has_alpha = matches!(ct, tiff::ColorType::RGBA(..) | tiff::ColorType::GrayA(..) | tiff::ColorType::CMYKA(..))
             || extra.is_some();
         let alpha_policy = match extra {
@@ -216,8 +222,8 @@ impl ImageDecoder for TiffDecoder {
                 blend_mode: BlendMode::Normal,
                 visible: true,
                 orientation,
-                    delay_ms: 0,
-                    dispose: DisposeOp::None,
+                delay_ms: 0,
+                dispose: DisposeOp::None,
             },
             image_data,
             ct,
@@ -225,6 +231,8 @@ impl ImageDecoder for TiffDecoder {
             w,
             h,
             planar,
+            white_is_zero,
+            palette,
         )))
     }
 }

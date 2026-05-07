@@ -76,14 +76,39 @@ void cs_cc_f32_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, F16Code
 [shader("compute")] [numthreads(8, 8, 1)]
 void cs_cc_f32_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, F32Codec>(id); }
 
-// ── 5-channel kernels (CMYKA, etc.) ─────────────────────────────────────────
-// decode_extra reads the 5th byte (alpha); CmykA → RGBA uses generic cc_kernel.
+// ── 5-channel kernels (CMYKA — all src×dst precision combinations) ───────────
+// decode_extra reads the 5th channel (alpha); CmykA → RGBA uses cc_kernel.
+// 16 entries covering (U8/U16/F16/F32) × (U8/U16/F16/F32).
 
 [shader("compute")] [numthreads(8, 8, 1)]
-void cs_cc_5ch_u8 (uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  U8Codec >(id); }
+void cs_cc_5ch_u8_u8  (uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  U8Codec >(id); }
 [shader("compute")] [numthreads(8, 8, 1)]
-void cs_cc_5ch_u16(uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  U16Codec>(id); }
+void cs_cc_5ch_u8_u16 (uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  U16Codec>(id); }
 [shader("compute")] [numthreads(8, 8, 1)]
-void cs_cc_5ch_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  F16Codec>(id); }
+void cs_cc_5ch_u8_f16 (uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  F16Codec>(id); }
 [shader("compute")] [numthreads(8, 8, 1)]
-void cs_cc_5ch_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  F32Codec>(id); }
+void cs_cc_5ch_u8_f32 (uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  F32Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_u16_u8 (uint3 id : SV_DispatchThreadID) { cc_kernel<U16Codec, U8Codec >(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_u16_u16(uint3 id : SV_DispatchThreadID) { cc_kernel<U16Codec, U16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_u16_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<U16Codec, F16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_u16_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<U16Codec, F32Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f16_u8 (uint3 id : SV_DispatchThreadID) { cc_kernel<F16Codec, U8Codec >(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f16_u16(uint3 id : SV_DispatchThreadID) { cc_kernel<F16Codec, U16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f16_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<F16Codec, F16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f16_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<F16Codec, F32Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f32_u8 (uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, U8Codec >(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f32_u16(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, U16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f32_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, F16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f32_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, F32Codec>(id); }

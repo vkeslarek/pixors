@@ -1,4 +1,4 @@
-use crate::common::color::primaries::RgbPrimaries;
+use crate::common::color::primaries::{RgbPrimaries, WhitePoint};
 use crate::common::color::space::ColorSpace;
 use crate::common::color::transfer::TransferFn;
 
@@ -9,29 +9,31 @@ use ::png as png;
 pub fn detect_color_space(info: &png::Info) -> ColorSpace {
     use crate::common::color::detect;
 
-    // Priority 1: cICP chunk (new, explicit)
+    // Priority 1: cICP chunk (ITU-T H.273 / ISO 23091-2)
     if let Some(cicp) = info.coding_independent_code_points {
-        let primaries = match cicp.color_primaries {
-            1 => Some(RgbPrimaries::Bt709),
-            9 => Some(RgbPrimaries::Bt2020),
-            10 => Some(RgbPrimaries::Adobe1998),
-            11 => Some(RgbPrimaries::P3),
-            12 => Some(RgbPrimaries::ProPhoto),
-            _ => None,
+        // (primaries, white_point) per H.273 Table 2
+        let primaries: Option<(RgbPrimaries, WhitePoint)> = match cicp.color_primaries {
+            1  => Some((RgbPrimaries::Bt709,   WhitePoint::D65)),
+            9  => Some((RgbPrimaries::Bt2020,  WhitePoint::D65)),
+            // 10 = XYZ — no RGB primaries, skip
+            11 => Some((RgbPrimaries::P3,      WhitePoint::P3Dci)), // DCI P3
+            12 => Some((RgbPrimaries::P3,      WhitePoint::D65)),   // Display P3
+            _  => None,
         };
         let transfer = match cicp.transfer_function {
             1 | 6 | 14 | 15 => Some(TransferFn::Rec709Gamma),
-            2 | 3 => Some(TransferFn::Gamma22),
-            4 | 5 => Some(TransferFn::Gamma24),
+            2 | 3  => Some(TransferFn::Gamma22),
+            4      => Some(TransferFn::Gamma22),  // BT.470M ~2.2
+            5      => Some(TransferFn::Gamma26),  // BT.470BG ~2.8; Gamma26 is closest
             7 | 11 => Some(TransferFn::SrgbGamma),
-            8 => Some(TransferFn::Linear),
-            13 => Some(TransferFn::SrgbGamma),
-            16 => Some(TransferFn::Pq),
+            8      => Some(TransferFn::Linear),
+            13     => Some(TransferFn::SrgbGamma),
+            16     => Some(TransferFn::Pq),
             17 | 18 => Some(TransferFn::Hlg),
             _ => None,
         };
-        if primaries.is_some() && transfer.is_some() {
-            return ColorSpace::with_optional_params(primaries, None, transfer);
+        if let (Some((prim, wp)), Some(tf)) = (primaries, transfer) {
+            return ColorSpace::new(prim, wp, tf);
         }
     }
 

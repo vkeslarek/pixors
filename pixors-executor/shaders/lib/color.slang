@@ -69,7 +69,7 @@ enum AlphaPolicy : uint { Straight = 0, PremultiplyOnPack = 1, OpaqueDrop = 2 }
 // ── Uniform parameters ───────────────────────────────────────────────────────
 
 /// Color model transform (must match Rust `ColorModelTransform`).
-enum ColorModel : uint { None = 0, CmykToRgb = 1, CmykAToRgb = 2, YCbCrToRgb = 3 }
+enum ColorModel : uint { None = 0, CmykToRgb = 1, CmykAToRgb = 2, YCbCrToRgb = 3, LabToRgb = 4 }
 
 
 struct ColorConvertParams
@@ -151,6 +151,80 @@ void _write_u16(RWStructuredBuffer<uint> buf, uint bo, uint v)
     } else {
         _write_byte(buf, bo,      v & 0xFFu);
         _write_byte(buf, bo + 1u, (v >> 8u) & 0xFFu);
+    }
+}
+
+// ── F16 Software Decoder/Encoder ─────────────────────────────────────────────
+// Manual bit-twiddling avoids SPIR-V OpTypeInt 16 emitting,
+// which satisfies Naga/WGPU strict validation natively without shaderInt16.
+
+float _half_to_float(uint h) {
+    uint s = (h & 0x8000u) << 16u;
+    uint em = h & 0x7FFFu;
+    if (em == 0u) return asfloat(s);
+
+    uint e = em >> 10u;
+    uint m = em & 0x03FFu;
+
+    if (e == 0u) {
+        m <<= 1u;
+        e = 0u;
+        while ((m & 0x0400u) == 0u) { m <<= 1u; e++; }
+        m &= 0x03FFu;
+        return asfloat(s | ((127u - 15u - e) << 23u) | (m << 13u));
+    }
+    if (e == 31u) return asfloat(s | 0x7F800000u | (m << 13u));
+    return asfloat(s | ((e - 15u + 127u) << 23u) | (m << 13u));
+}
+
+uint _float_to_half(float f) {
+    uint u = asuint(f);
+    uint s = (u >> 16u) & 0x8000u;
+    uint e = (u >> 23u) & 0xFFu;
+    uint m = u & 0x007FFFFFu;
+
+    if (e == 0u) return s;
+    if (e == 255u) {
+        if (m == 0u) return s | 0x7C00u;
+        return s | 0x7C00u | (m >> 13u);
+    }
+
+    int i = int(e) - 127 + 15;
+    if (i <= 0) {
+        uint sub_m = (0x00800000u | m) >> uint(1 - i);
+        return s | (sub_m >> 13u);
+    }
+    if (i >= 31) return s | 0x7C00u;
+    return s | (uint(i) << 10u) | (m >> 13u);
+}
+
+/// Read one f16 from byte offset `bo` (handles any alignment).
+float _f16_at(RWStructuredBuffer<uint> buf, uint bo)
+{
+    uint wi  = bo / 4u;
+    uint rem = bo % 4u;
+    uint w   = buf[wi];
+    uint val;
+    if      (rem == 0u) val = w & 0xFFFFu;
+    else if (rem == 2u) val = (w >> 16u) & 0xFFFFu;
+    else                val = ((w >> (rem * 8u)) | (buf[wi + 1u] << (32u - rem * 8u))) & 0xFFFFu;
+    return _half_to_float(val);
+}
+
+/// Write one f16 to byte offset `bo` (handles any alignment).
+void _write_f16(RWStructuredBuffer<uint> buf, uint bo, float v)
+{
+    uint h   = _float_to_half(v);
+    uint rem = bo % 4u;
+    if (rem == 0u) {
+        uint old = buf[bo / 4u];
+        buf[bo / 4u] = (old & 0xFFFF0000u) | (h & 0xFFFFu);
+    } else if (rem == 2u) {
+        uint old = buf[bo / 4u];
+        buf[bo / 4u] = (old & 0x0000FFFFu) | (h << 16u);
+    } else {
+        _write_byte(buf, bo,      h & 0xFFu);
+        _write_byte(buf, bo + 1u, (h >> 8u) & 0xFFu);
     }
 }
 
@@ -240,6 +314,24 @@ struct U16Codec : IPixelCodec
 {
     static float4 decode(RWStructuredBuffer<uint> buf, uint idx, uint ch)
     {
+        if (ch == ChannelLayout::Gray) {
+            float v = _u16_norm(buf, idx * 2u);
+            return float4(v, v, v, 1.0);
+        }
+        if (ch == ChannelLayout::GrayA) {
+            float v = _u16_norm(buf, idx * 4u);
+            float a = _u16_norm(buf, idx * 4u + 2u);
+            return float4(v, v, v, a);
+        }
+        if (ch == ChannelLayout::CmykA) {
+            uint b = idx * 10u;
+            return float4(
+                _u16_norm(buf, b),
+                _u16_norm(buf, b + 2u),
+                _u16_norm(buf, b + 4u),
+                _u16_norm(buf, b + 6u)
+            );
+        }
         uint b = idx * (ch == ChannelLayout::Rgba ? 8u : 6u);
         return float4(
             _u16_norm(buf, b),
@@ -251,11 +343,24 @@ struct U16Codec : IPixelCodec
 
     static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
     {
+        if (ch == ChannelLayout::CmykA)
+            return _u16_norm(buf, idx * 10u + 8u);
         return 1.0;
     }
 
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
     {
+        if (ch == ChannelLayout::Gray) {
+            float v = saturate(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            _write_u16(buf, idx * 2u, uint(v * 65535.0 + 0.5));
+            return;
+        }
+        if (ch == ChannelLayout::GrayA) {
+            float v = saturate(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            _write_u16(buf, idx * 4u,      uint(v             * 65535.0 + 0.5));
+            _write_u16(buf, idx * 4u + 2u, uint(saturate(c.a) * 65535.0 + 0.5));
+            return;
+        }
         uint b = idx * (ch == ChannelLayout::Rgba ? 8u : 6u);
         _write_u16(buf, b,      uint(saturate(c.r) * 65535.0 + 0.5));
         _write_u16(buf, b + 2u, uint(saturate(c.g) * 65535.0 + 0.5));
@@ -265,79 +370,68 @@ struct U16Codec : IPixelCodec
     }
 };
 
-// ── F16 Software Decoder/Encoder ─────────────────────────────────────────────
-// Manual bit-twiddling avoids SPIR-V OpTypeInt 16 emitting, 
-// which satisfies Naga/WGPU strict validation natively without shaderInt16.
-
-float _half_to_float(uint h) {
-    uint s = (h & 0x8000u) << 16u;
-    uint em = h & 0x7FFFu;
-    if (em == 0u) return asfloat(s);
-    
-    uint e = em >> 10u;
-    uint m = em & 0x03FFu;
-    
-    if (e == 0u) {
-        m <<= 1u;
-        e = 0u;
-        while ((m & 0x0400u) == 0u) { m <<= 1u; e++; }
-        m &= 0x03FFu;
-        return asfloat(s | ((127u - 15u - e) << 23u) | (m << 13u));
-    }
-    if (e == 31u) return asfloat(s | 0x7F800000u | (m << 13u));
-    return asfloat(s | ((e - 15u + 127u) << 23u) | (m << 13u));
-}
-
-uint _float_to_half(float f) {
-    uint u = asuint(f);
-    uint s = (u >> 16u) & 0x8000u;
-    uint e = (u >> 23u) & 0xFFu;
-    uint m = u & 0x007FFFFFu;
-    
-    if (e == 0u) return s;
-    if (e == 255u) {
-        if (m == 0u) return s | 0x7C00u;
-        return s | 0x7C00u | (m >> 13u);
-    }
-    
-    int i = int(e) - 127 + 15;
-    if (i <= 0) {
-        uint sub_m = (0x00800000u | m) >> uint(1 - i);
-        return s | (sub_m >> 13u);
-    }
-    if (i >= 31) return s | 0x7C00u;
-    return s | (uint(i) << 10u) | (m >> 13u);
-}
-
 // ── F16Codec ─────────────────────────────────────────────────────────────────
-// F16 is stored as packed pairs in uint32: { lo = ch[0], hi = ch[1] }
+// Uses _f16_at / _write_f16 for correct byte-level access at any alignment.
 
 struct F16Codec : IPixelCodec
 {
     static float4 decode(RWStructuredBuffer<uint> buf, uint idx, uint ch)
     {
-        uint b  = idx * (ch == ChannelLayout::Rgba ? 8u : 6u);
-        uint w0 = buf[b / 4u];
-        uint w1 = buf[b / 4u + 1u];
+        if (ch == ChannelLayout::Gray) {
+            float v = _f16_at(buf, idx * 2u);
+            return float4(v, v, v, 1.0);
+        }
+        if (ch == ChannelLayout::GrayA) {
+            float v = _f16_at(buf, idx * 4u);
+            float a = _f16_at(buf, idx * 4u + 2u);
+            return float4(v, v, v, a);
+        }
+        if (ch == ChannelLayout::CmykA) {
+            uint b = idx * 10u;
+            return float4(
+                _f16_at(buf, b),
+                _f16_at(buf, b + 2u),
+                _f16_at(buf, b + 4u),
+                _f16_at(buf, b + 6u)
+            );
+        }
+        uint stride = (ch == ChannelLayout::Rgba) ? 8u : 6u;
+        uint b = idx * stride;
         return float4(
-            _half_to_float(w0 & 0xFFFFu),
-            _half_to_float(w0 >> 16u),
-            _half_to_float(w1 & 0xFFFFu),
-            (ch == ChannelLayout::Rgba) ? _half_to_float(w1 >> 16u) : 1.0
+            _f16_at(buf, b),
+            _f16_at(buf, b + 2u),
+            _f16_at(buf, b + 4u),
+            (ch == ChannelLayout::Rgba) ? _f16_at(buf, b + 6u) : 1.0
         );
     }
 
     static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
     {
+        if (ch == ChannelLayout::CmykA)
+            return _f16_at(buf, idx * 10u + 8u);
         return 1.0;
     }
 
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
     {
-        uint b  = idx * (ch == ChannelLayout::Rgba ? 8u : 6u);
-        uint wi = b / 4u;
-        buf[wi]      = (_float_to_half(c.r) & 0xFFFFu) | (_float_to_half(c.g) << 16u);
-        buf[wi + 1u] = (_float_to_half(c.b) & 0xFFFFu) | ((ch == ChannelLayout::Rgba ? _float_to_half(c.a) : 0u) << 16u);
+        if (ch == ChannelLayout::Gray) {
+            float v = saturate(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            _write_f16(buf, idx * 2u, v);
+            return;
+        }
+        if (ch == ChannelLayout::GrayA) {
+            float v = saturate(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            _write_f16(buf, idx * 4u,      v);
+            _write_f16(buf, idx * 4u + 2u, saturate(c.a));
+            return;
+        }
+        uint stride = (ch == ChannelLayout::Rgba) ? 8u : 6u;
+        uint b = idx * stride;
+        _write_f16(buf, b,      c.r);
+        _write_f16(buf, b + 2u, c.g);
+        _write_f16(buf, b + 4u, c.b);
+        if (ch == ChannelLayout::Rgba)
+            _write_f16(buf, b + 6u, c.a);
     }
 };
 
@@ -347,6 +441,24 @@ struct F32Codec : IPixelCodec
 {
     static float4 decode(RWStructuredBuffer<uint> buf, uint idx, uint ch)
     {
+        if (ch == ChannelLayout::Gray) {
+            float v = asfloat(buf[idx]);
+            return float4(v, v, v, 1.0);
+        }
+        if (ch == ChannelLayout::GrayA) {
+            float v = asfloat(buf[idx * 2u]);
+            float a = asfloat(buf[idx * 2u + 1u]);
+            return float4(v, v, v, a);
+        }
+        if (ch == ChannelLayout::CmykA) {
+            uint wi = idx * 5u;
+            return float4(
+                asfloat(buf[wi]),
+                asfloat(buf[wi + 1u]),
+                asfloat(buf[wi + 2u]),
+                asfloat(buf[wi + 3u])
+            );
+        }
         uint stride = (ch == ChannelLayout::Rgba) ? 4u : 3u;
         uint wi     = idx * stride;
         return float4(
@@ -359,11 +471,24 @@ struct F32Codec : IPixelCodec
 
     static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
     {
+        if (ch == ChannelLayout::CmykA)
+            return asfloat(buf[idx * 5u + 4u]);
         return 1.0;
     }
 
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
     {
+        if (ch == ChannelLayout::Gray) {
+            float v = saturate(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            buf[idx] = asuint(v);
+            return;
+        }
+        if (ch == ChannelLayout::GrayA) {
+            float v = saturate(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            buf[idx * 2u]      = asuint(v);
+            buf[idx * 2u + 1u] = asuint(saturate(c.a));
+            return;
+        }
         uint stride = (ch == ChannelLayout::Rgba) ? 4u : 3u;
         uint wi     = idx * stride;
         buf[wi]      = asuint(c.r);
@@ -378,7 +503,7 @@ struct F32Codec : IPixelCodec
 /// `extra_alpha`: 5th channel for CmykA (from decode_extra), 1.0 otherwise.
 float4 color_convert(float4 raw, float extra_alpha, ColorConvertParams p)
 {
-    // ── Model decode (CMYK → RGB, YCbCr → RGB) ─────────────────────────
+    // ── Model decode (CMYK → RGB, YCbCr → RGB, Lab → linear sRGB) ─────────
     float r = raw.r;
     float g = raw.g;
     float b = raw.b;
@@ -397,6 +522,29 @@ float4 color_convert(float4 raw, float extra_alpha, ColorConvertParams p)
         g = raw.r - 0.344136 * cb - 0.714136 * cr;
         b = raw.r + 1.772 * cb;
         // a stays as raw.a (which is 1.0 from decoder for 3ch YCbCr)
+    } else if (p.model_transform == ColorModel::LabToRgb) {
+        // raw: L_norm=[0,1], a_norm=[-1,1], b_norm=[-1,1]
+        // Encoding: L*=100*L_norm, a*=128*a_norm, b*=128*b_norm
+        float L_star = raw.r * 100.0;
+        float a_star = raw.g * 128.0;
+        float b_star = raw.b * 128.0;
+        // Lab → XYZ (D50 white: Xn=0.96422, Yn=1.0, Zn=0.82521)
+        float fy = (L_star + 16.0) / 116.0;
+        float fx = a_star / 500.0 + fy;
+        float fz = fy - b_star / 200.0;
+        const float DELTA  = 6.0 / 29.0;
+        const float DELTA2 = 3.0 * DELTA * DELTA;
+        float x = 0.96422 * (fx > DELTA ? fx*fx*fx : DELTA2*(fx - 4.0/29.0));
+        float y =            (fy > DELTA ? fy*fy*fy : DELTA2*(fy - 4.0/29.0));
+        float z = 0.82521 * (fz > DELTA ? fz*fz*fz : DELTA2*(fz - 4.0/29.0));
+        // D50 XYZ → linear sRGB coordinates (Bradford D50→D65 + D65→sRGB combined).
+        // No clamping: out-of-sRGB-gamut Lab values stay negative/above-1 so the
+        // downstream primary matrix (sRGB→dst) can map them correctly. This is
+        // mathematically equivalent to Lab→XYZ→dst with no intermediate loss.
+        r =  3.1338561*x - 1.6168667*y - 0.4906146*z;
+        g = -0.9787684*x + 1.9161415*y + 0.0334540*z;
+        b =  0.0719453*x - 0.2289914*y + 1.4052427*z;
+        a = 1.0;
     }
 
     // OETF → linear light
