@@ -3,8 +3,8 @@ mod stream;
 
 pub use stream::{tiff_pixel_format, tiff_row_bytes, TiffPageStream};
 pub use tags::{
-    count_tiff_pages, detect_tiff_color_space, read_orientation, read_page_name,
-    read_page_offset,
+    count_tiff_pages, detect_tiff_color_space, read_exif_blob, read_extra_samples,
+    read_icc_profile, read_orientation, read_page_name, read_page_offset,
 };
 
 use std::fs::File;
@@ -12,6 +12,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 use ::tiff as tiff;
+use ::exif as exif_crate;
 
 use crate::error::Error;
 use crate::common::pixel::AlphaPolicy;
@@ -43,7 +44,8 @@ impl ImageDecoder for TiffDecoder {
             .colortype()
             .map_err(|e| Error::Tiff(e.to_string()))?;
         let bit_depth = ct.bit_depth();
-        let color_space = detect_tiff_color_space(&mut decoder);
+        let icc_profile = read_icc_profile(&mut decoder);
+        let color_space = detect_tiff_color_space(&mut decoder, icc_profile.as_deref());
 
         let dpi = {
             let xres = decoder
@@ -67,23 +69,31 @@ impl ImageDecoder for TiffDecoder {
                 _ => None,
             }
         };
-        let icc_profile = decoder
-            .get_tag_u8_vec(tiff::tags::Tag::IccProfile)
-            .ok();
 
         let mut metadata = Vec::new();
         metadata.push(Metadata::ImageWidth(w));
         metadata.push(Metadata::ImageHeight(h));
-        metadata.push(Metadata::PhotometricInterpretation(2));
+        let photometric = decoder
+            .find_tag_unsigned::<u32>(tiff::tags::Tag::PhotometricInterpretation)
+            .ok()
+            .flatten();
+        if let Some(pm) = photometric {
+            metadata.push(Metadata::PhotometricInterpretation(pm as u16));
+        }
 
         if let Some(ref dpi_val) = dpi {
             metadata.push(Metadata::Dpi { x: dpi_val.x, y: dpi_val.y });
         }
 
-        if let Some(ref icc) = icc_profile
-            && !icc.is_empty()
-        {
+        if let Some(ref icc) = icc_profile {
             metadata.push(Metadata::IccProfile(icc.clone()));
+        }
+
+        // ── EXIF extraction ────────────────────────────────────────────
+        if let Some(exif_bytes) = read_exif_blob(&mut decoder)
+            && let Ok((exif_fields, _le)) = exif_crate::parse_exif(&exif_bytes)
+        {
+            metadata.extend(super::exif::from_exif_fields(&exif_fields));
         }
 
         let first_orientation = read_orientation(&mut decoder);
@@ -102,21 +112,23 @@ impl ImageDecoder for TiffDecoder {
             let pct = decoder
                 .colortype()
                 .map_err(|e| Error::Tiff(e.to_string()))?;
-            let pcs = detect_tiff_color_space(&mut decoder);
+            let pcs = detect_tiff_color_space(&mut decoder, icc_profile.as_deref());
             let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", i + 1));
             let (ox, oy) = read_page_offset(&mut decoder, pw, ph);
             let orientation = read_orientation(&mut decoder);
+            let extra = read_extra_samples(&mut decoder);
 
-            let is_alpha =
-                matches!(pct, tiff::ColorType::RGBA(..) | tiff::ColorType::GrayA(..));
+            let has_alpha = matches!(pct, tiff::ColorType::RGBA(..) | tiff::ColorType::GrayA(..) | tiff::ColorType::CMYKA(..))
+                || extra.is_some();
+            let alpha_policy = match extra {
+                Some(1) => AlphaPolicy::PremultiplyOnPack,
+                _ if has_alpha => AlphaPolicy::Straight,
+                _ => AlphaPolicy::OpaqueDrop,
+            };
             pages.push(PageInfo {
                 name,
                 color_space: pcs,
-                alpha_policy: if is_alpha {
-                    AlphaPolicy::Straight
-                } else {
-                    AlphaPolicy::OpaqueDrop
-                },
+                alpha_policy,
                 offset: PixelOffset { x: ox, y: oy },
                 opacity: 1.0,
                 blend_mode: BlendMode::Normal,
@@ -153,28 +165,31 @@ impl ImageDecoder for TiffDecoder {
         let ct = decoder
             .colortype()
             .map_err(|e| Error::Tiff(e.to_string()))?;
-        let cs = detect_tiff_color_space(&mut decoder);
+        let cs = detect_tiff_color_space(&mut decoder, None);
         let name =
             read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", page + 1));
         let (ox, oy) = read_page_offset(&mut decoder, w, h);
         let orientation = read_orientation(&mut decoder);
+        let extra = read_extra_samples(&mut decoder);
 
         let image_data = decoder
             .read_image()
             .map_err(|e| Error::Tiff(e.to_string()))?;
 
         let pixel_format = tiff_pixel_format(&image_data, ct);
-        let is_alpha = matches!(ct, tiff::ColorType::RGBA(..) | tiff::ColorType::GrayA(..));
+        let has_alpha = matches!(ct, tiff::ColorType::RGBA(..) | tiff::ColorType::GrayA(..) | tiff::ColorType::CMYKA(..))
+            || extra.is_some();
+        let alpha_policy = match extra {
+            Some(1) => AlphaPolicy::PremultiplyOnPack,
+            _ if has_alpha => AlphaPolicy::Straight,
+            _ => AlphaPolicy::OpaqueDrop,
+        };
 
         Ok(Box::new(TiffPageStream::new(
             PageInfo {
                 name,
                 color_space: cs,
-                alpha_policy: if is_alpha {
-                    AlphaPolicy::Straight
-                } else {
-                    AlphaPolicy::OpaqueDrop
-                },
+                alpha_policy,
                 offset: PixelOffset { x: ox, y: oy },
                 opacity: 1.0,
                 blend_mode: BlendMode::Normal,

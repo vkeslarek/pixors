@@ -83,3 +83,22 @@ impl Pixel for Cmyk<u16> {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CmykA<T> {
+    pub c: T,
+    pub m: T,
+    pub y: T,
+    pub k: T,
+    pub a: T,
+}
+
+unsafe impl<T: Component> bytemuck::Pod for CmykA<T> {}
+unsafe impl<T: Component> bytemuck::Zeroable for CmykA<T> {}
+
+impl Pixel for CmykA<u8> {
+    fn unpack(self) -> [f32; 4] { [self.c as f32 / 255.0, self.m as f32 / 255.0, self.y as f32 / 255.0, self.k as f32 / 255.0] }
+    fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self { Self { c: (rgba[0].clamp(0.0,1.0)*255.0+0.5) as u8, m: (rgba[1].clamp(0.0,1.0)*255.0+0.5) as u8, y: (rgba[2].clamp(0.0,1.0)*255.0+0.5) as u8, k: (rgba[3].clamp(0.0,1.0)*255.0+0.5) as u8, a: 255 } }
+    fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) { let r=rr.to_array(); let g=gg.to_array(); let b=bb.to_array(); let a=aa.to_array(); for i in 0..4 { out[i]=Self{c:(r[i].clamp(0.0,1.0)*255.0+0.5)as u8,m:(g[i].clamp(0.0,1.0)*255.0+0.5)as u8,y:(b[i].clamp(0.0,1.0)*255.0+0.5)as u8,k:(a[i].clamp(0.0,1.0)*255.0+0.5)as u8,a:255}; } }
+}

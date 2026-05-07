@@ -95,12 +95,43 @@ cd pixors-ui && npm run dev
 | File | Purpose |
 |---|---|
 | `Cargo.toml` | Workspace config, shared version, lint levels |
-| `pixors-engine/src/config.rs` | `Config { port: u16 }` |
-| `pixors-engine/src/server/server.rs` | `start_server(cfg)`, `start_server_bg(cfg)` |
-| `pixors-engine/src/main.rs` | CLI entry point |
-| `pixors-desktop/src/main.rs` | Tao event loop, custom protocol, IPC |
-| `pixors-desktop/src/embedded_ui.rs` | rust-embed for `pixors-ui/dist/` |
-| `pixors-desktop/src/bridge.js` | JS ↔ Rust IPC bridge |
-| `pixors-desktop/build.rs` | Copies WebView2Loader.dll on Windows |
-| `pixors-ui/src/engine/client.ts` | WebSocket client, hardcoded port 8399 |
-| `CONTRIBUTING.md` | Coding guidelines for humans |
+| `pixors-executor/src/common/color/space.rs` | ColorSpace enum + primaries/transfer/whitepoint |
+| `pixors-executor/src/common/color/conversion.rs` | ColorConversion engine, `convert_pixels`, `convert_bytes` |
+| `pixors-executor/src/common/color/model.rs` | ColorModelTransform enum (CMYK→RGB, YCbCr→RGB) |
+| `pixors-executor/src/common/pixel/format.rs` | PixelFormat enum + model_transform mapping |
+| `pixors-executor/src/common/pixel/mod.rs` | AlphaPolicy, Pixel trait, re-exports |
+| `pixors-executor/src/common/pixel/{rgba,rgb,gray,cmyk,ycbcr}.rs` | Pixel trait impls per model |
+| `pixors-executor/src/common/image/mod.rs` | Image, ImageDescriptor, PageInfo, Metadata |
+| `pixors-executor/src/common/image/exif.rs` | Metadata enum + EXIF parsers |
+| `pixors-executor/src/common/image/codec.rs` | ImageDecoder + PageStream traits |
+| `pixors-executor/src/common/image/{png,tiff}/` | PNG/TIFF codec implementations |
+| `pixors-executor/src/operation/color.rs` | ColorConvert pipeline stage (CPU + GPU) |
+| `pixors-executor/shaders/color.slang` | GPU color convert entry points |
+| `pixors-executor/shaders/lib/color.slang` | Shader library: transfer, codecs, color_convert |
+| `pixors-executor/src/gpu/scheduler.rs` | Lock-free GPU scheduler (rotating encoder) |
+| `pixors-executor/src/runtime/pipeline.rs` | Pipeline compilation + chain runner |
+| `pixors-executor/src/stage/` | Producer, Processor, Consumer, Stage traits |
+| `pixors-desktop/src/file_ops.rs` | Pipeline graph construction |
+| `pixors-desktop/src/main.rs` | App entry point, tracing config |
+
+## How to add a new PixelFormat
+
+1. **`common/pixel/format.rs`** — add variant (e.g. `CmykA8`), update `channel_count`, `sample_bytes`, `model_transform`
+2. **`common/pixel/{model}.rs`** — create/update pixel struct (e.g. `CmykA<T>`), add `unsafe impl Pod/Zeroable`, impl `Pixel` for `u8`/`u16`/`f16`/`f32`. `unpack()` must return `[f32;4]` in `[0,1]` range.
+3. **`common/pixel/mod.rs`** — add `pub use`
+4. **`common/color/model.rs`** — if non-RGB model (CMYK, YCbCr, Lab), add `ColorModelTransform` variant + `decode_4`/`decode_1` SIMD logic. Must have `#[repr(u32)]` with discriminants matching the shader.
+5. **`shaders/lib/color.slang`** — add matching variant to `ColorModel` enum + branch in `color_convert()`
+6. **`common/color/conversion.rs`** — add `(src_fmt, dst_fmt)` match arms in `convert_bytes()`
+7. **`operation/color.rs`** — update `precision()`, `bytes_per_pixel()`, `channels()` for GPU dispatch
+8. **`common/image/tiff/stream.rs`** / **`common/image/png/mod.rs`** — map from format-specific color type to new PixelFormat
+9. **Tests** — add `unpack`/`pack`/`convert_pixels` tests in conversion.rs
+
+## How to add a new ColorSpace
+
+1. **`common/color/primaries.rs`** — add `RgbPrimaries` variant with xy chromaticity coordinates
+2. **`common/color/transfer.rs`** — add `TransferFn` variant with `decode()`/`encode()` functions
+3. **`common/color/space.rs`** — add `ColorSpace` variant or static constructor with primaries + whitepoint + transfer
+4. **`common/color/matrix.rs`** — ensure the new primaries can compute a 3×3 matrix to/from XYZ
+5. **`shaders/lib/color.slang`** — add `TransferFn` variant + `decode_tf`/`encode_tf` branches
+6. **`common/color/detect.rs`** — update ICC classifier to recognize the new space
+7. **`operation/color.rs`** — update `tf_u32()` mapping

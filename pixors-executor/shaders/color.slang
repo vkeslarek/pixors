@@ -19,9 +19,9 @@ import lib.color;
 void cc_kernel_ip<C : IPixelCodec>(uint3 id) {
     if (id.x >= g_params.width || id.y >= g_params.height) return;
     uint idx = id.y * g_params.width + id.x;
-    C.encode(g_buf0, idx,
-        color_convert(C.decode(g_buf0, idx, g_params.src_channels), g_params),
-        g_params.dst_channels);
+    float4 raw   = C.decode(g_buf0, idx, g_params.src_channels);
+    float  extra = C.decode_extra(g_buf0, idx, g_params.src_channels);
+    C.encode(g_buf0, idx, color_convert(raw, extra, g_params), g_params.dst_channels);
 }
 
 [shader("compute")] [numthreads(8, 8, 1)]
@@ -38,9 +38,9 @@ void cs_cc_f32_f32_ip(uint3 id : SV_DispatchThreadID) { cc_kernel_ip<F32Codec>(i
 void cc_kernel<SRC : IPixelCodec, DST : IPixelCodec>(uint3 id) {
     if (id.x >= g_params.width || id.y >= g_params.height) return;
     uint idx = id.y * g_params.width + id.x;
-    DST.encode(g_buf1, idx,
-        color_convert(SRC.decode(g_buf0, idx, g_params.src_channels), g_params),
-        g_params.dst_channels);
+    float4 raw   = SRC.decode(g_buf0, idx, g_params.src_channels);
+    float  extra = SRC.decode_extra(g_buf0, idx, g_params.src_channels);
+    DST.encode(g_buf1, idx, color_convert(raw, extra, g_params), g_params.dst_channels);
 }
 
 [shader("compute")] [numthreads(8, 8, 1)]
@@ -75,3 +75,15 @@ void cs_cc_f32_u16(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, U16Code
 void cs_cc_f32_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, F16Codec>(id); }
 [shader("compute")] [numthreads(8, 8, 1)]
 void cs_cc_f32_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<F32Codec, F32Codec>(id); }
+
+// ── 5-channel kernels (CMYKA, etc.) ─────────────────────────────────────────
+// decode_extra reads the 5th byte (alpha); CmykA → RGBA uses generic cc_kernel.
+
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_u8 (uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  U8Codec >(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_u16(uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  U16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f16(uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  F16Codec>(id); }
+[shader("compute")] [numthreads(8, 8, 1)]
+void cs_cc_5ch_f32(uint3 id : SV_DispatchThreadID) { cc_kernel<U8Codec,  F32Codec>(id); }

@@ -139,7 +139,7 @@ fn precision(fmt: PixelFormat) -> Option<Precision> {
     match fmt {
         PixelFormat::Rgba8  | PixelFormat::Rgb8 |
         PixelFormat::Gray8  | PixelFormat::GrayA8 |
-        PixelFormat::Cmyk8 | PixelFormat::YCbCr8 => Some(Precision::U8),
+        PixelFormat::Cmyk8 | PixelFormat::CmykA8 | PixelFormat::YCbCr8 => Some(Precision::U8),
         PixelFormat::Rgba16 | PixelFormat::Rgb16   => Some(Precision::U16),
         PixelFormat::RgbaF16| PixelFormat::RgbF16  => Some(Precision::F16),
         PixelFormat::RgbaF32| PixelFormat::RgbF32  => Some(Precision::F32),
@@ -157,6 +157,7 @@ fn channels(fmt: PixelFormat) -> Option<u32> {
         PixelFormat::Gray8   => Some(2), // CH_GRAY
         PixelFormat::GrayA8  => Some(3), // CH_GRAYA
         PixelFormat::Cmyk8 => Some(0), // CH_RGBA (4-ch interleaved)
+        PixelFormat::CmykA8 => Some(4), // CH_CMYKA (5-ch interleaved)
         _ => None,
     }
 }
@@ -168,6 +169,7 @@ fn bytes_per_pixel(fmt: PixelFormat) -> Option<u64> {
         PixelFormat::Gray8   => Some(1),
         PixelFormat::GrayA8  => Some(2),
         PixelFormat::Cmyk8   => Some(4),
+        PixelFormat::CmykA8  => Some(5),
         PixelFormat::YCbCr8  => Some(3),
         PixelFormat::Rgba16  => Some(8),
         PixelFormat::Rgb16   => Some(6),
@@ -186,30 +188,42 @@ impl GpuKernelSpec {
         let src_ch   = channels(src_fmt)?;
         let dst_ch   = channels(dst_fmt)?;
 
-        let entry: &'static str = match (src_prec, dst_prec) {
-            (Precision::U8,  Precision::U8)  => "cs_cc_u8_u8",
-            (Precision::U8,  Precision::U16) => "cs_cc_u8_u16",
-            (Precision::U8,  Precision::F16) => "cs_cc_u8_f16",
-            (Precision::U8,  Precision::F32) => "cs_cc_u8_f32",
-            (Precision::U16, Precision::U8)  => "cs_cc_u16_u8",
-            (Precision::U16, Precision::U16) => "cs_cc_u16_u16",
-            (Precision::U16, Precision::F16) => "cs_cc_u16_f16",
-            (Precision::U16, Precision::F32) => "cs_cc_u16_f32",
-            (Precision::F16, Precision::U8)  => "cs_cc_f16_u8",
-            (Precision::F16, Precision::U16) => "cs_cc_f16_u16",
-            (Precision::F16, Precision::F16) => "cs_cc_f16_f16",
-            (Precision::F16, Precision::F32) => "cs_cc_f16_f32",
-            (Precision::F32, Precision::U8)  => "cs_cc_f32_u8",
-            (Precision::F32, Precision::U16) => "cs_cc_f32_u16",
-            (Precision::F32, Precision::F16) => "cs_cc_f32_f16",
-            (Precision::F32, Precision::F32) => "cs_cc_f32_f32",
+        // src_ch == 4 → CH_CMYKA (5-byte stride); needs dedicated decode_extra kernels
+        let entry: &'static str = if src_ch == 4 {
+            match dst_prec {
+                Precision::U8  => "cs_cc_5ch_u8",
+                Precision::U16 => "cs_cc_5ch_u16",
+                Precision::F16 => "cs_cc_5ch_f16",
+                Precision::F32 => "cs_cc_5ch_f32",
+            }
+        } else {
+            match (src_prec, dst_prec) {
+                (Precision::U8,  Precision::U8)  => "cs_cc_u8_u8",
+                (Precision::U8,  Precision::U16) => "cs_cc_u8_u16",
+                (Precision::U8,  Precision::F16) => "cs_cc_u8_f16",
+                (Precision::U8,  Precision::F32) => "cs_cc_u8_f32",
+                (Precision::U16, Precision::U8)  => "cs_cc_u16_u8",
+                (Precision::U16, Precision::U16) => "cs_cc_u16_u16",
+                (Precision::U16, Precision::F16) => "cs_cc_u16_f16",
+                (Precision::U16, Precision::F32) => "cs_cc_u16_f32",
+                (Precision::F16, Precision::U8)  => "cs_cc_f16_u8",
+                (Precision::F16, Precision::U16) => "cs_cc_f16_u16",
+                (Precision::F16, Precision::F16) => "cs_cc_f16_f16",
+                (Precision::F16, Precision::F32) => "cs_cc_f16_f32",
+                (Precision::F32, Precision::U8)  => "cs_cc_f32_u8",
+                (Precision::F32, Precision::U16) => "cs_cc_f32_u16",
+                (Precision::F32, Precision::F16) => "cs_cc_f32_f16",
+                (Precision::F32, Precision::F32) => "cs_cc_f32_f32",
+            }
         };
         Some(Self { entry, spirv: COLOR_SPV, src_ch, dst_ch, src_prec, dst_prec })
     }
 
     fn inplace_entry(&self) -> Option<&'static str> {
+        // 5-channel (CMYKA) can't be in-place: src stride ≠ dst stride
+        if self.src_ch == 4 { return None; }
         match (self.src_prec, self.dst_prec) {
-            (Precision::U8, Precision::U8) => Some("cs_cc_u8_u8_ip"),
+            (Precision::U8,  Precision::U8)  => Some("cs_cc_u8_u8_ip"),
             (Precision::U16, Precision::U16) => Some("cs_cc_u16_u16_ip"),
             (Precision::F16, Precision::F16) => Some("cs_cc_f16_f16_ip"),
             (Precision::F32, Precision::F32) => Some("cs_cc_f32_f32_ip"),

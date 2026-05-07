@@ -10,6 +10,7 @@ pub enum PixelFormat {
     Rgb8,
     Rgba8,
     Cmyk8,
+    CmykA8,
     YCbCr8,
     Gray16,
     GrayA16,
@@ -41,6 +42,7 @@ impl PixelFormat {
             | PixelFormat::RgbF32 | PixelFormat::YCbCr8 => 3,
             PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::RgbaF16
             | PixelFormat::RgbaF32 | PixelFormat::Argb32 | PixelFormat::Cmyk8 => 4,
+            PixelFormat::CmykA8 => 5,
         }
     }
 
@@ -48,7 +50,7 @@ impl PixelFormat {
         match self {
             PixelFormat::Gray8 | PixelFormat::GrayA8 | PixelFormat::Rgb8
             | PixelFormat::Rgba8 | PixelFormat::Argb32
-            | PixelFormat::Cmyk8 | PixelFormat::YCbCr8 => 1,
+            | PixelFormat::Cmyk8 | PixelFormat::CmykA8 | PixelFormat::YCbCr8 => 1,
             PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
             | PixelFormat::Rgba16 | PixelFormat::GrayF16 | PixelFormat::GrayAF16
             | PixelFormat::RgbF16 | PixelFormat::RgbaF16 => 2,
@@ -71,6 +73,7 @@ impl PixelFormat {
     pub fn model_transform(self) -> ColorModelTransform {
         match self {
             PixelFormat::Cmyk8 => ColorModelTransform::CmykToRgb,
+            PixelFormat::CmykA8 => ColorModelTransform::CmykAToRgb,
             PixelFormat::YCbCr8 => ColorModelTransform::YCbCrToRgb,
             _ => ColorModelTransform::None,
         }

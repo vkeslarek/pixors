@@ -166,13 +166,17 @@ impl ColorConversion {
         src_alpha: AlphaPolicy,
         dst_alpha: AlphaPolicy,
     ) -> Result<Vec<u8>, Error> {
-        use crate::common::pixel::{Cmyk, Gray, GrayAlpha, Rgb, Rgba, YCbCr};
+        use crate::common::pixel::{Cmyk, CmykA, Gray, GrayAlpha, Rgb, Rgba, YCbCr};
         use half::f16;
 
         match (src_fmt, dst_fmt) {
             // ── Cmyk8 → X ──────────────────────────────────
             (PixelFormat::Cmyk8, PixelFormat::RgbaF16) => conv::<Cmyk<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
             (PixelFormat::Cmyk8, PixelFormat::Rgba8) => conv::<Cmyk<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── CmykA8 → X ─────────────────────────────────
+            (PixelFormat::CmykA8, PixelFormat::RgbaF16) => conv::<CmykA<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykA8, PixelFormat::Rgba8) => conv::<CmykA<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
 
             // ── YCbCr8 → X ──────────────────────────────────
             (PixelFormat::YCbCr8, PixelFormat::RgbaF16) => conv::<YCbCr<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),

@@ -10,7 +10,8 @@ use wide::f32x4;
 pub enum ColorModelTransform {
     None = 0,
     CmykToRgb = 1,
-    YCbCrToRgb = 2,
+    CmykAToRgb = 2,
+    YCbCrToRgb = 3,
 }
 
 impl ColorModelTransform {
@@ -29,6 +30,19 @@ impl ColorModelTransform {
         match self {
             Self::None => (c0, c1, c2),
             Self::CmykToRgb => {
+                let one = f32x4::splat(1.0);
+                let scale = one - c3;
+                let r = (one - c0) * scale;
+                let g = (one - c1) * scale;
+                let b = (one - c2) * scale;
+                (r, g, b)
+            }
+            Self::CmykAToRgb => {
+                // CMYK→RGB, preserve alpha in c3 (K channel becomes K, a stays)
+                // Actually: c0=C, c1=M, c2=Y, c3=K. Alpha is NOT in unpack — it's the 5th byte.
+                // For CmykA<u8>, unpack gives [C,M,Y,K] (4 values, normalized).
+                // The 5th channel (alpha) is not in f32x4. We handle it differently.
+                // Same as CmykToRgb since alpha is separate.
                 let one = f32x4::splat(1.0);
                 let scale = one - c3;
                 let r = (one - c0) * scale;
@@ -55,6 +69,14 @@ impl ColorModelTransform {
         match self {
             Self::None => [ch[0], ch[1], ch[2]],
             Self::CmykToRgb => {
+                let scale = 1.0 - ch[3];
+                [
+                    (1.0 - ch[0]) * scale,
+                    (1.0 - ch[1]) * scale,
+                    (1.0 - ch[2]) * scale,
+                ]
+            }
+            Self::CmykAToRgb => {
                 let scale = 1.0 - ch[3];
                 [
                     (1.0 - ch[0]) * scale,

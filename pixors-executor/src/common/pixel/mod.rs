@@ -71,7 +71,7 @@ mod rgb;
 mod rgba;
 mod ycbcr;
 
-pub use cmyk::Cmyk;
+pub use cmyk::{Cmyk, CmykA};
 pub use format::PixelFormat;
 pub use gray::{Gray, GrayAlpha};
 pub use meta::PixelMeta;

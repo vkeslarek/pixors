@@ -61,7 +61,7 @@ float encode_tf(float y, TransferFn tf)
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /// Channel layout IDs (must match Rust `channels()` in color.rs)
-enum ChannelLayout : uint { Rgba = 0, Rgb = 1, Gray = 2, GrayA = 3 }
+enum ChannelLayout : uint { Rgba = 0, Rgb = 1, Gray = 2, GrayA = 3, CmykA = 4 }
 
 /// Alpha policy IDs (must match Rust `alpha_to_u32()` in color.rs)
 enum AlphaPolicy : uint { Straight = 0, PremultiplyOnPack = 1, OpaqueDrop = 2 }
@@ -69,7 +69,8 @@ enum AlphaPolicy : uint { Straight = 0, PremultiplyOnPack = 1, OpaqueDrop = 2 }
 // ── Uniform parameters ───────────────────────────────────────────────────────
 
 /// Color model transform (must match Rust `ColorModelTransform`).
-enum ColorModel : uint { None = 0, CmykToRgb = 1, YCbCrToRgb = 2 }
+enum ColorModel : uint { None = 0, CmykToRgb = 1, CmykAToRgb = 2, YCbCrToRgb = 3 }
+
 
 struct ColorConvertParams
 {
@@ -98,15 +99,25 @@ struct ColorConvertParams
 
 interface IPixelCodec
 {
-    /// Decode pixel at linear index `idx` from a raw uint32 buffer.
-    /// Returns normalised float4 in [0,1] (or scene-linear for floating-point codecs).
+    /// Decode pixel at linear index `idx`. Returns float4 in [0,1].
+    /// For CmykA: returns (C, M, Y, K) — alpha lives in decode_extra.
     static float4 decode(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout channels);
+
+    /// Returns the 5th channel for CmykA layouts (alpha), 1.0 for all others.
+    static float  decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout channels);
 
     /// Encode a float4 pixel to `buf` at linear index `idx`.
     static void   encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, ChannelLayout channels);
 };
 
 // ── Byte-level helpers (shared across codecs) ─────────────────────────────────
+
+uint byte_buf(uint bo, RWStructuredBuffer<uint> buf)
+{
+    uint wi = bo / 4u;
+    uint shift = (bo % 4u) * 8u;
+    return (buf[wi] >> shift) & 0xFFu;
+}
 
 float _u16_norm(RWStructuredBuffer<uint> buf, uint bo)
 {
@@ -172,12 +183,30 @@ struct U8Codec : IPixelCodec
             return float4(v, v, v, 1.0);
         }
 
+        if (ch == ChannelLayout::CmykA) {
+            uint b = idx * 5u;
+            return float4(
+                float(byte_buf(b    , buf)) / 255.0,
+                float(byte_buf(b + 1u, buf)) / 255.0,
+                float(byte_buf(b + 2u, buf)) / 255.0,
+                float(byte_buf(b + 3u, buf)) / 255.0
+            );
+        }
+
         // ChannelLayout::GrayA
         uint b = idx * 2u;
         uint w = buf[b / 4u];
         float v = float((w >> ( b      % 4u) * 8u) & 0xFFu) / 255.0;
         float a = float((w >> ((b + 1u)% 4u) * 8u) & 0xFFu) / 255.0;
         return float4(v, v, v, a);
+    }
+
+
+    static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
+    {
+        if (ch == ChannelLayout::CmykA)
+            return float(byte_buf(idx * 5u + 4u, buf)) / 255.0;
+        return 1.0;
     }
 
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
@@ -218,6 +247,11 @@ struct U16Codec : IPixelCodec
             _u16_norm(buf, b + 4u),
             (ch == ChannelLayout::Rgba) ? _u16_norm(buf, b + 6u) : 1.0
         );
+    }
+
+    static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
+    {
+        return 1.0;
     }
 
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
@@ -293,6 +327,11 @@ struct F16Codec : IPixelCodec
         );
     }
 
+    static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
+    {
+        return 1.0;
+    }
+
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
     {
         uint b  = idx * (ch == ChannelLayout::Rgba ? 8u : 6u);
@@ -318,6 +357,11 @@ struct F32Codec : IPixelCodec
         );
     }
 
+    static float decode_extra(RWStructuredBuffer<uint> buf, uint idx, ChannelLayout ch)
+    {
+        return 1.0;
+    }
+
     static void encode(RWStructuredBuffer<uint> buf, uint idx, float4 c, uint ch)
     {
         uint stride = (ch == ChannelLayout::Rgba) ? 4u : 3u;
@@ -331,7 +375,8 @@ struct F32Codec : IPixelCodec
 
 // ── Color conversion (transfer + matrix + alpha + encode) ─────────────────────
 
-float4 color_convert(float4 raw, ColorConvertParams p)
+/// `extra_alpha`: 5th channel for CmykA (from decode_extra), 1.0 otherwise.
+float4 color_convert(float4 raw, float extra_alpha, ColorConvertParams p)
 {
     // ── Model decode (CMYK → RGB, YCbCr → RGB) ─────────────────────────
     float r = raw.r;
@@ -339,12 +384,12 @@ float4 color_convert(float4 raw, ColorConvertParams p)
     float b = raw.b;
     float a = raw.a;
 
-    if (p.model_transform == ColorModel::CmykToRgb) {
+    if (p.model_transform == ColorModel::CmykToRgb || p.model_transform == ColorModel::CmykAToRgb) {
         float scale = 1.0 - raw.a;  // raw.a = K
         r = (1.0 - raw.r) * scale;
         g = (1.0 - raw.g) * scale;
         b = (1.0 - raw.b) * scale;
-        a = 1.0;
+        a = (p.model_transform == ColorModel::CmykAToRgb) ? extra_alpha : 1.0;
     } else if (p.model_transform == ColorModel::YCbCrToRgb) {
         float cb = raw.g - 0.5;  // raw.g = Cb
         float cr = raw.b - 0.5;  // raw.b = Cr
@@ -395,5 +440,7 @@ void cc_kernel<S : IPixelCodec, D : IPixelCodec>(
 ) {
     if (id.x >= p.width || id.y >= p.height) return;
     uint idx = id.y * p.width + id.x;
-    D.encode(outputBuffer, idx, color_convert(S.decode(inputBuffer, idx, p.src_channels), p), p.dst_channels);
+    float4 raw   = S.decode(inputBuffer, idx, p.src_channels);
+    float  extra = S.decode_extra(inputBuffer, idx, p.src_channels);
+    D.encode(outputBuffer, idx, color_convert(raw, extra, p), p.dst_channels);
 }

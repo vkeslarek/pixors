@@ -91,6 +91,7 @@ pub fn tiff_pixel_format(
             tiff::ColorType::RGB(_) => PixelFormat::Rgb8,
             tiff::ColorType::RGBA(_) => PixelFormat::Rgba8,
             tiff::ColorType::CMYK(_) => PixelFormat::Cmyk8,
+            tiff::ColorType::CMYKA(_) => PixelFormat::CmykA8,
             tiff::ColorType::YCbCr(_) => PixelFormat::YCbCr8,
             _ => {
                 tracing::warn!("Unsupported U8 TIFF color: {:?}, falling back to Rgba8", ct);
