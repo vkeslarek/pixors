@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::common::color::model::ColorModelTransform;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PixelFormat {
@@ -7,6 +9,8 @@ pub enum PixelFormat {
     GrayA8,
     Rgb8,
     Rgba8,
+    Cmyk8,
+    YCbCr8,
     Gray16,
     GrayA16,
     Rgb16,
@@ -34,16 +38,17 @@ impl PixelFormat {
             PixelFormat::GrayA8 | PixelFormat::GrayA16 | PixelFormat::GrayAF16
             | PixelFormat::GrayAF32 => 2,
             PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::RgbF16
-            | PixelFormat::RgbF32 => 3,
+            | PixelFormat::RgbF32 | PixelFormat::YCbCr8 => 3,
             PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::RgbaF16
-            | PixelFormat::RgbaF32 | PixelFormat::Argb32 => 4,
+            | PixelFormat::RgbaF32 | PixelFormat::Argb32 | PixelFormat::Cmyk8 => 4,
         }
     }
 
     pub fn sample_bytes(self) -> usize {
         match self {
             PixelFormat::Gray8 | PixelFormat::GrayA8 | PixelFormat::Rgb8
-            | PixelFormat::Rgba8 | PixelFormat::Argb32 => 1,
+            | PixelFormat::Rgba8 | PixelFormat::Argb32
+            | PixelFormat::Cmyk8 | PixelFormat::YCbCr8 => 1,
             PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
             | PixelFormat::Rgba16 | PixelFormat::GrayF16 | PixelFormat::GrayAF16
             | PixelFormat::RgbF16 | PixelFormat::RgbaF16 => 2,
@@ -61,6 +66,14 @@ impl PixelFormat {
 
     pub fn is_integer(self) -> bool {
         !self.is_float()
+    }
+
+    pub fn model_transform(self) -> ColorModelTransform {
+        match self {
+            PixelFormat::Cmyk8 => ColorModelTransform::CmykToRgb,
+            PixelFormat::YCbCr8 => ColorModelTransform::YCbCrToRgb,
+            _ => ColorModelTransform::None,
+        }
     }
 
     pub fn max_value(self) -> f32 {

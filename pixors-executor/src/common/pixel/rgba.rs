@@ -146,3 +146,9 @@ impl Pixel for Rgba<u8> {
         }
     }
 }
+
+impl Pixel for Rgba<u16> {
+    fn unpack(self) -> [f32; 4] { [self.r as f32 / 65535.0, self.g as f32 / 65535.0, self.b as f32 / 65535.0, self.a as f32 / 65535.0] }
+    fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self { Rgba { r: (rgba[0].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16, g: (rgba[1].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16, b: (rgba[2].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16, a: (rgba[3].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16 } }
+    fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) { let r=rr.to_array(); let g=gg.to_array(); let b=bb.to_array(); let a=aa.to_array(); for i in 0..4 { out[i]=Rgba{r:(r[i].clamp(0.0,1.0)*65535.0+0.5)as u16,g:(g[i].clamp(0.0,1.0)*65535.0+0.5)as u16,b:(b[i].clamp(0.0,1.0)*65535.0+0.5)as u16,a:(a[i].clamp(0.0,1.0)*65535.0+0.5)as u16}; } }
+}

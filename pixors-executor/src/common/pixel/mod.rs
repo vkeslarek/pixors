@@ -1,4 +1,5 @@
 use bytemuck::Pod;
+use serde::{Deserialize, Serialize};
 use wide::f32x4;
 
 // ---------------------------------------------------------------------------
@@ -12,7 +13,8 @@ pub use component::Component;
 // Alpha policy — runtime param controlling premultiplication on pack
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlphaPolicy {
     PremultiplyOnPack,
     Straight,
@@ -60,18 +62,22 @@ pub trait Pixel: Copy + Pod {
 // Sub-modules
 // ---------------------------------------------------------------------------
 
+mod cmyk;
 mod format;
 mod gray;
 pub mod meta;
 mod pack;
 mod rgb;
 mod rgba;
+mod ycbcr;
 
+pub use cmyk::Cmyk;
 pub use format::PixelFormat;
 pub use gray::{Gray, GrayAlpha};
 pub use meta::PixelMeta;
 pub use rgb::Rgb;
 pub use rgba::Rgba;
+pub use ycbcr::YCbCr;
 
 // ---------------------------------------------------------------------------
 // Tests

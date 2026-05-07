@@ -8,7 +8,7 @@ use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::data_transform::DataTransformNode;
 use pixors_executor::common::color::space::ColorSpace;
-use pixors_executor::common::pixel::PixelFormat;
+use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
@@ -45,6 +45,15 @@ pub fn open_and_run(
     let img = Image::open(&path).map_err(|e| e.to_string())?;
     let w = img.desc.width;
     let h = img.desc.height;
+
+    // ── Exif / metadata dump ──────────────────────────────────────────
+    tracing::info!("[pixors] image loaded: {}×{} {} format={}",
+        w, h, img.desc.bit_depth, img.desc.format);
+    tracing::info!("[pixors] color_space={:?} dpi={:?} pages={}",
+        img.desc.color_space, img.desc.dpi, img.page_count());
+    for meta in &img.desc.metadata {
+        tracing::info!("[pixors] exif: {:20} = {}", meta.label(), meta.value_str());
+    }
 
     let cache_dir = path.with_extension("pixors_cache");
 
@@ -84,13 +93,13 @@ pub fn open_and_run(
         ScanLineToTile { tile_size: TILE_SIZE, image_width: w, image_height: h },
     )));
     let cc_to_working = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
-        ColorConvert { target_format: PixelFormat::RgbaF16, target_color_space: ColorSpace::ACES_CG },
+        ColorConvert { target_format: PixelFormat::RgbaF16, target_color_space: ColorSpace::ACES_CG, target_alpha: AlphaPolicy::Straight },
     )));
     let mip = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
         MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
     )));
     let cc_to_srgb = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
-        ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB },
+        ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB, target_alpha: AlphaPolicy::Straight },
     )));
     let cache = graph.add_stage(StageNode::Sink(SinkNode::CacheWriter(
         CacheWriter { cache_dir },

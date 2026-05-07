@@ -68,3 +68,15 @@ impl Pixel for Rgb<f32> {
         }
     }
 }
+
+impl Pixel for Rgb<u8> {
+    fn unpack(self) -> [f32; 4] { [self.r as f32 / 255.0, self.g as f32 / 255.0, self.b as f32 / 255.0, 1.0] }
+    fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self { Rgb { r: (rgba[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8, g: (rgba[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8, b: (rgba[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8 } }
+    fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, _aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) { let r=rr.to_array(); let g=gg.to_array(); let b=bb.to_array(); for i in 0..4 { out[i]=Rgb{r:(r[i].clamp(0.0,1.0)*255.0+0.5)as u8,g:(g[i].clamp(0.0,1.0)*255.0+0.5)as u8,b:(b[i].clamp(0.0,1.0)*255.0+0.5)as u8}; } }
+}
+
+impl Pixel for Rgb<u16> {
+    fn unpack(self) -> [f32; 4] { [self.r as f32 / 65535.0, self.g as f32 / 65535.0, self.b as f32 / 65535.0, 1.0] }
+    fn pack_one(rgba: [f32; 4], _mode: AlphaPolicy) -> Self { Rgb { r: (rgba[0].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16, g: (rgba[1].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16, b: (rgba[2].clamp(0.0, 1.0) * 65535.0 + 0.5) as u16 } }
+    fn pack_x4(rr: f32x4, gg: f32x4, bb: f32x4, _aa: f32x4, _mode: AlphaPolicy, out: &mut [Self]) { let r=rr.to_array(); let g=gg.to_array(); let b=bb.to_array(); for i in 0..4 { out[i]=Rgb{r:(r[i].clamp(0.0,1.0)*65535.0+0.5)as u16,g:(g[i].clamp(0.0,1.0)*65535.0+0.5)as u16,b:(b[i].clamp(0.0,1.0)*65535.0+0.5)as u16}; } }
+}

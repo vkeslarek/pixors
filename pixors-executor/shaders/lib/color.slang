@@ -68,6 +68,9 @@ enum AlphaPolicy : uint { Straight = 0, PremultiplyOnPack = 1, OpaqueDrop = 2 }
 
 // ── Uniform parameters ───────────────────────────────────────────────────────
 
+/// Color model transform (must match Rust `ColorModelTransform`).
+enum ColorModel : uint { None = 0, CmykToRgb = 1, YCbCrToRgb = 2 }
+
 struct ColorConvertParams
 {
     uint  width;
@@ -82,6 +85,7 @@ struct ColorConvertParams
 
     AlphaPolicy  alpha_policy_src;
     AlphaPolicy  alpha_policy_dst;
+    ColorModel   model_transform;
     ChannelLayout src_channels;
     ChannelLayout dst_channels;
 };
@@ -329,11 +333,31 @@ struct F32Codec : IPixelCodec
 
 float4 color_convert(float4 raw, ColorConvertParams p)
 {
-    // OETF → linear light
-    float r = decode_tf(raw.r, p.transfer_src);
-    float g = decode_tf(raw.g, p.transfer_src);
-    float b = decode_tf(raw.b, p.transfer_src);
+    // ── Model decode (CMYK → RGB, YCbCr → RGB) ─────────────────────────
+    float r = raw.r;
+    float g = raw.g;
+    float b = raw.b;
     float a = raw.a;
+
+    if (p.model_transform == ColorModel::CmykToRgb) {
+        float scale = 1.0 - raw.a;  // raw.a = K
+        r = (1.0 - raw.r) * scale;
+        g = (1.0 - raw.g) * scale;
+        b = (1.0 - raw.b) * scale;
+        a = 1.0;
+    } else if (p.model_transform == ColorModel::YCbCrToRgb) {
+        float cb = raw.g - 0.5;  // raw.g = Cb
+        float cr = raw.b - 0.5;  // raw.b = Cr
+        r = raw.r + 1.402 * cr;
+        g = raw.r - 0.344136 * cb - 0.714136 * cr;
+        b = raw.r + 1.772 * cb;
+        // a stays as raw.a (which is 1.0 from decoder for 3ch YCbCr)
+    }
+
+    // OETF → linear light
+    r = decode_tf(r, p.transfer_src);
+    g = decode_tf(g, p.transfer_src);
+    b = decode_tf(b, p.transfer_src);
 
     // Un-premultiply source if needed
     if (p.alpha_policy_src == AlphaPolicy::PremultiplyOnPack) {

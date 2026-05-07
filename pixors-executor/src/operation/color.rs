@@ -30,6 +30,7 @@ static CC_PORTS: PortSpecification = PortSpecification {
 pub struct ColorConvert {
     pub target_format: PixelFormat,
     pub target_color_space: ColorSpace,
+    pub target_alpha: AlphaPolicy,
 }
 
 impl Stage for ColorConvert {
@@ -40,6 +41,7 @@ impl Stage for ColorConvert {
         Some(Box::new(ColorConvertProcessor {
             target_format: self.target_format,
             target_color_space: self.target_color_space,
+            target_alpha: self.target_alpha,
         }))
     }
 }
@@ -47,14 +49,7 @@ impl Stage for ColorConvert {
 pub struct ColorConvertProcessor {
     target_format: PixelFormat,
     target_color_space: ColorSpace,
-}
-
-macro_rules! convert_via {
-    ($conv:expr, $src:expr, $src_ty:ty, $dst_ty:ty, $src_alpha:expr, $dst_alpha:expr) => {{
-        let pixels: &[$src_ty] = bytemuck::cast_slice($src);
-        let result: Vec<$dst_ty> = $conv.convert_pixels(pixels, $src_alpha, $dst_alpha);
-        bytemuck::cast_slice(&result).to_vec()
-    }};
+    target_alpha: AlphaPolicy,
 }
 
 impl Processor for ColorConvertProcessor {
@@ -67,8 +62,7 @@ impl Processor for ColorConvertProcessor {
         let src_alpha = tile.meta.alpha_policy;
         let dst_fmt = self.target_format;
         let dst_cs = self.target_color_space;
-        // Destination is always straight alpha in the working space.
-        let dst_alpha = AlphaPolicy::Straight;
+        let dst_alpha = self.target_alpha;
 
         if src_fmt == dst_fmt && src_cs == dst_cs {
             ctx.emit.emit(Item::Tile(tile));
@@ -115,91 +109,7 @@ impl Processor for ColorConvertProcessor {
             Buffer::Gpu(_) => return Err(Error::internal("ColorConvert requires CPU tile")),
         };
         let conv = src_cs.converter_to(dst_cs)?;
-
-        use crate::common::pixel::{Rgb, Rgba};
-        use half::f16;
-        use std::borrow::Cow;
-
-        // Normalize source data to its full RGBA precision layout to cover any src format
-        let rgba_u8 = || -> Cow<[[u8; 4]]> {
-            match src_fmt {
-                PixelFormat::Rgba8 => Cow::Borrowed(bytemuck::cast_slice(src)),
-                PixelFormat::Rgb8 => {
-                    let mut out = Vec::with_capacity(src.len() / 3);
-                    for px in bytemuck::cast_slice::<_, [u8; 3]>(src) { out.push([px[0], px[1], px[2], 255]); }
-                    Cow::Owned(out)
-                }
-                PixelFormat::Gray8 => {
-                    let mut out = Vec::with_capacity(src.len());
-                    for &v in src { out.push([v, v, v, 255]); }
-                    Cow::Owned(out)
-                }
-                PixelFormat::GrayA8 => {
-                    let mut out = Vec::with_capacity(src.len() / 2);
-                    for px in src.chunks_exact(2) { out.push([px[0], px[0], px[0], px[1]]); }
-                    Cow::Owned(out)
-                }
-                _ => panic!("Not an 8-bit format"),
-            }
-        };
-
-        let rgba_u16 = || -> Cow<[[u16; 4]]> {
-            match src_fmt {
-                PixelFormat::Rgba16 => Cow::Borrowed(bytemuck::cast_slice(src)),
-                PixelFormat::Rgb16 => {
-                    let mut out = Vec::with_capacity(src.len() / 6);
-                    for px in bytemuck::cast_slice::<_, [u16; 3]>(src) { out.push([px[0], px[1], px[2], 65535]); }
-                    Cow::Owned(out)
-                }
-                _ => panic!("Not a 16-bit format"),
-            }
-        };
-
-        let rgba_f16 = || -> Cow<[Rgba<f16>]> {
-            match src_fmt {
-                PixelFormat::RgbaF16 => Cow::Borrowed(bytemuck::cast_slice(src)),
-                PixelFormat::RgbF16 => {
-                    let mut out = Vec::with_capacity(src.len() / 6);
-                    for px in bytemuck::cast_slice::<_, Rgb<f16>>(src) { out.push(Rgba { r: px.r, g: px.g, b: px.b, a: f16::ONE }); }
-                    Cow::Owned(out)
-                }
-                _ => panic!("Not an f16 format"),
-            }
-        };
-
-        let rgba_f32 = || -> Cow<[Rgba<f32>]> {
-            match src_fmt {
-                PixelFormat::RgbaF32 => Cow::Borrowed(bytemuck::cast_slice(src)),
-                PixelFormat::RgbF32 => {
-                    let mut out = Vec::with_capacity(src.len() / 12);
-                    for px in bytemuck::cast_slice::<_, Rgb<f32>>(src) { out.push(Rgba { r: px.r, g: px.g, b: px.b, a: 1.0 }); }
-                    Cow::Owned(out)
-                }
-                _ => panic!("Not an f32 format"),
-            }
-        };
-
-        let src_prec = precision(src_fmt).ok_or_else(|| Error::internal("Unsupported src precision"))?;
-        let dst_prec = precision(dst_fmt).ok_or_else(|| Error::internal("Unsupported dst precision"))?;
-
-        let dst_bytes: Vec<u8> = match (src_prec, dst_prec) {
-            (Precision::U8, Precision::U8)   => { let c = rgba_u8(); convert_via!(conv, &*c, [u8; 4], [u8; 4], src_alpha, dst_alpha) }
-            (Precision::U8, Precision::U16)  => { let c = rgba_u8(); convert_via!(conv, &*c, [u8; 4], [u16; 4], src_alpha, dst_alpha) }
-            (Precision::U8, Precision::F16)  => { let c = rgba_u8(); convert_via!(conv, &*c, [u8; 4], Rgba<f16>, src_alpha, dst_alpha) }
-            (Precision::U8, Precision::F32)  => { let c = rgba_u8(); convert_via!(conv, &*c, [u8; 4], Rgba<f32>, src_alpha, dst_alpha) }
-            (Precision::U16, Precision::U8)  => { let c = rgba_u16(); convert_via!(conv, &*c, [u16; 4], [u8; 4], src_alpha, dst_alpha) }
-            (Precision::U16, Precision::U16) => { let c = rgba_u16(); convert_via!(conv, &*c, [u16; 4], [u16; 4], src_alpha, dst_alpha) }
-            (Precision::U16, Precision::F16) => { let c = rgba_u16(); convert_via!(conv, &*c, [u16; 4], Rgba<f16>, src_alpha, dst_alpha) }
-            (Precision::U16, Precision::F32) => { let c = rgba_u16(); convert_via!(conv, &*c, [u16; 4], Rgba<f32>, src_alpha, dst_alpha) }
-            (Precision::F16, Precision::U8)  => { let c = rgba_f16(); convert_via!(conv, &*c, Rgba<f16>, [u8; 4], src_alpha, dst_alpha) }
-            (Precision::F16, Precision::U16) => { let c = rgba_f16(); convert_via!(conv, &*c, Rgba<f16>, [u16; 4], src_alpha, dst_alpha) }
-            (Precision::F16, Precision::F16) => { let c = rgba_f16(); convert_via!(conv, &*c, Rgba<f16>, Rgba<f16>, src_alpha, dst_alpha) }
-            (Precision::F16, Precision::F32) => { let c = rgba_f16(); convert_via!(conv, &*c, Rgba<f16>, Rgba<f32>, src_alpha, dst_alpha) }
-            (Precision::F32, Precision::U8)  => { let c = rgba_f32(); convert_via!(conv, &*c, Rgba<f32>, [u8; 4], src_alpha, dst_alpha) }
-            (Precision::F32, Precision::U16) => { let c = rgba_f32(); convert_via!(conv, &*c, Rgba<f32>, [u16; 4], src_alpha, dst_alpha) }
-            (Precision::F32, Precision::F16) => { let c = rgba_f32(); convert_via!(conv, &*c, Rgba<f32>, Rgba<f16>, src_alpha, dst_alpha) }
-            (Precision::F32, Precision::F32) => { let c = rgba_f32(); convert_via!(conv, &*c, Rgba<f32>, Rgba<f32>, src_alpha, dst_alpha) }
-        };
+        let dst_bytes = conv.convert_bytes(src, src_fmt, dst_fmt, src_alpha, dst_alpha)?;
 
         tile.meta.format = dst_fmt;
         tile.meta.color_space = dst_cs;
@@ -228,7 +138,8 @@ struct GpuKernelSpec {
 fn precision(fmt: PixelFormat) -> Option<Precision> {
     match fmt {
         PixelFormat::Rgba8  | PixelFormat::Rgb8 |
-        PixelFormat::Gray8  | PixelFormat::GrayA8  => Some(Precision::U8),
+        PixelFormat::Gray8  | PixelFormat::GrayA8 |
+        PixelFormat::Cmyk8 | PixelFormat::YCbCr8 => Some(Precision::U8),
         PixelFormat::Rgba16 | PixelFormat::Rgb16   => Some(Precision::U16),
         PixelFormat::RgbaF16| PixelFormat::RgbF16  => Some(Precision::F16),
         PixelFormat::RgbaF32| PixelFormat::RgbF32  => Some(Precision::F32),
@@ -241,9 +152,11 @@ fn channels(fmt: PixelFormat) -> Option<u32> {
         PixelFormat::Rgba8 | PixelFormat::Rgba16 |
         PixelFormat::RgbaF16 | PixelFormat::RgbaF32 => Some(0), // CH_RGBA
         PixelFormat::Rgb8  | PixelFormat::Rgb16  |
-        PixelFormat::RgbF16  | PixelFormat::RgbF32  => Some(1), // CH_RGB
+        PixelFormat::RgbF16  | PixelFormat::RgbF32  |
+        PixelFormat::YCbCr8 => Some(1), // CH_RGB (3-ch interleaved)
         PixelFormat::Gray8   => Some(2), // CH_GRAY
         PixelFormat::GrayA8  => Some(3), // CH_GRAYA
+        PixelFormat::Cmyk8 => Some(0), // CH_RGBA (4-ch interleaved)
         _ => None,
     }
 }
@@ -254,6 +167,8 @@ fn bytes_per_pixel(fmt: PixelFormat) -> Option<u64> {
         PixelFormat::Rgb8    => Some(3),
         PixelFormat::Gray8   => Some(1),
         PixelFormat::GrayA8  => Some(2),
+        PixelFormat::Cmyk8   => Some(4),
+        PixelFormat::YCbCr8  => Some(3),
         PixelFormat::Rgba16  => Some(8),
         PixelFormat::Rgb16   => Some(6),
         PixelFormat::RgbaF16 => Some(8),
@@ -333,6 +248,7 @@ static CC_PARAMS_DECL: &[ParameterDeclaration] = &[
     ParameterDeclaration { name: "_p2",  kind: ParameterType::F32 },
     ParameterDeclaration { name: "alpha_policy_src",  kind: ParameterType::U32 },
     ParameterDeclaration { name: "alpha_policy_dst",  kind: ParameterType::U32 },
+    ParameterDeclaration { name: "model_transform",   kind: ParameterType::U32 },
     ParameterDeclaration { name: "src_channels",  kind: ParameterType::U32 },
     ParameterDeclaration { name: "dst_channels",  kind: ParameterType::U32 },
 ];
@@ -344,7 +260,8 @@ struct ColorConvertParams {
     m00: f32, m01: f32, m02: f32, _p0: f32,
     m10: f32, m11: f32, m12: f32, _p1: f32,
     m20: f32, m21: f32, m22: f32, _p2: f32,
-    alpha_policy_src: u32, alpha_policy_dst: u32, src_channels: u32, dst_channels: u32,
+    alpha_policy_src: u32, alpha_policy_dst: u32, model_transform: u32,
+    src_channels: u32, dst_channels: u32,
 }
 
 struct CcGpuKernel { sig: KernelSignature, params: ColorConvertParams }
@@ -377,7 +294,7 @@ fn alpha_to_u32(a: AlphaPolicy) -> u32 {
 
 fn gpu_dispatch(
     tile: &crate::data::tile::Tile,
-    _src_fmt: PixelFormat, dst_fmt: PixelFormat,
+    src_fmt: PixelFormat, dst_fmt: PixelFormat,
     src_cs: ColorSpace, dst_cs: ColorSpace,
     alpha: crate::common::pixel::AlphaPolicy,
     kernel_spec: &GpuKernelSpec,
@@ -407,6 +324,7 @@ fn gpu_dispatch(
         m20: mat.0[2][0], m21: mat.0[2][1], m22: mat.0[2][2], _p2: 0.0,
         alpha_policy_src: alpha_to_u32(alpha),
         alpha_policy_dst: alpha_to_u32(AlphaPolicy::Straight),
+        model_transform: src_fmt.model_transform() as u32,
         src_channels: kernel_spec.src_ch,
         dst_channels: kernel_spec.dst_ch,
     };
@@ -476,6 +394,7 @@ fn gpu_dispatch_inplace(
         m20: mat.0[2][0], m21: mat.0[2][1], m22: mat.0[2][2], _p2: 0.0,
         alpha_policy_src: alpha_to_u32(alpha),
         alpha_policy_dst: alpha_to_u32(AlphaPolicy::Straight),
+        model_transform: src_fmt.model_transform() as u32,
         src_channels: channels(src_fmt).unwrap_or(0),
         dst_channels: channels(dst_fmt).unwrap_or(0),
     };

@@ -23,6 +23,7 @@ uuid = { version = "1.23.1", features = ["serde", "v4"] }
 lz4_flex = "0.13.0"
 crossbeam-queue = "0.3.12"
 dashmap = "6.1.0"
+kamadak-exif = "0.6.1"
 
 [lints]
 workspace = true

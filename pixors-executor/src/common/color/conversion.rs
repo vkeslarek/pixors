@@ -103,12 +103,14 @@ impl ColorConversion {
     //     out
     // }
 
-    pub fn convert_pixels<S: Pixel, D: Pixel>(&self, src: &[S], src_alpha: AlphaPolicy, dst_alpha: AlphaPolicy) -> Vec<D> {
+    pub fn convert_pixels<S: Pixel, D: Pixel>(&self, src: &[S], src_fmt: PixelFormat, src_alpha: AlphaPolicy, dst_alpha: AlphaPolicy) -> Vec<D> {
         let n = src.len();
 
         if self.src == self.dst && std::any::TypeId::of::<S>() == std::any::TypeId::of::<D>() {
             return bytemuck::cast_slice(src).to_vec();
         }
+
+        let model = src_fmt.model_transform();
 
         if self.src == self.dst {
             let mut out = Vec::with_capacity(n);
@@ -116,6 +118,7 @@ impl ColorConversion {
             let rem = n % 4;
             for chunk in 0..full {
                 let (r_lin, g_lin, b_lin, a_vals) = S::unpack_x4(&src[chunk * 4..]);
+                let (r_lin, g_lin, b_lin) = model.decode_4(r_lin, g_lin, b_lin, a_vals);
                 let (r_lin, g_lin, b_lin) = src_unpremul(r_lin, g_lin, b_lin, a_vals, src_alpha);
                 let mut tmp = [D::pack_one([0.0; 4], dst_alpha); 4];
                 D::pack_x4(r_lin, g_lin, b_lin, a_vals, dst_alpha, &mut tmp);
@@ -123,6 +126,7 @@ impl ColorConversion {
             }
             for i in 0..rem {
                 let [rl, gl, bl, a] = src[full * 4 + i].unpack();
+                let [rl, gl, bl] = model.decode_1(&[rl, gl, bl, a]);
                 let (rl, gl, bl) = src_unpremul_one(rl, gl, bl, a, src_alpha);
                 out.push(D::pack_one([rl, gl, bl, a], dst_alpha));
             }
@@ -137,6 +141,7 @@ impl ColorConversion {
         let rem = n % 4;
         for chunk in 0..full {
             let (r_lin, g_lin, b_lin, a_vals) = S::unpack_x4(&src[chunk * 4..]);
+            let (r_lin, g_lin, b_lin) = model.decode_4(r_lin, g_lin, b_lin, a_vals);
             let (r_lin, g_lin, b_lin) = src_unpremul(r_lin, g_lin, b_lin, a_vals, src_alpha);
             let (rr, gg, bb) = mat.mul_vec_simd_x4(
                 decode_simd(r_lin, tf),
@@ -153,6 +158,7 @@ impl ColorConversion {
         }
         for i in 0..rem {
             let [rl, gl, bl, a] = src[full * 4 + i].unpack();
+            let [rl, gl, bl] = model.decode_1(&[rl, gl, bl, a]);
             let (rl, gl, bl) = src_unpremul_one(rl, gl, bl, a, src_alpha);
             let decoded = [tf.decode(rl), tf.decode(gl), tf.decode(bl)];
             let linear = mat.mul_vec(decoded);
@@ -193,6 +199,93 @@ impl ColorConversion {
     pub fn encode_fast(&self, y: f32) -> f32 {
         lookup_encode(y.clamp(0.0, 1.0), &self.encode)
     }
+
+    /// Convert a raw byte buffer from `src_fmt` to `dst_fmt`.
+    /// Handles pixel type dispatch and model conversion internally.
+    pub fn convert_bytes(
+        &self,
+        src: &[u8],
+        src_fmt: PixelFormat,
+        dst_fmt: PixelFormat,
+        src_alpha: AlphaPolicy,
+        dst_alpha: AlphaPolicy,
+    ) -> Result<Vec<u8>, Error> {
+        use crate::common::pixel::{Cmyk, Gray, GrayAlpha, Rgb, Rgba, YCbCr};
+        use half::f16;
+
+        match (src_fmt, dst_fmt) {
+            // ── Cmyk8 → X ──────────────────────────────────
+            (PixelFormat::Cmyk8, PixelFormat::RgbaF16) => conv::<Cmyk<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Cmyk8, PixelFormat::Rgba8) => conv::<Cmyk<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── YCbCr8 → X ──────────────────────────────────
+            (PixelFormat::YCbCr8, PixelFormat::RgbaF16) => conv::<YCbCr<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::YCbCr8, PixelFormat::Rgba8) => conv::<YCbCr<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── Rgba8 → X ──────────────────────────────────
+            (PixelFormat::Rgba8, PixelFormat::RgbaF16) => conv::<Rgba<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgba8, PixelFormat::RgbaF32) => conv::<Rgba<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgba8, PixelFormat::Rgba8) => conv::<Rgba<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── Rgb8 → X ───────────────────────────────────
+            (PixelFormat::Rgb8, PixelFormat::RgbaF16) => conv::<Rgb<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgb8, PixelFormat::RgbaF32) => conv::<Rgb<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgb8, PixelFormat::Rgba8) => conv::<Rgb<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── Gray8 → X ──────────────────────────────────
+            (PixelFormat::Gray8, PixelFormat::RgbaF16) => conv::<Gray<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Gray8, PixelFormat::RgbaF32) => conv::<Gray<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Gray8, PixelFormat::Rgba8) => conv::<Gray<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── GrayA8 → X ─────────────────────────────────
+            (PixelFormat::GrayA8, PixelFormat::RgbaF16) => conv::<GrayAlpha<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayA8, PixelFormat::RgbaF32) => conv::<GrayAlpha<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayA8, PixelFormat::Rgba8) => conv::<GrayAlpha<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── Rgba16 → X ──────────────────────────────────
+            (PixelFormat::Rgba16, PixelFormat::RgbaF16) => conv::<Rgba<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgba16, PixelFormat::Rgba8) => conv::<Rgba<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── Rgb16 → X ───────────────────────────────────
+            (PixelFormat::Rgb16, PixelFormat::RgbaF16) => conv::<Rgb<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgb16, PixelFormat::Rgba8) => conv::<Rgb<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── F16 ↔ F16 (Rgba/Rgb passthrough) ──────────
+            (PixelFormat::RgbaF16, PixelFormat::RgbaF16) => self.same_or_pass(src, src_fmt, dst_fmt),
+            (PixelFormat::RgbaF16, PixelFormat::Rgba8) => conv::<Rgba<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbF16, PixelFormat::RgbaF16) => conv::<Rgb<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbF16, PixelFormat::Rgba8) => conv::<Rgb<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            // ── F32 ↔ F32 ──────────────────────────────────
+            (PixelFormat::RgbaF32, PixelFormat::RgbaF32) => self.same_or_pass(src, src_fmt, dst_fmt),
+            (PixelFormat::RgbaF32, PixelFormat::Rgba8) => conv::<Rgba<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbaF32, PixelFormat::RgbaF16) => conv::<Rgba<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbF32, PixelFormat::RgbaF32) => conv::<Rgb<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbF32, PixelFormat::Rgba8) => conv::<Rgb<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbF32, PixelFormat::RgbaF16) => conv::<Rgb<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+
+            _ => Err(Error::internal(format!(
+                "unsupported conversion: {src_fmt:?} -> {dst_fmt:?}"
+            ))),
+        }
+    }
+
+    fn same_or_pass(&self, src: &[u8], src_fmt: PixelFormat, dst_fmt: PixelFormat) -> Result<Vec<u8>, Error> {
+        if src_fmt == dst_fmt { Ok(src.to_vec()) } else { Err(Error::internal("internal")) }
+    }
+}
+
+#[inline]
+fn conv<S: crate::common::pixel::Pixel, D: crate::common::pixel::Pixel>(
+    cc: &ColorConversion,
+    src: &[u8],
+    src_fmt: PixelFormat,
+    src_alpha: AlphaPolicy,
+    dst_alpha: AlphaPolicy,
+) -> Result<Vec<u8>, Error> {
+    let pixels: &[S] = bytemuck::cast_slice(src);
+    let out: Vec<D> = cc.convert_pixels(pixels, src_fmt, src_alpha, dst_alpha);
+    Ok(bytemuck::cast_slice(&out).to_vec())
 }
 
 #[inline(always)]

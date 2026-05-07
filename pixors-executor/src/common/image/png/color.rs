@@ -1,0 +1,93 @@
+use crate::common::color::primaries::RgbPrimaries;
+use crate::common::color::space::ColorSpace;
+use crate::common::color::transfer::TransferFn;
+
+use ::png as png;
+
+/// Detect the color space from a PNG's metadata chunks.
+/// Priority: cICP > iCCP > sRGB > gAMA+cHRM > gAMA alone > default sRGB.
+pub fn detect_color_space(info: &png::Info) -> ColorSpace {
+    use crate::common::color::detect;
+
+    // Priority 1: cICP chunk (new, explicit)
+    if let Some(cicp) = info.coding_independent_code_points {
+        let primaries = match cicp.color_primaries {
+            1 => Some(RgbPrimaries::Bt709),
+            9 => Some(RgbPrimaries::Bt2020),
+            11 => Some(RgbPrimaries::P3),
+            _ => None,
+        };
+        let transfer = match cicp.transfer_function {
+            1 => Some(TransferFn::Rec709Gamma),
+            13 => Some(TransferFn::SrgbGamma),
+            14 => Some(TransferFn::Gamma22),
+            15 => Some(TransferFn::Gamma24),
+            16 => Some(TransferFn::ProPhotoGamma),
+            _ => None,
+        };
+        if primaries.is_some() && transfer.is_some() {
+            return ColorSpace::with_optional_params(primaries, None, transfer);
+        }
+    }
+
+    // Priority 2: iCCP chunk
+    if let Some(icc_bytes) = &info.icc_profile {
+        let classified = detect::IccClassification::classify_icc_profile(icc_bytes);
+        if let Some(cs) = classified.color_space {
+            return cs;
+        }
+        tracing::warn!(
+            "Unrecognized ICC profile (desc: {}), assuming sRGB",
+            String::from_utf8_lossy(&classified.raw)
+                .chars()
+                .take(60)
+                .collect::<String>()
+        );
+        return ColorSpace::SRGB;
+    }
+
+    // Priority 3: sRGB chunk
+    if info.srgb.is_some() {
+        return ColorSpace::SRGB;
+    }
+
+    // Priority 4: gAMA + cHRM chunks (use shared chromaticity matcher)
+    let mut gamma = None;
+    if let Some(g) = info.gamma() {
+        gamma = Some(g.into_value());
+    }
+    if let Some(chrm) = info.chromaticities() {
+        if let Some((prim, wp)) = detect::match_chromaticities(
+            chrm.white.0.into_value(),
+            chrm.white.1.into_value(),
+            chrm.red.0.into_value(),
+            chrm.red.1.into_value(),
+            chrm.green.0.into_value(),
+            chrm.green.1.into_value(),
+            chrm.blue.0.into_value(),
+            chrm.blue.1.into_value(),
+            0.002,
+        ) {
+            let transfer = gamma
+                .and_then(TransferFn::from_gamma)
+                .unwrap_or(TransferFn::SrgbGamma);
+            return ColorSpace::new(prim, wp, transfer);
+        }
+        if let Some(g) = gamma
+            && let Some(tf) = TransferFn::from_gamma(g)
+        {
+            return ColorSpace::with_optional_params(None, None, Some(tf));
+        }
+    }
+
+    // Priority 5: gAMA alone
+    if let Some(g) = gamma
+        && let Some(tf) = TransferFn::from_gamma(g)
+    {
+        return ColorSpace::with_optional_params(None, None, Some(tf));
+    }
+
+    // No color info → assume sRGB
+    tracing::warn!("No color space metadata in PNG, assuming sRGB");
+    ColorSpace::SRGB
+}

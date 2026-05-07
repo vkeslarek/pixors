@@ -1,6 +1,5 @@
 //! Image model — descriptors, codecs, I/O format implementations.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,10 +10,12 @@ use crate::common::color::space::ColorSpace;
 use crate::common::pixel::AlphaPolicy;
 
 pub mod codec;
+pub mod exif;
 pub mod png;
 pub mod tiff;
 
 use codec::{ImageDecoder, PageStream};
+pub use exif::Metadata;
 
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ pub struct ImageDescriptor {
     pub bit_depth: u8,
     pub color_space: ColorSpace,
     pub dpi: Option<Dpi>,
-    pub exif_tags: HashMap<String, String>,
+    pub metadata: Vec<Metadata>,
     pub icc_profile: Option<Vec<u8>>,
     pub pages: Vec<PageInfo>,
 }
