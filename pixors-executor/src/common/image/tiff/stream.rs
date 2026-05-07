@@ -225,15 +225,19 @@ fn row_interleaved<T: Copy>(data: &[T], row: u32, w: usize, spp: usize) -> Resul
         .ok_or_else(|| Error::internal("TIFF row out of bounds"))
 }
 
-fn row_planar<T: Copy>(data: &[T], row: u32, w: usize, h: usize, spp: usize) -> Result<Vec<T>, Error> {
+fn row_planar<T: Copy + Default>(data: &[T], row: u32, w: usize, _h: usize, spp: usize) -> Result<Vec<T>, Error> {
+    let total = data.len();
+    let plane_len = total / spp; // derive from actual buffer size, not w*h
     let mut out = Vec::with_capacity(w * spp);
-    let plane_len = w * h;
     for ch in 0..spp {
         let start = ch * plane_len + row as usize * w;
-        out.extend_from_slice(
-            data.get(start..start + w)
-                .ok_or_else(|| Error::internal("TIFF planar row out of bounds"))?
-        );
+        let end = (start + w).min(total);
+        let avail = end.saturating_sub(start);
+        out.extend_from_slice(data.get(start..end).unwrap_or(&[]));
+        // pad with zeros if row is partial
+        for _ in avail..w {
+            out.push(T::default());
+        }
     }
     Ok(out)
 }
