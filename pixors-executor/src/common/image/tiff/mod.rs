@@ -68,10 +68,8 @@ impl ImageDecoder for TiffDecoder {
             }
         };
         let icc_profile = decoder
-            .find_tag_unsigned::<u32>(tiff::tags::Tag::Unknown(34675))
-            .ok()
-            .flatten()
-            .map(|_| Vec::new());
+            .get_tag_u8_vec(tiff::tags::Tag::IccProfile)
+            .ok();
 
         let mut metadata = Vec::new();
         metadata.push(Metadata::ImageWidth(w));

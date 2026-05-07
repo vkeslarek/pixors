@@ -57,6 +57,7 @@ mod tests {
                     port: 0,
                     device: Device::Cpu,
                     emit: &mut cpu_emit,
+                    gpu: None,
                 },
                 Item::Neighborhood(cpu_nbhd),
             )

@@ -58,50 +58,6 @@ impl ColorConversion {
         &self.encode
     }
 
-    // pub fn convert_row<D: Pixel>(&self, data: &[u8], desc: &BufferDesc, y: u32, dst: &mut [D], mode: AlphaPolicy) {
-    //     self.convert_row_strided(data, desc, y, 0, desc.width, dst, mode)
-    // }
-    //
-    // pub fn convert_row_strided<D: Pixel>(
-    //     &self, data: &[u8], desc: &BufferDesc, y: u32, x_start: u32, x_end: u32, dst: &mut [D], mode: AlphaPolicy,
-    // ) {
-    //     use crate::color::pipeline::*;
-    //     match (desc.planes.len(), desc.planes[0].encoding) {
-    //         (4, SampleFormat::U8) => run::<RgbaU8Interleaved, D>(self, data, desc, y, x_start, x_end, dst, mode),
-    //         (3, SampleFormat::U8) => run::<RgbU8Interleaved, D>(self, data, desc, y, x_start, x_end, dst, mode),
-    //         (1, SampleFormat::U8) => run::<GrayU8Interleaved, D>(self, data, desc, y, x_start, x_end, dst, mode),
-    //         (2, SampleFormat::U8) => run::<GrayAlphaU8Interleaved, D>(self, data, desc, y, x_start, x_end, dst, mode),
-    //         (4, SampleFormat::U16Le | SampleFormat::U16Be) => run::<RgbaU16Interleaved, D>(self, data, desc, y, x_start, x_end, dst, mode),
-    //         _ => run::<GenericReader, D>(self, data, desc, y, x_start, x_end, dst, mode),
-    //     }
-    // }
-
-    // pub fn convert_region<D: Pixel>(&self, data: &[u8], desc: &BufferDesc, x: u32, y: u32, w: u32, h: u32, mode: AlphaPolicy) -> Vec<D> {
-    //     let mut out = vec![D::pack_one([0.0; 4], AlphaPolicy::Straight, AlphaPolicy::Straight); (w * h) as usize];
-    //     for row in 0..h {
-    //         let dst_row = &mut out[(row * w) as usize..((row + 1) * w) as usize];
-    //         self.convert_row_strided(data, desc, y + row, x, x + w, dst_row, mode);
-    //     }
-    //     out
-    // }
-
-    // pub fn convert_buffer<D: Pixel + Send>(&self, data: &[u8], desc: &BufferDesc, mode: AlphaPolicy) -> Vec<D> {
-    //     let w = desc.width as usize;
-    //     let h = desc.height as usize;
-    //     let mut out = vec![D::pack_one([0.0; 4], AlphaPolicy::Straight, AlphaPolicy::Straight); w * h];
-    //     if h <= 256 {
-    //         for row in 0..h {
-    //             let dst_row = &mut out[row * w..(row + 1) * w];
-    //             self.convert_row_strided(data, desc, row as u32, 0, desc.width, dst_row, mode);
-    //         }
-    //     } else {
-    //         use rayon::prelude::*;
-    //         out.par_chunks_exact_mut(w).enumerate().for_each(|(row, dst_row)| {
-    //             self.convert_row_strided(data, desc, row as u32, 0, desc.width, dst_row, mode);
-    //         });
-    //     }
-    //     out
-    // }
 
     pub fn convert_pixels<S: Pixel, D: Pixel>(&self, src: &[S], src_fmt: PixelFormat, src_alpha: AlphaPolicy, dst_alpha: AlphaPolicy) -> Vec<D> {
         let n = src.len();
@@ -453,7 +409,7 @@ mod tests {
             },
         ];
         let result: Vec<[u8; 4]> =
-            conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&pixels, AlphaPolicy::Straight, AlphaPolicy::Straight);
+            conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&pixels, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -496,10 +452,10 @@ mod tests {
         .collect();
 
         let acescg: Vec<Rgba<f16>> = srgb_to_acescg
-            .convert_pixels::<Rgba<f16>, Rgba<f16>>(&colors_f16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+            .convert_pixels::<Rgba<f16>, Rgba<f16>>(&colors_f16, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
 
         let result: Vec<[u8; 4]> =
-            acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, AlphaPolicy::Straight, AlphaPolicy::Straight);
+            acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
 
         for (i, (orig, out)) in colors_f16.iter().zip(result.iter()).enumerate() {
             let expected_r = (orig.r.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -539,7 +495,7 @@ mod tests {
             .collect();
 
         let dst: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
 
         assert_eq!(dst.len(), src.len());
         for (i, (s, d)) in src.iter().zip(dst.iter()).enumerate() {
@@ -562,9 +518,9 @@ mod tests {
         }];
 
         let premul: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
         let straight: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, AlphaPolicy::Straight, AlphaPolicy::Straight);
+            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
 
         let p = &premul[0];
         let s = &straight[0];
@@ -610,7 +566,7 @@ mod tests {
         ];
 
         let dst: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgb<f16>, Rgba<f16>>(&src, AlphaPolicy::Straight, AlphaPolicy::Straight);
+            conv.convert_pixels::<Rgb<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
 
         assert_eq!(dst.len(), 2);
         let first = &dst[0];
@@ -650,7 +606,7 @@ mod tests {
         let src: Vec<[u8; 4]> = vec![[255, 0, 0, 128], [0, 255, 0, 255], [128, 128, 128, 64]];
 
         let f16: Vec<Rgba<f16>> =
-            conv.convert_pixels::<[u8; 4], Rgba<f16>>(&src, AlphaPolicy::Straight, AlphaPolicy::Straight);
+            conv.convert_pixels::<[u8; 4], Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
 
         assert_eq!(f16.len(), 3);
         // u8→f16 Straight: values scaled to [0,1], alpha preserved as-is
@@ -684,10 +640,10 @@ mod tests {
         let src: Vec<[u8; 4]> = vec![[200, 100, 50, 255], [0, 128, 255, 128]];
 
         let acescg: Vec<Rgba<f16>> =
-            to_acescg.convert_pixels::<[u8; 4], Rgba<f16>>(&src, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+            to_acescg.convert_pixels::<[u8; 4], Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
 
         let back: Vec<[u8; 4]> =
-            to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, AlphaPolicy::Straight, AlphaPolicy::Straight);
+            to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
 
         assert_eq!(back.len(), 2);
         // u8 roundtrip through ACEScg should approximately preserve values

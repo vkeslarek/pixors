@@ -125,6 +125,15 @@ pub fn tiff_pixel_format(
                 PixelFormat::RgbaF32
             }
         },
+        tiff::decoder::DecodingResult::F16(_) => match ct {
+            tiff::ColorType::Gray(_) => PixelFormat::GrayF16,
+            tiff::ColorType::RGB(_) => PixelFormat::RgbF16,
+            tiff::ColorType::RGBA(_) => PixelFormat::RgbaF16,
+            _ => {
+                tracing::warn!("Unsupported F16 TIFF color: {:?}, falling back to RgbaF16", ct);
+                PixelFormat::RgbaF16
+            }
+        },
         _ => {
             tracing::warn!("Unknown TIFF DecodingResult, falling back to Rgba8");
             PixelFormat::Rgba8
