@@ -33,16 +33,14 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
         let old_mip = state.current_mip;
 
-        if let Some(ref cache) = self.cache {
-            if let Ok(mut guard) = cache.lock() {
-                if let Some((img_w, img_h)) = guard.take_new_img() {
+        if let Some(ref cache) = self.cache
+            && let Ok(mut guard) = cache.lock()
+                && let Some((img_w, img_h)) = guard.take_new_img() {
                     state.camera.img_w = img_w as f32;
                     state.camera.img_h = img_h as f32;
                     state.camera.fit();
                     state.current_mip = state.camera.visible_mip_level();
                 }
-            }
-        }
 
         let size = Size::new(bounds.width, bounds.height);
         if state.last_bounds != Some(size) {
@@ -59,15 +57,14 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
         // Fallback to lower MIPs (higher resolution) if the target MIP hasn't generated enough tiles yet.
         // This allows progressively showing the image during initial load.
-        if let Some(ref cache) = self.cache {
-            if let Ok(guard) = cache.lock() {
+        if let Some(ref cache) = self.cache
+            && let Ok(guard) = cache.lock() {
                 let base_mip = state.camera.floor_mip();
                 if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
                     tracing::info!("[pixors] viewport: fallback from target {} to mip {}", target_mip, base_mip);
                     target_mip = base_mip;
                 }
             }
-        }
         
         if state.current_mip != target_mip {
             tracing::info!("[pixors] viewport: draw() setting current_mip to {}", target_mip);
@@ -125,7 +122,9 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             return Some(shader::Action::request_redraw());
         }
 
-        let action = match event {
+        
+
+        match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if cursor.position_in(bounds).is_some() {
                     state.dragging = true;
@@ -169,9 +168,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 }
             }
             _ => None,
-        };
-
-        action
+        }
     }
 
     fn mouse_interaction(

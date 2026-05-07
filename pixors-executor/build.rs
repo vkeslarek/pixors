@@ -17,15 +17,18 @@ fn compile_slang(slangc: &str, src: &Path, include_dir: &Path, dest: &Path) -> b
         .arg("-fvk-use-entrypoint-name")
         .output()
         .map(|o| {
+            let stderr = String::from_utf8_lossy(&o.stderr);
             if o.status.success() {
-                let stderr = String::from_utf8_lossy(&o.stderr);
-                if !stderr.is_empty() && !stderr.contains("warning") {
-                    eprintln!("slangc ({}): {}", src.display(), stderr.trim());
+                if !stderr.is_empty() && stderr.contains("warning") {
+                    for line in stderr.lines() {
+                        println!("cargo:warning=slangc: {}", line);
+                    }
                 }
                 !o.stdout.is_empty() && std::fs::write(dest, &o.stdout).is_ok()
             } else {
-                eprintln!("slangc error ({}): {}",
-                    src.display(), String::from_utf8_lossy(&o.stderr).trim());
+                for line in stderr.lines() {
+                    println!("cargo:warning=slangc error: {}", line);
+                }
                 false
             }
         })
@@ -48,9 +51,8 @@ fn compile_dir(dir: &Path, shaders_root: &Path, kernels_dir: &Path, slangc: &str
             let stem = path.file_stem().unwrap().to_str().unwrap();
             let dest = kernels_dir.join(format!("{stem}.spv"));
 
-            if compile_slang(slangc, &path, shaders_root, &dest) {
-            } else if !dest.exists() {
-                eprintln!("WARNING: {stem}.spv not found and slangc failed");
+            if !compile_slang(slangc, &path, shaders_root, &dest) {
+                panic!("Failed to compile shader: {}", path.display());
             }
         }
     }
@@ -64,6 +66,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed={}", shaders_dir.display());
+    println!("cargo:rerun-if-changed={}", kernels_dir.display());
 
     if !shaders_dir.exists() {
         println!("cargo:rustc-env=SHADER_OUT_DIR={}", kernels_dir.display());

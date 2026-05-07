@@ -92,7 +92,10 @@ impl DebugStopwatch {
 
 impl Drop for DebugStopwatch {
     fn drop(&mut self) {
-        tracing::debug!("{} took {:?}", self.name, self.start.elapsed());
+        let elapsed = self.start.elapsed();
+        if elapsed.as_millis() > 5 {
+            tracing::debug!("{} took {:?}", self.name, elapsed);
+        }
     }
 }
 

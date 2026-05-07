@@ -6,12 +6,12 @@ use crate::data::buffer::Buffer;
 use crate::data::tile::{Tile, TileCoord};
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::model::color::space::ColorSpace;
-use crate::model::pixel::meta::PixelMeta;
-use crate::model::pixel::{AlphaPolicy, PixelFormat};
+use crate::common::color::space::ColorSpace;
+use crate::common::pixel::meta::PixelMeta;
+use crate::common::pixel::{AlphaPolicy, PixelFormat};
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Producer,
+    ProcessorContext, Stage,
 };
 
 static CR_INPUTS: &[PortDeclaration] = &[];
@@ -24,7 +24,6 @@ static CR_PORTS: PortSpecification = PortSpecification {
     outputs: PortGroup::Fixed(CR_OUTPUTS),
 };
 
-/// Bounding range of tile coordinates (exclusive end).
 /// Bounding range of tile coordinates (exclusive end).
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TileRange {
@@ -46,20 +45,13 @@ impl Clone for TileRange {
 }
 
 /// Reads tiles from a disk cache written by [`CacheWriter`](crate::sink::cache_writer::CacheWriter).
-///
-/// A source stage (0 inputs) — reads all tiles in the given MIP level and
-/// emits them on the first (dummy) invocation.
-///
-/// Missing files are silently skipped (edge / partial tiles may not exist).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheReader {
     pub cache_dir: PathBuf,
     pub mip_level: u32,
     pub tile_size: u32,
-    /// Dimensions at MIP 0 (used to compute the grid at the target MIP).
     pub image_width: u32,
     pub image_height: u32,
-    /// Only emit tiles within this range.  `None` emits every tile.
     pub tile_range: Option<TileRange>,
 }
 
@@ -72,15 +64,8 @@ impl Stage for CacheReader {
         &CR_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(CacheReaderProcessor {
+    fn producer(&self) -> Option<Box<dyn Producer>> {
+        Some(Box::new(CacheReaderProducer {
             cache_dir: self.cache_dir.clone(),
             mip_level: self.mip_level,
             tile_size: self.tile_size,
@@ -98,22 +83,15 @@ impl Stage for CacheReader {
         let rows = mip_h.div_ceil(self.tile_size);
 
         let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
-            Some(r) => (
-                r.tx_start,
-                r.tx_end.min(cols),
-                r.ty_start,
-                r.ty_end.min(rows),
-            ),
+            Some(r) => (r.tx_start, r.tx_end.min(cols), r.ty_start, r.ty_end.min(rows)),
             None => (0, cols, 0, rows),
         };
 
-        let width = tx_end.saturating_sub(tx_start);
-        let height = ty_end.saturating_sub(ty_start);
-        (width * height) as usize
+        (tx_end.saturating_sub(tx_start) * ty_end.saturating_sub(ty_start)) as usize
     }
 }
 
-pub struct CacheReaderProcessor {
+pub struct CacheReaderProducer {
     cache_dir: PathBuf,
     mip_level: u32,
     tile_size: u32,
@@ -123,20 +101,15 @@ pub struct CacheReaderProcessor {
     use_compression: bool,
 }
 
-impl Processor for CacheReaderProcessor {
-    fn process(&mut self, ctx: ProcessorContext<'_>, _item: Item) -> Result<(), Error> {
+impl Producer for CacheReaderProducer {
+    fn produce(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let mip_w = (self.image_width >> self.mip_level).max(1);
         let mip_h = (self.image_height >> self.mip_level).max(1);
         let cols = mip_w.div_ceil(self.tile_size);
         let rows = mip_h.div_ceil(self.tile_size);
 
         let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
-            Some(r) => (
-                r.tx_start,
-                r.tx_end.min(cols),
-                r.ty_start,
-                r.ty_end.min(rows),
-            ),
+            Some(r) => (r.tx_start, r.tx_end.min(cols), r.ty_start, r.ty_end.min(rows)),
             None => (0, cols, 0, rows),
         };
 
@@ -144,10 +117,7 @@ impl Processor for CacheReaderProcessor {
         let dir = self.cache_dir.join(format!("mip_{}", self.mip_level));
 
         if !dir.is_dir() {
-            tracing::warn!(
-                "[pixors] cache_reader: cache dir does not exist: {}",
-                dir.display(),
-            );
+            tracing::warn!("[pixors] cache_reader: cache dir does not exist: {}", dir.display());
             return Ok(());
         }
 
@@ -158,22 +128,16 @@ impl Processor for CacheReaderProcessor {
                     Ok(b) => b,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(e) => {
-                        tracing::warn!(
-                            "[pixors] cache_reader: failed to read {}: {e}",
-                            path.display(),
-                        );
+                        tracing::warn!("[pixors] cache_reader: failed to read {}: {e}", path.display());
                         continue;
                     }
                 };
-                
+
                 let bytes = if self.use_compression {
                     match lz4_flex::decompress_size_prepended(&bytes) {
                         Ok(b) => b,
                         Err(e) => {
-                            tracing::warn!(
-                                "[pixors] cache_reader: failed to decompress {}: {e}",
-                                path.display(),
-                            );
+                            tracing::warn!("[pixors] cache_reader: failed to decompress {}: {e}", path.display());
                             continue;
                         }
                     }
@@ -185,8 +149,7 @@ impl Processor for CacheReaderProcessor {
                 if coord.width == 0 || coord.height == 0 {
                     continue;
                 }
-                ctx.emit
-                    .emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
+                ctx.emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
             }
         }
         Ok(())

@@ -2,9 +2,9 @@
 
 import lib.pixel;
 
-struct Neighborhood
+struct Neighborhood<T : IPixel>
 {
-    StructuredBuffer<uint> data;
+    StructuredBuffer<T::StorageType> data;
     uint  padded_width;
     uint  padded_height;
     uint2 center_offset;
@@ -15,13 +15,13 @@ struct Neighborhood
     // width  = center_w + 2*radius, padded rows in the buffer.
     // height = center_h + 2*radius, padded rows in the buffer.
     // radius = padding in pixels.
-    static Neighborhood bind(
-        StructuredBuffer<uint> src,
+    static Neighborhood<T> bind(
+        StructuredBuffer<T::StorageType> src,
         uint width,
         uint height,
         int radius)
     {
-        Neighborhood n;
+        Neighborhood<T> n;
         n.data = src;
         n.padded_width = width;
         n.padded_height = height;
@@ -37,6 +37,9 @@ struct Neighborhood
             int2(0, 0),
             int2(int(padded_width) - 1, int(padded_height) - 1));
         uint idx = uint(clamped_xy.y) * padded_width + uint(clamped_xy.x);
-        return rgba8_unpack(data[idx]);
+        
+        T pixel;
+        pixel.init(data[idx]);
+        return pixel.toFloat4();
     }
 }

@@ -3,6 +3,7 @@ use iced::{Background, Element, Length};
 
 use crate::theme::BORDER_SUBTLE;
 
+#[allow(dead_code)]
 pub fn separator_h<'a, Msg: 'a>() -> Element<'a, Msg> {
     container(text(""))
         .width(Length::Fill)

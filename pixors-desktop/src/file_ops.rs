@@ -2,14 +2,13 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use iced::wgpu::hal::DynAdapter;
 use pixors_executor::data::tile::TileGridPos;
-use pixors_executor::model::image::Image;
+use pixors_executor::common::image::Image;
 use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::data_transform::DataTransformNode;
-use pixors_executor::model::color::space::ColorSpace;
-use pixors_executor::model::pixel::PixelFormat;
+use pixors_executor::common::color::space::ColorSpace;
+use pixors_executor::common::pixel::PixelFormat;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
@@ -49,12 +48,11 @@ pub fn open_and_run(
 
     let cache_dir = path.with_extension("pixors_cache");
 
-    if let Some(ref cache) = vp_cache {
-        if let Ok(mut guard) = cache.lock() {
+    if let Some(ref cache) = vp_cache
+        && let Ok(mut guard) = cache.lock() {
             guard.clear_all();
             guard.signal_new_img(w, h);
         }
-    }
 
     ensure_tile_sink_installed();
 
@@ -85,11 +83,14 @@ pub fn open_and_run(
     let acc = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
         ScanLineToTile { tile_size: TILE_SIZE, image_width: w, image_height: h },
     )));
-    let cc = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
-        ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB },
+    let cc_to_working = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
+        ColorConvert { target_format: PixelFormat::RgbaF16, target_color_space: ColorSpace::ACES_CG },
     )));
     let mip = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
         MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
+    )));
+    let cc_to_srgb = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
+        ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB },
     )));
     let cache = graph.add_stage(StageNode::Sink(SinkNode::CacheWriter(
         CacheWriter { cache_dir },
@@ -102,13 +103,14 @@ pub fn open_and_run(
     )));
     let sink = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
 
-    graph.add_edge(src,  acc,     EdgePorts::default());
-    graph.add_edge(acc,  cc,      EdgePorts::default());
-    graph.add_edge(cc,   mip,     EdgePorts::default());
-    graph.add_edge(mip,  cache,   EdgePorts::default());
-    graph.add_edge(mip,  vp_sink, EdgePorts::default());
-    graph.add_edge(mip,  filter,  EdgePorts::default());
-    graph.add_edge(filter, sink,  EdgePorts::default());
+    graph.add_edge(src,           acc,            EdgePorts::default());
+    graph.add_edge(acc,           cc_to_working,  EdgePorts::default());
+    graph.add_edge(cc_to_working, mip,            EdgePorts::default());
+    graph.add_edge(mip,           cc_to_srgb,     EdgePorts::default());
+    graph.add_edge(cc_to_srgb,    cache,          EdgePorts::default());
+    graph.add_edge(cc_to_srgb,    vp_sink,        EdgePorts::default());
+    graph.add_edge(cc_to_srgb,    filter,         EdgePorts::default());
+    graph.add_edge(filter,        sink,           EdgePorts::default());
     graph.outputs.push((sink, 0));
 
     let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
@@ -163,10 +165,4 @@ pub fn fetch_mip(
             tracing::error!("[pixors] fetch_mip {mip} error: {e}");
         }
     });
-}
-
-pub fn probe_dimensions(path: &Path) -> Result<(u32, u32), String> {
-    Image::open(path)
-        .map(|i| (i.desc.width, i.desc.height))
-        .map_err(|e| e.to_string())
 }

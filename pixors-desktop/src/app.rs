@@ -5,7 +5,6 @@ use iced::keyboard::{self};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row};
 use iced::{Background, Element, Length, Subscription};
-use iced::futures::stream::StreamExt;
 use pixors_executor::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 use pixors_executor::source::cache_reader::TileRange;
@@ -23,6 +22,7 @@ pub enum PaneKind {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Msg {
     MenuBar(menu_bar::Msg),
     WorkspaceBar(workspace_bar::Msg),
@@ -50,7 +50,7 @@ pub struct App {
     pub status: status_bar::State,
     pub loading: bool,
     pub progress: f32,
-    pub progress_dir: f32,
+    #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
     pub cache: Option<Arc<Mutex<ViewportCache>>>,
     pub tile_generation: u64,
@@ -88,7 +88,6 @@ impl Default for App {
             status: status_bar::State::default(),
             loading: true,
             progress: 0.0,
-            progress_dir: 1.0,
             errors: Vec::new(),
             cache: Some(ViewportCache::new()),
             tile_generation: 0,

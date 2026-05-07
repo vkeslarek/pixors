@@ -5,10 +5,10 @@ use crate::data::device::Device;
 use crate::data::scanline::ScanLine;
 use crate::data::tile::Tile;
 use crate::graph::item::Item;
-use crate::model::pixel::meta::PixelMeta;
+use crate::common::pixel::meta::PixelMeta;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -41,13 +41,6 @@ impl Stage for TileToScanline {
 
     fn ports(&self) -> &'static PortSpecification {
         &TS_PORTS
-    }
-
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
     }
 
     fn device(&self) -> Device {

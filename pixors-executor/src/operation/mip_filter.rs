@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
-
+use crate::data::device::Device;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
@@ -35,12 +35,10 @@ impl Stage for MipFilter {
     fn ports(&self) -> &'static PortSpecification {
         &PORTS
     }
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
+    fn device(&self) -> Device {
+        Device::Either
     }
+
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(MipFilterProcessor {
             mip_level: self.mip_level,

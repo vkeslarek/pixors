@@ -117,6 +117,7 @@ impl TiledTexture {
     pub fn dims(&self) -> (u32, u32) {
         (self.width, self.height)
     }
+    #[allow(dead_code)]
     pub fn mip_level(&self) -> u32 {
         self.mip_level
     }

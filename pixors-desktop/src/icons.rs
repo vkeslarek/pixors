@@ -22,6 +22,7 @@ pub const SUN: &str = "\u{e2b1}";
 pub const LAYERS: &str = "\u{e529}";
 pub const SETTINGS: &str = "\u{e154}";
 pub const HELP: &str = "\u{e082}";
+#[allow(dead_code)]
 pub const PLUS: &str = "\u{e13d}";
 pub const X: &str = "\u{e1b2}";
 pub const GRIP_VERTICAL: &str = "\u{e0eb}";

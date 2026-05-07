@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 
 use crate::error::Error;
@@ -42,13 +42,6 @@ impl Stage for PngEncoder {
 
     fn ports(&self) -> &'static PortSpecification {
         &PE_PORTS
-    }
-
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {

@@ -29,7 +29,6 @@ pub struct Pipeline {
         Vec<ItemReceiver>,
         Vec<(ItemSender, u16, u16)>,
     )>,
-    total_work: usize,
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
@@ -41,6 +40,7 @@ impl Pipeline {
     ) -> Result<Self, Error> {
         let mut g: Graph = graph.graph.clone();
         let gpu_ok = gpu::context::gpu_available();
+        let gpu_ctx = if gpu_ok { gpu::context::try_init() } else { None };
 
         validate_ports(&g)?;
 
@@ -71,14 +71,24 @@ impl Pipeline {
             let dev = devs[&nodes[0]];
             let inputs = std::mem::take(&mut ch_in[idx]);
             let outputs = std::mem::take(&mut ch_out[idx]);
+            let num_stages = nodes.len();
+            let kinds: Vec<_> = nodes.iter().map(|&id| g[id].kind()).collect();
 
+            let chain_name = format!("chain_{idx}_{dev:?}_{}", kinds.join("→"));
             tracing::info!(
-                "[pixors] compile: chain[{idx}] device={dev:?} {} stage(s): {:?}",
-                nodes.len(),
-                nodes.iter().map(|&id| g[id].kind()).collect::<Vec<_>>(),
+                "[pixors] compile: {chain_name} {} stage(s)",
+                num_stages,
             );
 
-            let kernels = nodes
+            let producer = nodes
+                .first()
+                .and_then(|&id| g[id].producer());
+            let consumer = nodes
+                .last()
+                .and_then(|&id| g[id].consumer());
+            let mid_start = if producer.is_some() { 1 } else { 0 };
+            let mid_end = nodes.len() - if consumer.is_some() { 1 } else { 0 };
+            let kernels: Vec<Box<dyn crate::stage::Processor>> = nodes[mid_start..mid_end]
                 .iter()
                 .map(|&id| {
                     g[id]
@@ -87,7 +97,7 @@ impl Pipeline {
                 })
                 .collect::<Result<_, _>>()?;
             compiled.push((
-                Box::new(ChainRunner::new(kernels, dev, progress.clone())) as Box<dyn Runner>,
+                Box::new(ChainRunner::new(producer, kernels, consumer, dev, gpu_ctx.clone(), progress.clone(), chain_name)) as Box<dyn Runner>,
                 inputs,
                 outputs,
             ));
@@ -96,7 +106,6 @@ impl Pipeline {
         tracing::info!("[pixors] compile: {} chains built, total_work={total_work}", compiled.len());
         Ok(Pipeline {
             chains: compiled,
-            total_work,
         })
     }
 }
@@ -116,16 +125,20 @@ impl Pipeline {
             }
 
             let mut first_err: Option<Error> = None;
-            for h in handles {
+            for (i, h) in handles.into_iter().enumerate() {
                 match h.join() {
-                    Ok(Ok(())) => {}
+                    Ok(Ok(())) => {
+                        tracing::info!("[pixors] pipeline: thread {i} joined OK");
+                    }
                     Ok(Err(e)) => {
+                        tracing::error!("[pixors] pipeline: thread {i} returned error: {e}");
                         if let Some(ref tx) = events {
                             let _ = tx.send(PipelineEvent::Error(e.to_string()));
                         }
                         first_err.get_or_insert(e);
                     }
                     Err(_) => {
+                        tracing::error!("[pixors] pipeline: thread {i} PANICKED");
                         first_err.get_or_insert(Error::internal("pipeline thread panicked"));
                     }
                 }
@@ -247,63 +260,16 @@ fn inport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
-    let mut devs: HashMap<StageId, Device> = g
-        .node_indices()
+    g.node_indices()
         .map(|id| {
             let d = match g[id].device() {
                 Device::Gpu if !gpu_ok => Device::Cpu,
+                Device::Either => if gpu_ok { Device::Gpu } else { Device::Cpu },
                 other => other,
             };
             (id, d)
         })
-        .collect();
-
-    if !gpu_ok {
-        return devs;
-    }
-
-    let mut visited = HashMap::<StageId, bool>::new();
-    let mut components: Vec<Vec<StageId>> = Vec::new();
-
-    for id in g.node_indices() {
-        if devs[&id] != Device::Either || visited.contains_key(&id) {
-            continue;
-        }
-        let mut comp = Vec::new();
-        let mut stack = vec![id];
-        visited.insert(id, true);
-        while let Some(cur) = stack.pop() {
-            comp.push(cur);
-            for n in neighbors(g, cur) {
-                if devs[&n] == Device::Either && !visited.contains_key(&n) {
-                    visited.insert(n, true);
-                    stack.push(n);
-                }
-            }
-        }
-        components.push(comp);
-    }
-
-    for comp in &components {
-        let touches_gpu = comp
-            .iter()
-            .any(|&id| neighbors(g, id).any(|n| devs[&n] == Device::Gpu));
-        if touches_gpu {
-            for &id in comp {
-                devs.insert(id, Device::Gpu);
-            }
-        }
-    }
-    devs
-}
-
-fn neighbors(g: &Graph, id: StageId) -> impl Iterator<Item = StageId> + '_ {
-    g.edges_directed(id, Direction::Outgoing)
-        .map(|e| e.target())
-        .chain(
-            g.edges_directed(id, Direction::Incoming)
-                .map(|e| e.source()),
-        )
+        .collect()
 }
 
 fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {

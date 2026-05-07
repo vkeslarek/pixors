@@ -6,8 +6,8 @@ use crate::data::tile::{Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -44,13 +44,6 @@ impl Stage for TileToNeighborhood {
         &NA_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
-    }
-
     fn device(&self) -> Device {
         Device::Either
     }
@@ -67,7 +60,7 @@ pub struct TileToNeighborhoodProcessor {
     image_width: u32,
     image_height: u32,
     tile_size: u32,
-    meta: Option<crate::model::pixel::meta::PixelMeta>,
+    meta: Option<crate::common::pixel::meta::PixelMeta>,
     initialized: bool,
 }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-pub use crate::gpu::scheduler::GpuBuffer;
+pub use crate::gpu::pool::GpuBuffer;
 
 /// Pixel storage. `Cpu` uses an `Arc<Vec<u8>>` for cheap clones (copy-on-write
 /// when callers need exclusive access via `Arc::make_mut`). `Gpu` wraps a
@@ -8,7 +8,7 @@ pub use crate::gpu::scheduler::GpuBuffer;
 #[derive(Debug, Clone)]
 pub enum Buffer {
     Cpu(Arc<Vec<u8>>),
-    Gpu(GpuBuffer),
+    Gpu(Arc<GpuBuffer>),
 }
 
 impl Buffer {
@@ -23,7 +23,7 @@ impl Buffer {
         }
     }
 
-    pub fn as_gpu(&self) -> Option<&GpuBuffer> {
+    pub fn as_gpu(&self) -> Option<&Arc<GpuBuffer>> {
         match self {
             Self::Gpu(g) => Some(g),
             _ => None,

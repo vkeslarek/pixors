@@ -1,14 +1,13 @@
-use std::sync::{Arc, Mutex};
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::image::codec::PageStream;
 use crate::error::Error;
-use crate::graph::item::Item;
-use crate::model::io::PageStream;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, ProcessorContext,
+    Producer, Stage,
 };
 
 static IMG_STREAM_INPUTS: &[PortDeclaration] = &[];
@@ -56,30 +55,24 @@ impl Stage for ImageStreamSource {
     fn ports(&self) -> &'static PortSpecification {
         &IMG_STREAM_PORTS
     }
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
-    fn processor(&self) -> Option<Box<dyn Processor>> {
+    fn producer(&self) -> Option<Box<dyn Producer>> {
         self.stream
             .lock()
             .unwrap()
             .take()
-            .map(|s| Box::new(ImageStreamProcessor { stream: s }) as Box<dyn Processor>)
+            .map(|s| Box::new(ImageStreamProducer { stream: s }) as Box<dyn Producer>)
     }
     fn source_items(&self) -> usize {
         self.image_height as usize
     }
 }
 
-pub struct ImageStreamProcessor {
+pub struct ImageStreamProducer {
     stream: Box<dyn PageStream>,
 }
 
-impl Processor for ImageStreamProcessor {
-    fn process(&mut self, ctx: ProcessorContext<'_>, _item: Item) -> Result<(), Error> {
+impl Producer for ImageStreamProducer {
+    fn produce(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         loop {
             let items = self.stream.drain(256)?;
             if items.is_empty() {
@@ -90,5 +83,8 @@ impl Processor for ImageStreamProcessor {
             }
         }
         Ok(())
+    }
+    fn source_items(&self) -> usize {
+        0
     }
 }

@@ -1,17 +1,14 @@
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
+use crate::data::buffer::Buffer;
 use crate::data::tile::Tile;
+use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
-
-use crate::error::Error;
-
-use crate::gpu;
-
-use crate::data::buffer::{Buffer, GpuBuffer};
 
 use crate::debug_stopwatch;
 
@@ -42,13 +39,6 @@ impl Stage for Upload {
         &UP_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
-    }
-
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(UploadProcessor::new()))
     }
@@ -70,24 +60,13 @@ impl Processor for UploadProcessor {
             ctx.emit.emit(Item::Tile(tile));
             return Ok(());
         }
-        let gpu_ctx = gpu::context::try_init()
-            .ok_or_else(|| Error::internal("GPU unavailable but Upload was scheduled"))?;
+        let gpu = ctx.gpu.as_ref().ok_or_else(|| Error::internal("GPU unavailable for upload"))?;
         let bytes: &[u8] = tile.data.as_cpu_slice().unwrap();
-        let size = bytes.len() as u64;
-        let usage = wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST;
-
-        let pool = &gpu_ctx.scheduler().pool();
-        let buf = pool.acquire(size, usage);
-        let buf_arc = buf.arc();
-        gpu_ctx.queue().write_buffer(&buf_arc, 0, bytes);
-
-        let gbuf = GpuBuffer::new(buf_arc, size);
+        let gbuf = gpu.scheduler().upload_bytes(bytes);
         ctx.emit.emit(Item::Tile(Tile::new(
             tile.coord,
             tile.meta,
-            Buffer::Gpu(gbuf),
+            Buffer::Gpu(Arc::new(gbuf)),
         )));
         Ok(())
     }

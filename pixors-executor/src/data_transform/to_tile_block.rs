@@ -5,8 +5,8 @@ use crate::data::tile::{Tile, TileGridPos};
 use crate::data::tile_block::{TileBlock, TileBlockCoord};
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,13 +45,6 @@ impl Stage for TileToTileBlock {
         &PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
-
     fn device(&self) -> Device {
         Device::Either
     }
@@ -66,18 +59,12 @@ impl Stage for TileToTileBlock {
 }
 
 pub struct TileToTileBlockProcessor {
-    tile_size: u32,
-    image_width: u32,
-    image_height: u32,
     grid: HashMap<TileGridPos, Tile>,
 }
 
 impl TileToTileBlockProcessor {
-    pub fn new(tile_size: u32, image_width: u32, image_height: u32) -> Self {
+    pub fn new(_tile_size: u32, _image_width: u32, _image_height: u32) -> Self {
         Self {
-            tile_size,
-            image_width,
-            image_height,
             grid: HashMap::new(),
         }
     }
@@ -94,7 +81,7 @@ impl TileToTileBlockProcessor {
                 }
                 let tx_tl = tx - dx;
                 let ty_tl = ty - dy;
-                if tx_tl % 2 == 0 && ty_tl % 2 == 0 {
+                if tx_tl.is_multiple_of(2) && ty_tl.is_multiple_of(2) {
                     candidates.push((tx_tl, ty_tl));
                 }
             }

@@ -7,9 +7,9 @@ mod tests {
     use crate::gpu;
     use crate::graph::emitter::Emitter;
     use crate::graph::item::Item;
-    use crate::model::color::space::ColorSpace;
-    use crate::model::pixel::meta::PixelMeta;
-    use crate::model::pixel::{AlphaPolicy, PixelFormat};
+    use crate::common::color::space::ColorSpace;
+    use crate::common::pixel::meta::PixelMeta;
+    use crate::common::pixel::{AlphaPolicy, PixelFormat};
     use crate::operation::blur::BlurProcessor;
     use crate::stage::{Processor, ProcessorContext};
 

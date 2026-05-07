@@ -1,0 +1,229 @@
+[1m[92m   Compiling[0m pixors-executor v0.1.0 (/home/keslarek/Git/pixors/pixors-executor)
+[1m[33mwarning[0m[1m: unused import: `crate::data::tile::TileCoord`[0m
+  [1m[94m--> [0mpixors-executor/src/model/io/png.rs:12:5
+   [1m[94m|[0m
+[1m[94m12[0m [1m[94m|[0m use crate::data::tile::TileCoord;
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused variable: `pf`[0m
+  [1m[94m--> [0mpixors-executor/src/model/image/buffer.rs:36:13
+   [1m[94m|[0m
+[1m[94m36[0m [1m[94m|[0m             pf @ (PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
+   [1m[94m|[0m             [1m[33m^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_pf`[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused variable: `pf`[0m
+  [1m[94m--> [0mpixors-executor/src/model/image/buffer.rs:45:13
+   [1m[94m|[0m
+[1m[94m45[0m [1m[94m|[0m             pf @ (PixelFormat::GrayF16 | PixelFormat::GrayAF16 | PixelFormat::RgbF16
+   [1m[94m|[0m             [1m[33m^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_pf`[0m
+
+[1m[33mwarning[0m[1m: unused variable: `src_fmt`[0m
+   [1m[94m--> [0mpixors-executor/src/operation/color.rs:368:5
+    [1m[94m|[0m
+[1m[94m368[0m [1m[94m|[0m     src_fmt: PixelFormat, dst_fmt: PixelFormat,
+    [1m[94m|[0m     [1m[33m^^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_src_fmt`[0m
+
+[1m[33mwarning[0m[1m: fields `tile_size`, `image_width`, and `image_height` are never read[0m
+  [1m[94m--> [0mpixors-executor/src/data_transform/to_tile_block.rs:62:5
+   [1m[94m|[0m
+[1m[94m61[0m [1m[94m|[0m pub struct TileToTileBlockProcessor {
+   [1m[94m|[0m            [1m[94m------------------------[0m [1m[94mfields in this struct[0m
+[1m[94m62[0m [1m[94m|[0m     tile_size: u32,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^[0m
+[1m[94m63[0m [1m[94m|[0m     image_width: u32,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^[0m
+[1m[94m64[0m [1m[94m|[0m     image_height: u32,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: function `decode_u8_tiff` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/model/io/tiff.rs:112:4
+    [1m[94m|[0m
+[1m[94m112[0m [1m[94m|[0m fn decode_u8_tiff(
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `decode_u16_tiff` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/model/io/tiff.rs:153:4
+    [1m[94m|[0m
+[1m[94m153[0m [1m[94m|[0m fn decode_u16_tiff(
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `decode_u32_tiff` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/model/io/tiff.rs:190:4
+    [1m[94m|[0m
+[1m[94m190[0m [1m[94m|[0m fn decode_u32_tiff(
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `decode_f32_tiff` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/model/io/tiff.rs:213:4
+    [1m[94m|[0m
+[1m[94m213[0m [1m[94m|[0m fn decode_f32_tiff(
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: constant `BLUR_SPIRV` is never used[0m
+  [1m[94m--> [0mpixors-executor/src/operation/blur.rs:23:7
+   [1m[94m|[0m
+[1m[94m23[0m [1m[94m|[0m const BLUR_SPIRV: &[u8] = include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
+   [1m[94m|[0m       [1m[33m^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: static `BLUR_RES_IN` is never used[0m
+  [1m[94m--> [0mpixors-executor/src/operation/blur.rs:91:8
+   [1m[94m|[0m
+[1m[94m91[0m [1m[94m|[0m static BLUR_RES_IN: &[ResourceDeclaration] = &[ResourceDeclaration {
+   [1m[94m|[0m        [1m[33m^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: static `BLUR_RES_OUT` is never used[0m
+  [1m[94m--> [0mpixors-executor/src/operation/blur.rs:96:8
+   [1m[94m|[0m
+[1m[94m96[0m [1m[94m|[0m static BLUR_RES_OUT: &[ResourceDeclaration] = &[ResourceDeclaration {
+   [1m[94m|[0m        [1m[33m^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: static `BLUR_PARAMS_DECL` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/operation/blur.rs:101:8
+    [1m[94m|[0m
+[1m[94m101[0m [1m[94m|[0m static BLUR_PARAMS_DECL: &[ParameterDeclaration] = &[
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: struct `BlurGpuKernel` is never constructed[0m
+   [1m[94m--> [0mpixors-executor/src/operation/blur.rs:120:8
+    [1m[94m|[0m
+[1m[94m120[0m [1m[94m|[0m struct BlurGpuKernel {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `gpu_blur_dispatch` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/operation/blur.rs:136:4
+    [1m[94m|[0m
+[1m[94m136[0m [1m[94m|[0m fn gpu_blur_dispatch(nbhd: &Neighborhood, radius: u32) -> Result<Tile, Error> {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `download_neighborhood` is never used[0m
+   [1m[94m--> [0mpixors-executor/src/operation/blur.rs:244:4
+    [1m[94m|[0m
+[1m[94m244[0m [1m[94m|[0m fn download_neighborhood(mut nbhd: Neighborhood) -> Result<Neighborhood, Error> {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: field `total_work` is never read[0m
+  [1m[94m--> [0mpixors-executor/src/runtime/pipeline.rs:32:5
+   [1m[94m|[0m
+[1m[94m26[0m [1m[94m|[0m pub struct Pipeline {
+   [1m[94m|[0m            [1m[94m--------[0m [1m[94mfield in this struct[0m
+[1m[94m...[0m
+[1m[94m32[0m [1m[94m|[0m     total_work: usize,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `pixors-executor` (lib) generated 17 warnings (run `cargo fix --lib -p pixors-executor` to apply 4 suggestions)
+[1m[92m   Compiling[0m pixors-desktop v0.1.0 (/home/keslarek/Git/pixors/pixors-desktop)
+[1m[33mwarning[0m[1m: unused import: `iced::futures::stream::StreamExt`[0m
+ [1m[94m--> [0mpixors-desktop/src/app.rs:8:5
+  [1m[94m|[0m
+[1m[94m8[0m [1m[94m|[0m use iced::futures::stream::StreamExt;
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused import: `iced::wgpu::hal::DynAdapter`[0m
+ [1m[94m--> [0mpixors-desktop/src/file_ops.rs:5:5
+  [1m[94m|[0m
+[1m[94m5[0m [1m[94m|[0m use iced::wgpu::hal::DynAdapter;
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: variant `OpenFile` is never constructed[0m
+  [1m[94m--> [0mpixors-desktop/src/app.rs:37:5
+   [1m[94m|[0m
+[1m[94m26[0m [1m[94m|[0m pub enum Msg {
+   [1m[94m|[0m          [1m[94m---[0m [1m[94mvariant in this enum[0m
+[1m[94m...[0m
+[1m[94m37[0m [1m[94m|[0m     OpenFile,
+   [1m[94m|[0m     [1m[33m^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `Msg` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: field `progress_dir` is never read[0m
+  [1m[94m--> [0mpixors-desktop/src/app.rs:53:9
+   [1m[94m|[0m
+[1m[94m43[0m [1m[94m|[0m pub struct App {
+   [1m[94m|[0m            [1m[94m---[0m [1m[94mfield in this struct[0m
+[1m[94m...[0m
+[1m[94m53[0m [1m[94m|[0m     pub progress_dir: f32,
+   [1m[94m|[0m         [1m[33m^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: variants `Close` and `Select` are never constructed[0m
+ [1m[94m--> [0mpixors-desktop/src/components/layers_panel.rs:8:5
+  [1m[94m|[0m
+[1m[94m7[0m [1m[94m|[0m pub enum Msg {
+  [1m[94m|[0m          [1m[94m---[0m [1m[94mvariants in this enum[0m
+[1m[94m8[0m [1m[94m|[0m     Close,
+  [1m[94m|[0m     [1m[33m^^^^^[0m
+[1m[94m9[0m [1m[94m|[0m     Select(usize),
+  [1m[94m|[0m     [1m[33m^^^^^^[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mnote[0m: `Msg` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[33mwarning[0m[1m: variants `Select` and `Add` are never constructed[0m
+  [1m[94m--> [0mpixors-desktop/src/components/tab_bar.rs:12:5
+   [1m[94m|[0m
+[1m[94m11[0m [1m[94m|[0m pub enum Msg {
+   [1m[94m|[0m          [1m[94m---[0m [1m[94mvariants in this enum[0m
+[1m[94m12[0m [1m[94m|[0m     Select(usize),
+   [1m[94m|[0m     [1m[33m^^^^^^[0m
+[1m[94m13[0m [1m[94m|[0m     Add,
+   [1m[94m|[0m     [1m[33m^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `Msg` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+[1m[33mwarning[0m[1m: method `label` is never used[0m
+   [1m[94m--> [0mpixors-desktop/src/components/workspace_bar.rs:151:12
+    [1m[94m|[0m
+[1m[94m150[0m [1m[94m|[0m impl Workspace {
+    [1m[94m|[0m [1m[94m--------------[0m [1m[94mmethod in this implementation[0m
+[1m[94m151[0m [1m[94m|[0m     pub fn label(&self) -> &'static str {
+    [1m[94m|[0m            [1m[33m^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `probe_dimensions` is never used[0m
+   [1m[94m--> [0mpixors-desktop/src/file_ops.rs:182:8
+    [1m[94m|[0m
+[1m[94m182[0m [1m[94m|[0m pub fn probe_dimensions(path: &Path) -> Result<(u32, u32), String> {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: constant `PLUS` is never used[0m
+  [1m[94m--> [0mpixors-desktop/src/icons.rs:25:11
+   [1m[94m|[0m
+[1m[94m25[0m [1m[94m|[0m pub const PLUS: &str = "\u{e13d}";
+   [1m[94m|[0m           [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: constant `DANGER` is never used[0m
+  [1m[94m--> [0mpixors-desktop/src/theme.rs:20:11
+   [1m[94m|[0m
+[1m[94m20[0m [1m[94m|[0m pub const DANGER: Color = Color::from_rgb(0.910, 0.067, 0.137);
+   [1m[94m|[0m           [1m[33m^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `separator_h` is never used[0m
+ [1m[94m--> [0mpixors-desktop/src/widgets/separator_h.rs:6:8
+  [1m[94m|[0m
+[1m[94m6[0m [1m[94m|[0m pub fn separator_h<'a, Msg: 'a>() -> Element<'a, Msg> {
+  [1m[94m|[0m        [1m[33m^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: method `all_for_mip` is never used[0m
+  [1m[94m--> [0mpixors-desktop/src/viewport/tile_cache.rs:53:12
+   [1m[94m|[0m
+[1m[94m22[0m [1m[94m|[0m impl ViewportCache {
+   [1m[94m|[0m [1m[94m------------------[0m [1m[94mmethod in this implementation[0m
+[1m[94m...[0m
+[1m[94m53[0m [1m[94m|[0m     pub fn all_for_mip(&self, mip: u32) -> Vec<(TileGridPos, &CachedTile)> {
+   [1m[94m|[0m            [1m[33m^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: method `mip_level` is never used[0m
+   [1m[94m--> [0mpixors-desktop/src/viewport/tiled_texture.rs:120:12
+    [1m[94m|[0m
+[1m[94m 14[0m [1m[94m|[0m impl TiledTexture {
+    [1m[94m|[0m [1m[94m-----------------[0m [1m[94mmethod in this implementation[0m
+[1m[94m...[0m
+[1m[94m120[0m [1m[94m|[0m     pub fn mip_level(&self) -> u32 {
+    [1m[94m|[0m            [1m[33m^^^^^^^^^[0m
+

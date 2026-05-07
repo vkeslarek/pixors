@@ -1,14 +1,15 @@
 use std::collections::HashMap;
-
+use std::sync::Arc;
+use half::f16;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::data::buffer::{Buffer, GpuBuffer};
+use crate::data::device::Device;
 use crate::data::tile::{Tile, TileCoord, TileGridPos};
 use crate::data::tile_block::{TileBlock, TileBlockCoord};
 use crate::debug_stopwatch;
 use crate::error::Error;
-use crate::gpu;
 use crate::gpu::kernel::{
     BindingAccess, BindingElement, DispatchShape, KernelClass, KernelSignature,
     ParameterDeclaration, ParameterType, ResourceDeclaration,
@@ -16,8 +17,8 @@ use crate::gpu::kernel::{
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 
 const MIP_DOWNSAMPLE_SPV: &[u8] =
@@ -62,11 +63,8 @@ impl Stage for MipDownsample {
     fn ports(&self) -> &'static PortSpecification {
         &PORTS
     }
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
+    fn device(&self) -> Device {
+        Device::Either
     }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(MipDownsampleProcessor::new(
@@ -86,6 +84,7 @@ pub struct MipDownsampleProcessor {
     image_width: u32,
     image_height: u32,
     tile_size: u32,
+    gpu: Option<Arc<crate::gpu::context::GpuContext>>,
     /// Tiles waiting for their 2×2 block partner, keyed by grid position.
     grid: HashMap<TileGridPos, Tile>,
 }
@@ -96,6 +95,7 @@ impl MipDownsampleProcessor {
             image_width,
             image_height,
             tile_size,
+            gpu: None,
             grid: HashMap::new(),
         }
     }
@@ -121,11 +121,7 @@ impl MipDownsampleProcessor {
 
         if self.is_block_ready(mip, tx_tl, ty_tl) {
             let tiles = self.take_block(mip, tx_tl, ty_tl);
-            let coord = TileBlockCoord {
-                mip_level: mip,
-                tx_tl,
-                ty_tl,
-            };
+            let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
             let block = TileBlock { coord, tiles };
             self.downsample_block(block, emit);
         }
@@ -201,27 +197,25 @@ impl MipDownsampleProcessor {
         let ty = block.coord.ty_tl / 2;
 
         let all_gpu = block.tiles.iter().all(|t| t.data.is_gpu());
+        let gpu_ctx = self.gpu.as_deref();
         let out_tile = if all_gpu {
-            match gpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::warn!("GPU mip downsample failed ({e}), falling back to CPU");
-                    cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
-                }
+            match gpu_ctx {
+                Some(g) => match gpu_downsample_block(g, &block, mip, tx, ty, self.tile_size, mip_w, mip_h) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::warn!("GPU mip downsample failed ({e}), falling back to CPU");
+                        cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+                    }
+                },
+                None => cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h),
             }
         } else {
             cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
         };
-        let device = if all_gpu { "GPU" } else { "CPU" };
-        tracing::info!(
-            "[pixors] mip_downsample: level={mip} tile=({tx},{ty}) {}×{} [{device}]",
-            out_tile.coord.width,
-            out_tile.coord.height,
-        );
+
 
         emit.emit(Item::Tile(out_tile.clone()));
 
-        // Recurse if the level above still has >1 tile in either dimension.
         let tiles_x = mip_w.div_ceil(self.tile_size);
         let tiles_y = mip_h.div_ceil(self.tile_size);
         if tiles_x > 1 || tiles_y > 1 {
@@ -231,14 +225,12 @@ impl MipDownsampleProcessor {
 
     /// Flush all remaining tiles as partial blocks (edge/odd-sized images).
     fn flush_remaining(&mut self, emit: &mut Emitter<Item>) {
-        // Repeatedly flush the lowest-MIP partial blocks first so their
-        // outputs can form higher-level blocks in subsequent iterations.
+        let start_len = self.grid.len();
+        let mut iteration = 0u32;
         loop {
-            // Find the lowest MIP level with remaining tiles.
             let min_mip = self.grid.keys().map(|k| k.mip_level).min();
             let Some(mip) = min_mip else { break };
 
-            // Collect unique block TLs at this level.
             let block_tls: Vec<(u32, u32)> = self
                 .grid
                 .keys()
@@ -254,59 +246,36 @@ impl MipDownsampleProcessor {
 
             for (tx_tl, ty_tl) in block_tls {
                 let slots = [
-                    TileGridPos {
-                        mip_level: mip,
-                        tx: tx_tl,
-                        ty: ty_tl,
-                    },
-                    TileGridPos {
-                        mip_level: mip,
-                        tx: tx_tl + 1,
-                        ty: ty_tl,
-                    },
-                    TileGridPos {
-                        mip_level: mip,
-                        tx: tx_tl,
-                        ty: ty_tl + 1,
-                    },
-                    TileGridPos {
-                        mip_level: mip,
-                        tx: tx_tl + 1,
-                        ty: ty_tl + 1,
-                    },
+                    TileGridPos { mip_level: mip, tx: tx_tl,     ty: ty_tl },
+                    TileGridPos { mip_level: mip, tx: tx_tl + 1, ty: ty_tl },
+                    TileGridPos { mip_level: mip, tx: tx_tl,     ty: ty_tl + 1 },
+                    TileGridPos { mip_level: mip, tx: tx_tl + 1, ty: ty_tl + 1 },
                 ];
 
-                // Find any present tile to use as filler for missing slots.
                 let filler_key = slots.iter().find(|k| self.grid.contains_key(k));
-                let Some(filler_key) = filler_key else {
-                    continue;
-                };
+                let Some(filler_key) = filler_key else { continue; };
                 let filler = self.grid.get(filler_key).unwrap().clone();
 
-                // Place each tile in its correct slot, filler for absent ones.
                 let tiles: [Tile; 4] = [
-                    self.grid
-                        .remove(&slots[0])
-                        .unwrap_or_else(|| filler.clone()),
-                    self.grid
-                        .remove(&slots[1])
-                        .unwrap_or_else(|| filler.clone()),
-                    self.grid
-                        .remove(&slots[2])
-                        .unwrap_or_else(|| filler.clone()),
-                    self.grid
-                        .remove(&slots[3])
-                        .unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[0]).unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[1]).unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[2]).unwrap_or_else(|| filler.clone()),
+                    self.grid.remove(&slots[3]).unwrap_or_else(|| filler.clone()),
                 ];
 
-                let coord = TileBlockCoord {
-                    mip_level: mip,
-                    tx_tl,
-                    ty_tl,
-                };
+                let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
                 let block = TileBlock { coord, tiles };
                 self.downsample_block(block, emit);
             }
+
+            iteration += 1;
+            if iteration > 50 {
+                tracing::error!("[pixors] mip_downsample: flush_remaining ABORT after {iteration} iterations — possible infinite loop");
+                break;
+            }
+        }
+        if start_len > 0 {
+            tracing::debug!("[pixors] mip_downsample: flush_remaining flushed {} tiles in {} iterations", start_len, iteration);
         }
     }
 }
@@ -314,6 +283,9 @@ impl MipDownsampleProcessor {
 impl Processor for MipDownsampleProcessor {
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("mip_downsample");
+        if self.gpu.is_none() {
+            self.gpu = ctx.gpu.clone();
+        }
         match item {
             Item::Tile(tile) => {
                 // Pass through the original tile.
@@ -341,6 +313,7 @@ impl Processor for MipDownsampleProcessor {
 /// Downsample a 2×2 block of GPU tiles via compute shader.
 /// Takes 4 GPU buffers directly — no download to CPU.
 fn gpu_downsample_block(
+    gpu: &crate::gpu::context::GpuContext,
     block: &TileBlock,
     mip: u32,
     tx: u32,
@@ -349,21 +322,19 @@ fn gpu_downsample_block(
     mip_w: u32,
     mip_h: u32,
 ) -> Result<Tile, Error> {
-    let ctx = gpu::context::try_init()
-        .ok_or_else(|| Error::internal("GPU unavailable for MIP downsample"))?;
-    let scheduler = ctx.scheduler();
+    let scheduler = gpu.scheduler();
 
-    let gbufs: [&GpuBuffer; 4] = [
+    let gbufs: [&Arc<GpuBuffer>; 4] = [
         block.tiles[0].data.as_gpu().unwrap(),
         block.tiles[1].data.as_gpu().unwrap(),
         block.tiles[2].data.as_gpu().unwrap(),
         block.tiles[3].data.as_gpu().unwrap(),
     ];
-
     let coord = TileCoord::new(mip, tx, ty, tile_size, mip_w, mip_h);
+    let bpp = block.tiles[0].meta.format.bytes_per_pixel();
     let out_w = coord.width;
     let out_h = coord.height;
-    let out_size = (out_w * out_h * 4) as u64;
+    let out_size = (out_w * out_h * bpp as u32) as u64;
 
     // Build kernel signature.
     static MIP_INPUTS: &[ResourceDeclaration] = &[
@@ -438,7 +409,12 @@ fn gpu_downsample_block(
 
     let sig = KernelSignature {
         name: "cs_mip_downsample",
-        entry: "cs_mip_downsample",
+        entry: match block.tiles[0].meta.format {
+            crate::common::pixel::PixelFormat::Rgba16 => "cs_mip_downsample_rgba16",
+            crate::common::pixel::PixelFormat::RgbaF16 | crate::common::pixel::PixelFormat::RgbF16 => "cs_mip_downsample_rgbaf16",
+            crate::common::pixel::PixelFormat::RgbaF32 | crate::common::pixel::PixelFormat::RgbF32 => "cs_mip_downsample_rgbaf32",
+            _ => "cs_mip_downsample_rgba8",
+        },
         inputs: MIP_INPUTS,
         outputs: MIP_OUTPUTS,
         params: MIP_PARAMS,
@@ -448,16 +424,29 @@ fn gpu_downsample_block(
         body: MIP_DOWNSAMPLE_SPV,
     };
 
-    // Params: out dims + 4 tile dims.
+    // Params: out dims + each tile's physical row stride (width × height).
+    //
+    // The shader's read_combined() splits the source space at (out_w, out_h):
+    //   - TL: local coords (sx, sy),           row stride = w0
+    //   - TR: local coords (sx-out_w, sy),     row stride = w1
+    //   - BL: local coords (sx, sy-out_h),     row stride = w2
+    //   - BR: local coords (sx-out_w, sy-out_h), row stride = w3
+    //
+    // Each tile's physical width is used as its row stride so the shader can
+    // compute the correct linear index within that tile's buffer.
     let params_data: [u32; 10] = [
         out_w,
         out_h,
+        // w0/h0: TL tile physical stride (the actual tile buffer dimensions)
         block.tiles[0].coord.width,
         block.tiles[0].coord.height,
+        // w1/h1: TR tile physical stride
         block.tiles[1].coord.width,
         block.tiles[1].coord.height,
+        // w2/h2: BL tile physical stride
         block.tiles[2].coord.width,
         block.tiles[2].coord.height,
+        // w3/h3: BR tile physical stride
         block.tiles[3].coord.width,
         block.tiles[3].coord.height,
     ];
@@ -483,19 +472,21 @@ fn gpu_downsample_block(
     };
     let dispatch_x = out_w.div_ceil(8);
     let dispatch_y = out_h.div_ceil(8);
+    
+    let out_gbuf = scheduler.allocate_buffer(out_size);
 
-    let out_arc = scheduler
-        .dispatch_one(&kernel, &gbufs, out_size, dispatch_x, dispatch_y)
+    let out_gbuf = scheduler
+        .dispatch_one(&kernel, &gbufs, out_gbuf, dispatch_x, dispatch_y)
         .map_err(|e| Error::internal(format!("mip downsample GPU: {e}")))?;
 
     let meta = block.tiles[0].meta;
-    let out_gbuf = GpuBuffer::new(out_arc, out_size);
-    Ok(Tile::new(coord, meta, Buffer::Gpu(out_gbuf)))
+    Ok(Tile::new(coord, meta, Buffer::Gpu(Arc::new(out_gbuf))))
 }
 
 // ── CPU downsample ──────────────────────────────────────────────────────────
 
 /// Downsample a 2×2 block of CPU tiles by box-averaging.
+/// Supports RGBA8 (byte-level averaging) and RGBAF16 (proper half-float averaging).
 fn cpu_downsample_block(
     block: &TileBlock,
     mip: u32,
@@ -514,35 +505,68 @@ fn cpu_downsample_block(
         return Tile::new(coord, meta, Buffer::cpu(vec![]));
     }
 
-    let bpp = 4usize;
+    let bpp = meta.format.bytes_per_pixel();
     let mut out = vec![0u8; out_w * out_h * bpp];
 
     let w0 = block.tiles[0].coord.width as usize;
     let h0 = block.tiles[0].coord.height as usize;
     let tiles = &block.tiles;
 
-    out.par_chunks_mut(out_w * bpp)
-        .enumerate()
-        .for_each(|(y, row)| {
-            for x in 0..out_w {
-                let avg = sample_and_average(tiles, x * 2, y * 2, w0, h0);
-                let off = x * bpp;
-                row[off..off + bpp].copy_from_slice(&avg);
-            }
-        });
+    use crate::common::pixel::PixelFormat;
+
+    match meta.format {
+        PixelFormat::RgbaF16 | PixelFormat::RgbF16 => {
+            out.par_chunks_mut(out_w * bpp)
+                .enumerate()
+                .for_each(|(y, row)| {
+                    for x in 0..out_w {
+                        let avg = sample_average_f16(tiles, x * 2, y * 2, w0, h0);
+                        let off = x * bpp;
+                        row[off..off + bpp].copy_from_slice(&avg);
+                    }
+                });
+        }
+        PixelFormat::RgbaF32 | PixelFormat::RgbF32 => {
+            out.par_chunks_mut(out_w * bpp)
+                .enumerate()
+                .for_each(|(y, row)| {
+                    for x in 0..out_w {
+                        let avg = sample_average_f32(tiles, x * 2, y * 2, w0, h0);
+                        let off = x * bpp;
+                        row[off..off + bpp].copy_from_slice(&avg);
+                    }
+                });
+        }
+        _ => {
+            out.par_chunks_mut(out_w * bpp)
+                .enumerate()
+                .for_each(|(y, row)| {
+                    for x in 0..out_w {
+                        let avg = sample_and_average(tiles, x * 2, y * 2, w0, h0, bpp);
+                        let off = x * bpp;
+                        row[off..off + bpp].copy_from_slice(&avg);
+                    }
+                });
+        }
+    }
 
     Tile::new(coord, meta, Buffer::cpu(out))
 }
 
-/// Sample a 2×2 region from the combined 4-tile block and return the average.
-/// Uses (w0, h0) as the quadrant boundary (TL tile dimensions).
-fn sample_and_average(tiles: &[Tile; 4], sx: usize, sy: usize, w0: usize, h0: usize) -> [u8; 4] {
-    let mut sum = [0u32; 4];
+/// Byte-level box average for any format (safe for RGBA8).
+fn sample_and_average(
+    tiles: &[Tile; 4],
+    sx: usize,
+    sy: usize,
+    w0: usize,
+    h0: usize,
+    bpp: usize,
+) -> Vec<u8> {
+    let mut sum = vec![0u32; bpp];
     for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
         let px = sx + dx;
         let py = sy + dy;
 
-        // Route to correct quadrant.
         let (tile_idx, lx, ly) = if py < h0 {
             if px < w0 {
                 (0, px, py)
@@ -567,18 +591,110 @@ fn sample_and_average(tiles: &[Tile; 4], sx: usize, sy: usize, w0: usize, h0: us
             Buffer::Cpu(v) => v.as_slice(),
             Buffer::Gpu(_) => &[],
         };
-        let off = (cy * tw + cx) * 4;
-        if off + 4 <= data.len() {
-            for c in 0..4 {
+        let off = (cy * tw + cx) * bpp;
+        if off + bpp <= data.len() {
+            for c in 0..bpp {
                 sum[c] += data[off + c] as u32;
             }
         }
     }
 
-    [
-        (sum[0] / 4) as u8,
-        (sum[1] / 4) as u8,
-        (sum[2] / 4) as u8,
-        (sum[3] / 4) as u8,
-    ]
+    sum.iter().map(|s| (s / 4) as u8).collect()
+}
+
+/// Box average for f32 formats — each channel is 4 bytes IEEE 754.
+fn sample_average_f32(tiles: &[Tile; 4], sx: usize, sy: usize, w0: usize, h0: usize) -> Vec<u8> {
+    let bpp = 16usize; // 4 channels × 4 bytes
+    let mut sum = [0.0f32; 4];
+    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let px = sx + dx;
+        let py = sy + dy;
+
+        let (tile_idx, lx, ly) = if py < h0 {
+            if px < w0 { (0, px, py) } else { (1, px - w0, py) }
+        } else {
+            if px < w0 { (2, px, py - h0) } else { (3, px - w0, py - h0) }
+        };
+
+        let tile = &tiles[tile_idx];
+        let tw = tile.coord.width as usize;
+        let th = tile.coord.height as usize;
+        let cx = lx.min(tw.saturating_sub(1));
+        let cy = ly.min(th.saturating_sub(1));
+
+        let data: &[u8] = match &tile.data {
+            Buffer::Cpu(v) => v.as_slice(),
+            Buffer::Gpu(_) => &[],
+        };
+        let off = (cy * tw + cx) * bpp;
+        if off + bpp <= data.len() {
+            for c in 0..4 {
+                let bytes = [
+                    data[off + c * 4],
+                    data[off + c * 4 + 1],
+                    data[off + c * 4 + 2],
+                    data[off + c * 4 + 3],
+                ];
+                sum[c] += f32::from_le_bytes(bytes);
+            }
+        }
+    }
+
+    let mut out = Vec::with_capacity(bpp);
+    for s in &sum {
+        out.extend_from_slice(&(s / 4.0).to_le_bytes());
+    }
+    out
+}
+
+/// Box average for f16 formats — each channel pair is a half-float.
+fn sample_average_f16(tiles: &[Tile; 4], sx: usize, sy: usize, w0: usize, h0: usize) -> Vec<u8> {
+    let bpp = 8usize; // 4 channels × 2 bytes
+    let mut sum = [0.0f32; 4];
+    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let px = sx + dx;
+        let py = sy + dy;
+
+        let (tile_idx, lx, ly) = if py < h0 {
+            if px < w0 {
+                (0, px, py)
+            } else {
+                (1, px - w0, py)
+            }
+        } else {
+            if px < w0 {
+                (2, px, py - h0)
+            } else {
+                (3, px - w0, py - h0)
+            }
+        };
+
+        let tile = &tiles[tile_idx];
+        let tw = tile.coord.width as usize;
+        let th = tile.coord.height as usize;
+        let cx = lx.min(tw.saturating_sub(1));
+        let cy = ly.min(th.saturating_sub(1));
+
+        let data: &[u8] = match &tile.data {
+            Buffer::Cpu(v) => v.as_slice(),
+            Buffer::Gpu(_) => &[],
+        };
+        let off = (cy * tw + cx) * bpp;
+        if off + bpp <= data.len() {
+            for c in 0..4 {
+                let lo = data[off + c * 2] as u16;
+                let hi = data[off + c * 2 + 1] as u16;
+                let bits = lo | (hi << 8);
+                sum[c] += f32::from(f16::from_bits(bits));
+            }
+        }
+    }
+
+    let mut out = Vec::with_capacity(bpp);
+    for s in &sum {
+        let bits = f16::from_f32(s / 4.0).to_bits();
+        out.push(bits as u8);
+        out.push((bits >> 8) as u8);
+    }
+    out
 }

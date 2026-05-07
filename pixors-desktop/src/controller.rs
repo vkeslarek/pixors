@@ -136,12 +136,11 @@ impl App {
     pub(crate) fn handle_tick(&mut self) {
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        if let Some(ref cache) = self.cache {
-            if cache.lock().map_or(false, |g| g.has_pending()) {
+        if let Some(ref cache) = self.cache
+            && cache.lock().is_ok_and(|g| g.has_pending()) {
                 self.tile_generation = self.tile_generation.wrapping_add(1);
                 tracing::info!("[pixors] handle_tick: tile_generation is now {}", self.tile_generation);
             }
-        }
 
         let mut sigs = self.mip_fetch_signal.lock().unwrap();
         if !sigs.is_empty() {
@@ -190,11 +189,10 @@ impl App {
         let Some(ref vp_cache) = self.cache else { return; };
 
         // Skip fetch if all visible tiles are already in RAM.
-        if let Ok(guard) = vp_cache.lock() {
-            if guard.has_all_tiles(mip, &range) {
+        if let Ok(guard) = vp_cache.lock()
+            && guard.has_all_tiles(mip, &range) {
                 return;
             }
-        }
 
         crate::file_ops::fetch_mip(
             cache_dir,

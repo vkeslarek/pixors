@@ -4,6 +4,7 @@ use iced::{Background, Border, Color, Element, Length};
 use crate::theme::{ACCENT, BG_ELEVATED, TEXT_MUTED, TEXT_SECONDARY};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Msg {
     Close,
     Select(usize),

@@ -16,7 +16,16 @@ const SPACE_MONO_700: &[u8] = include_bytes!("../assets/space-mono-700-latin.ttf
 
 fn main() -> iced::Result {
     tracing_subscriber::fmt::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .add_directive("cosmic_text=info".parse().unwrap())
+                .add_directive("wgpu_core=warn".parse().unwrap())
+                .add_directive("wgpu_hal=warn".parse().unwrap())
+                .add_directive("naga=warn".parse().unwrap())
+                .add_directive("iced_wgpu=info".parse().unwrap())
+                .add_directive("iced_winit=info".parse().unwrap())
+        )
         .init();
 
     iced::application(App::default, App::update, App::view)

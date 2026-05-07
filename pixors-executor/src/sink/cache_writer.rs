@@ -6,8 +6,7 @@ use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
 };
 
 static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration {
@@ -23,18 +22,6 @@ static CW_PORTS: PortSpecification = PortSpecification {
 };
 
 /// Writes tiles to disk as raw RGBA8, organised by MIP level.
-///
-/// Directory layout:
-/// ```text
-/// {cache_dir}/
-///   mip_0/
-///     tile_0_0_0.raw
-///     tile_0_0_1.raw
-///     ...
-///   mip_1/
-///     tile_1_0_0.raw
-///     ...
-/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheWriter {
     pub cache_dir: PathBuf,
@@ -49,29 +36,22 @@ impl Stage for CacheWriter {
         &CW_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(CacheWriterProcessor {
+    fn consumer(&self) -> Option<Box<dyn Consumer>> {
+        Some(Box::new(CacheWriterConsumer {
             cache_dir: self.cache_dir.clone(),
             use_compression: false,
         }))
     }
 }
 
-pub struct CacheWriterProcessor {
+pub struct CacheWriterConsumer {
     cache_dir: PathBuf,
     use_compression: bool,
 }
 
-impl Processor for CacheWriterProcessor {
-    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
-        let tile = ProcessorContext::take_tile(item)?;
+impl Consumer for CacheWriterConsumer {
+    fn consume(&mut self, item: Item) -> Result<(), Error> {
+        let tile = crate::stage::ProcessorContext::take_tile(item)?;
 
         let mip = tile.coord.mip_level;
         let tx = tile.coord.tx;
@@ -100,20 +80,15 @@ impl Processor for CacheWriterProcessor {
         let dir = self.cache_dir.join(format!("mip_{mip}"));
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(format!("tile_{mip}_{tx}_{ty}.raw"));
-        
+
         let data_to_write = if self.use_compression {
             lz4_flex::compress_prepend_size(data)
         } else {
             data.to_vec()
         };
-        
+
         std::fs::write(&path, &data_to_write)?;
-        tracing::debug!(
-            "[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {}×{} to {}",
-            w,
-            h,
-            path.display(),
-        );
+        tracing::debug!("[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {}×{} to {}", w, h, path.display());
         Ok(())
     }
 }

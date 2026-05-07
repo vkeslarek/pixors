@@ -1,77 +1,87 @@
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use crossbeam_queue::SegQueue;
+use dashmap::DashMap;
+use std::sync::Arc;
 
 pub struct BufferPool {
     device: Arc<wgpu::Device>,
-    free: Mutex<HashMap<(u64, wgpu::BufferUsages), Vec<Arc<wgpu::Buffer>>>>,
+    free: DashMap<(u64, wgpu::BufferUsages), SegQueue<wgpu::Buffer>>,
 }
 
 impl BufferPool {
     pub fn new(device: Arc<wgpu::Device>) -> Arc<Self> {
         Arc::new(Self {
             device,
-            free: Mutex::new(HashMap::new()),
+            free: DashMap::new(),
         })
     }
 
-    pub fn acquire(&self, size: u64, usage: wgpu::BufferUsages) -> PooledBuffer {
+    pub fn acquire(self: &Arc<Self>, size: u64, usage: wgpu::BufferUsages) -> GpuBuffer {
         let class_size = size_class(size);
         let key = (class_size, usage);
-        let mut free_map = self.free.lock().unwrap();
-        if let Some(buf) = free_map.get_mut(&key).and_then(|v| v.pop()) {
-            return PooledBuffer {
-                pool: None,
-                buf: Some(buf),
-                key,
+
+        let queue = self.free.entry(key).or_default();
+
+        if let Some(buf) = queue.pop() {
+            return GpuBuffer {
+                allocated_size: class_size,
+                requested_size: size,
+                usage,
+                pool: self.clone(),
+                buffer: Some(buf),
             };
         }
-        drop(free_map);
 
-        let buf = Arc::new(self.device.create_buffer(&wgpu::BufferDescriptor {
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pooled"),
             size: class_size,
             usage,
             mapped_at_creation: false,
-        }));
-        PooledBuffer {
-            pool: None,
-            buf: Some(buf),
-            key,
+        });
+
+        GpuBuffer {
+            allocated_size: class_size,
+            requested_size: size,
+            usage,
+            pool: self.clone(),
+            buffer: Some(buf),
         }
     }
 
-    fn return_buffer(&self, buf: Arc<wgpu::Buffer>, key: (u64, wgpu::BufferUsages)) {
-        let mut free_map = self.free.lock().unwrap();
-        free_map.entry(key).or_default().push(buf);
+    pub fn return_buffer(&self, buf: wgpu::Buffer, size: u64, usage: wgpu::BufferUsages) {
+        let key = (size, usage);
+        self.free.entry(key).or_default().push(buf);
     }
 }
 
-pub struct PooledBuffer {
-    pool: Option<Arc<BufferPool>>,
-    buf: Option<Arc<wgpu::Buffer>>,
-    key: (u64, wgpu::BufferUsages),
+pub struct GpuBuffer {
+    pub allocated_size: u64,
+    pub requested_size: u64,
+    pub usage: wgpu::BufferUsages,
+    pub pool: Arc<BufferPool>,
+    pub buffer: Option<wgpu::Buffer>,
 }
 
-impl Drop for PooledBuffer {
+impl std::fmt::Debug for GpuBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuBuffer")
+            .field("allocated_size", &self.allocated_size)
+            .field("requested_size", &self.requested_size)
+            .field("usage", &self.usage)
+            .finish()
+    }
+}
+
+impl GpuBuffer {
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        self.buffer.as_ref().unwrap()
+    }
+}
+
+impl Drop for GpuBuffer {
     fn drop(&mut self) {
-        if let (Some(pool), Some(buf)) = (self.pool.take(), self.buf.take()) {
-            pool.return_buffer(buf, self.key);
+        if let Some(buf) = self.buffer.take() {
+            self.pool.return_buffer(buf, self.allocated_size, self.usage);
         }
-    }
-}
-
-impl Deref for PooledBuffer {
-    type Target = wgpu::Buffer;
-
-    fn deref(&self) -> &Self::Target {
-        self.buf.as_ref().unwrap()
-    }
-}
-
-impl PooledBuffer {
-    pub fn arc(&self) -> Arc<wgpu::Buffer> {
-        self.buf.as_ref().unwrap().clone()
     }
 }
 

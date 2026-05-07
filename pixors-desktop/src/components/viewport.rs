@@ -22,7 +22,7 @@ pub fn view<'a, Msg: 'a>(
     // By alternating the width of a sibling space widget slightly, we force
     // iced to invalidate the shader widget's bounds cache and call draw(),
     // allowing new tiles to be displayed immediately without waiting for events.
-    let pad = if tile_generation % 2 == 0 { 0.0 } else { 1.0 };
+    let pad = if tile_generation.is_multiple_of(2) { 0.0 } else { 1.0 };
     let canvas_bg = iced::widget::row![
         shader_widget(program)
             .width(Length::Fill)

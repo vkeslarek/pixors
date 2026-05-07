@@ -17,6 +17,7 @@ pub const ACCENT: Color = Color::from_rgb(0.388, 0.533, 0.949);
 pub const ACCENT_DIM: Color = Color::from_rgba(0.388, 0.533, 0.949, 0.15);
 pub const ACCENT_GLOW: Color = Color::from_rgba(0.388, 0.533, 0.949, 0.35);
 
+#[allow(dead_code)]
 pub const DANGER: Color = Color::from_rgb(0.910, 0.067, 0.137);
 pub const OK_GREEN: Color = Color::from_rgb(0.27, 0.78, 0.27);
 

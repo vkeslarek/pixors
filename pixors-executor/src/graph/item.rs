@@ -5,6 +5,7 @@ use crate::data::tile_block::TileBlock;
 use crate::stage::DataKind;
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Item {
     ScanLine(ScanLine),
     Tile(Tile),

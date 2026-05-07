@@ -2,11 +2,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
+use crate::gpu::context::GpuContext;
 use crate::data::device::Device;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::stage::{Processor, ProcessorContext};
+use crate::stage::{Consumer, Processor, Producer, ProcessorContext};
 
 use super::event::PipelineEvent;
 use super::runner::{ItemReceiver, ItemSender, RoutedItem, Runner};
@@ -18,21 +19,33 @@ pub struct ProgressState {
 }
 
 pub struct ChainRunner {
+    pub producer: Option<Box<dyn Producer>>,
     pub kernels: Vec<Box<dyn Processor>>,
+    pub consumer: Option<Box<dyn Consumer>>,
     pub device: Device,
+    pub gpu: Option<Arc<GpuContext>>,
     pub progress: Option<Arc<ProgressState>>,
+    pub chain_name: String,
 }
 
 impl ChainRunner {
     pub fn new(
+        producer: Option<Box<dyn Producer>>,
         kernels: Vec<Box<dyn Processor>>,
+        consumer: Option<Box<dyn Consumer>>,
         device: Device,
+        gpu: Option<Arc<GpuContext>>,
         progress: Option<Arc<ProgressState>>,
+        chain_name: String,
     ) -> Self {
         Self {
+            producer,
             kernels,
+            consumer,
             device,
+            gpu,
             progress,
+            chain_name,
         }
     }
 
@@ -40,7 +53,6 @@ impl ChainRunner {
         if let Some(p) = progress {
             let done = p.done.fetch_add(1, Ordering::Relaxed) + 1;
             if done % 128 == 0 || done >= p.total || done == 1 {
-                tracing::info!("[pixors] bump_progress: done={} total={}", done, p.total);
                 let _ = p.tx.try_send(PipelineEvent::Progress {
                     done,
                     total: p.total,
@@ -51,7 +63,9 @@ impl ChainRunner {
 
     fn run_item_streaming(
         kernels: &mut [Box<dyn Processor>],
+        consumer: &mut Option<Box<dyn Consumer>>,
         device: Device,
+        gpu: &Option<Arc<GpuContext>>,
         kernel_idx: usize,
         port: u16,
         item: Item,
@@ -59,7 +73,10 @@ impl ChainRunner {
         progress: &Option<Arc<ProgressState>>,
     ) -> Result<(), Error> {
         if kernel_idx >= kernels.len() {
-            send_to_all(outputs, vec![RoutedItem { port, payload: item }]);
+            match consumer {
+                Some(c) => { c.consume(item)?; Self::bump_progress(progress); },
+                None => send_to_all(outputs, vec![RoutedItem { port, payload: item }]),
+            }
             return Ok(());
         }
 
@@ -69,6 +86,7 @@ impl ChainRunner {
             port: p,
             device,
             emit: &mut emit,
+            gpu: gpu.clone(),
         };
 
         Self::bump_progress(progress);
@@ -77,8 +95,7 @@ impl ChainRunner {
 
         for next_item in items {
             Self::run_item_streaming(
-                kernels,
-                device,
+                kernels, consumer, device, gpu,
                 kernel_idx + 1,
                 next_item.port,
                 next_item.payload,
@@ -92,12 +109,15 @@ impl ChainRunner {
 
     fn run_finish_streaming(
         kernels: &mut [Box<dyn Processor>],
+        consumer: &mut Option<Box<dyn Consumer>>,
         device: Device,
+        gpu: &Option<Arc<GpuContext>>,
         kernel_idx: usize,
         outputs: &[(ItemSender, u16, u16)],
         progress: &Option<Arc<ProgressState>>,
     ) -> Result<(), Error> {
         if kernel_idx >= kernels.len() {
+            if let Some(c) = consumer { c.finish()?; }
             return Ok(());
         }
 
@@ -106,6 +126,7 @@ impl ChainRunner {
             port: 0,
             device,
             emit: &mut emit,
+            gpu: gpu.clone(),
         };
 
         kernels[kernel_idx].finish(ctx)?;
@@ -113,8 +134,7 @@ impl ChainRunner {
 
         for next_item in items {
             Self::run_item_streaming(
-                kernels,
-                device,
+                kernels, consumer, device, gpu,
                 kernel_idx + 1,
                 next_item.port,
                 next_item.payload,
@@ -123,7 +143,7 @@ impl ChainRunner {
             )?;
         }
 
-        Self::run_finish_streaming(kernels, device, kernel_idx + 1, outputs, progress)?;
+        Self::run_finish_streaming(kernels, consumer, device, gpu, kernel_idx + 1, outputs, progress)?;
 
         Ok(())
     }
@@ -138,37 +158,52 @@ impl Runner for ChainRunner {
         let progress = self.progress.clone();
         let kernels = &mut self.kernels;
         let device = self.device;
+        let gpu = &self.gpu;
+        let name = self.chain_name.clone();
+        let num_outputs = outputs.len();
 
-        if inputs.is_empty() {
-            use crate::data::buffer::Buffer;
-            use crate::data::tile::{Tile, TileCoord};
-            use crate::model::color::space::ColorSpace;
-            use crate::model::pixel::meta::PixelMeta;
-            use crate::model::pixel::{AlphaPolicy, PixelFormat};
-            let dummy = Item::Tile(Tile::new(
-                TileCoord::new(0, 0, 0, 0, 0, 0),
-                PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight),
-                Buffer::cpu(vec![]),
-            ));
-            Self::run_item_streaming(kernels, device, 0, 0, dummy, &outputs, &progress)?;
-            Self::run_finish_streaming(kernels, device, 0, &outputs, &progress)?;
+        if let Some(mut producer) = self.producer.take() {
+            let mut emit = Emitter::new();
+            let ctx = ProcessorContext {
+                port: 0,
+                device,
+                gpu: gpu.clone(),
+                emit: &mut emit,
+            };
+            producer.produce(ctx)?;
+            let items = emit.into_items();
+            for item in items {
+                Self::run_item_streaming(
+                    kernels, &mut self.consumer, device, gpu,
+                    0, item.port, item.payload,
+                    &outputs, &progress,
+                )?;
+            }
+            Self::run_finish_streaming(kernels, &mut self.consumer, device, gpu, 0, &outputs, &progress)?;
+        } else if inputs.is_empty() {
+            Self::run_finish_streaming(kernels, &mut self.consumer, device, gpu, 0, &outputs, &progress)?;
         } else {
             let recv = &inputs[0];
+            let mut item_count = 0u64;
             loop {
+                let t_recv = std::time::Instant::now();
                 match recv.recv() {
                     Ok(Some(routed)) => {
+                        let elapsed = t_recv.elapsed();
+                        if elapsed.as_millis() > 50 {
+                            tracing::debug!("[pixors] contention: pipeline thread blocked {:?} waiting for input on port {}", elapsed, routed.port);
+                        }
                         Self::run_item_streaming(
-                            kernels,
-                            device,
-                            0,
-                            routed.port,
-                            routed.payload,
-                            &outputs,
-                            &progress,
+                            kernels, &mut self.consumer, device, gpu,
+                            0, routed.port, routed.payload,
+                            &outputs, &progress,
                         )?;
+                        item_count += 1;
                     }
                     Ok(None) | Err(_) => {
-                        Self::run_finish_streaming(kernels, device, 0, &outputs, &progress)?;
+                        tracing::info!("[pixors] {name}: received None after {item_count} items, entering finish phase…");
+                        Self::run_finish_streaming(kernels, &mut self.consumer, device, gpu, 0, &outputs, &progress)?;
+                        tracing::info!("[pixors] {name}: finish phase complete, signalling Done to {num_outputs} output(s)");
                         break;
                     }
                 }
@@ -178,6 +213,7 @@ impl Runner for ChainRunner {
         for (tx, _, _) in &outputs {
             let _ = tx.send(None);
         }
+        tracing::info!("[pixors] {name}: RUN COMPLETE");
         Ok(())
     }
 }
@@ -193,7 +229,12 @@ fn send_to_all(outputs: &[(ItemSender, u16, u16)], items: Vec<RoutedItem>) {
                     port: *to_port,
                     payload: routed_item.payload.clone(),
                 };
-                let _ = tx.send(Some(routed));
+                if let Err(std::sync::mpsc::TrySendError::Full(item)) = tx.try_send(Some(routed)) {
+                    let t = std::time::Instant::now();
+                    tracing::debug!("[pixors] contention: pipeline thread blocking on send to port {}", to_port);
+                    let _ = tx.send(item);
+                    tracing::debug!("[pixors] contention: pipeline thread unblocked after {:?}", t.elapsed());
+                }
             }
         }
     }

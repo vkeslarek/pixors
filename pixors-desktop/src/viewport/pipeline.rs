@@ -204,7 +204,7 @@ pub struct ViewportPrimitive {
 impl Clone for ViewportPrimitive {
     fn clone(&self) -> Self {
         Self {
-            camera: self.camera.clone(),
+            camera: self.camera,
             cache: self.cache.clone(),
             visible_range: pixors_executor::source::cache_reader::TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 },
         }

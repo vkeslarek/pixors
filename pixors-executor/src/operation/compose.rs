@@ -3,14 +3,15 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::data::buffer::Buffer;
+use crate::data::device::Device;
 use crate::data::tile::{Tile, TileGridPos};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::model::image::desc::BlendMode;
+use crate::common::image::BlendMode;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 
 static COMPOSE_INPUT: PortDeclaration = PortDeclaration {
@@ -41,11 +42,8 @@ impl Stage for Compose {
         &COMPOSE_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
+    fn device(&self) -> Device {
+        Device::Cpu
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
@@ -152,7 +150,7 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], emit: &m
         return;
     }
 
-    let bpp = tiles[0].1.meta.format.bytes_per_pixel() as usize;
+    let bpp = tiles[0].1.meta.format.bytes_per_pixel();
     let mut w = 0;
     let mut h = 0;
     for (_, tile) in tiles.iter() {

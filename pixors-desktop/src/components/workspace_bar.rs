@@ -148,6 +148,7 @@ pub enum Workspace {
 }
 
 impl Workspace {
+    #[allow(dead_code)]
     pub fn label(&self) -> &'static str {
         match self {
             Workspace::Library => "Library",

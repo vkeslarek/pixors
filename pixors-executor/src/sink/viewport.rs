@@ -3,8 +3,8 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 
 use crate::data::device::Device;
@@ -55,12 +55,6 @@ impl Stage for ViewportSink {
     fn ports(&self) -> &'static PortSpecification {
         &VS_PORTS
     }
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
     fn device(&self) -> Device {
         Device::Either
     }
@@ -89,7 +83,7 @@ impl Processor for ViewportSinkProcessor {
             .ok_or_else(|| Error::internal("viewport not installed"))?;
 
         let (buf, _) = match &tile.data {
-            crate::data::buffer::Buffer::Gpu(g) => (&g.buffer, g.size),
+            crate::data::buffer::Buffer::Gpu(g) => (g.buffer(), g.requested_size),
             _ => return Ok(()),
         };
 
@@ -101,7 +95,7 @@ impl Processor for ViewportSinkProcessor {
             return Ok(());
         }
 
-        let padded = ((tw * 4 + 255) / 256) * 256;
+        let padded = ((tw * 4).div_ceil(256)) * 256;
         let ctx =
             crate::gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
         let mut enc = ctx

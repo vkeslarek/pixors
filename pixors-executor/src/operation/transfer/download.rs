@@ -2,22 +2,17 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::data::buffer::Buffer;
 use crate::data::tile::Tile;
 use crate::data::tile::TileCoord;
+use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::model::pixel::meta::PixelMeta;
+use crate::common::pixel::meta::PixelMeta;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
-
-use crate::error::Error;
-
-use crate::gpu;
-use crate::gpu::context::GpuContext;
-
-use crate::data::buffer::Buffer;
 
 use crate::debug_stopwatch;
 
@@ -36,14 +31,13 @@ static DL_PORTS: PortSpecification = PortSpecification {
     outputs: PortGroup::Fixed(DL_OUTPUTS),
 };
 
-/// How many tiles to accumulate before flushing (1 submit + 1
-/// `device.poll(Wait)` per chunk). Caps peak staging memory.
 const BATCH_SIZE: usize = 16;
 
 struct Pending {
     coord: TileCoord,
     meta: PixelMeta,
     staging: wgpu::Buffer,
+    _src_gbuf: Arc<crate::gpu::pool::GpuBuffer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,25 +52,14 @@ impl Stage for Download {
         &DL_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
-    }
-
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(DownloadProcessor::new()))
     }
 }
 
-/// GPU → CPU. Accumulates up to `BATCH_SIZE` tiles, then issues a single
-/// submit + poll for the chunk. Was previously per-tile poll, the dominant
-/// pipeline stall.
 pub struct DownloadProcessor {
     pending: Vec<Pending>,
     encoder: Option<wgpu::CommandEncoder>,
-    ctx: Option<Arc<GpuContext>>,
     flushed_chunks: usize,
 }
 
@@ -85,32 +68,19 @@ impl DownloadProcessor {
         Self {
             pending: vec![],
             encoder: None,
-            ctx: None,
             flushed_chunks: 0,
         }
     }
 
-    fn ctx(&mut self) -> Result<Arc<GpuContext>, Error> {
-        if let Some(c) = &self.ctx {
-            return Ok(c.clone());
-        }
-        let c = gpu::context::try_init()
-            .ok_or_else(|| Error::internal("GPU unavailable but Download was scheduled"))?;
-        self.ctx = Some(c.clone());
-        Ok(c)
-    }
-
-    fn flush(&mut self, emit: &mut Emitter<Item>) -> Result<(), Error> {
+    fn flush(&mut self, emit: &mut Emitter<Item>, gpu: &crate::gpu::context::GpuContext) -> Result<(), Error> {
         if self.pending.is_empty() {
             return Ok(());
         }
-        let ctx = self
-            .ctx
-            .as_ref()
-            .ok_or_else(|| Error::internal("download flush without ctx"))?
-            .clone();
+
+        gpu.scheduler().flush();
+
         if let Some(encoder) = self.encoder.take() {
-            ctx.queue().submit(std::iter::once(encoder.finish()));
+            gpu.queue().submit(std::iter::once(encoder.finish()));
         }
         let pending = std::mem::take(&mut self.pending);
         let n = pending.len();
@@ -125,7 +95,7 @@ impl DownloadProcessor {
                 });
         }
         drop(tx);
-        ctx.device().poll(wgpu::Maintain::Wait);
+        gpu.device().poll(wgpu::Maintain::Wait);
 
         let mut errors: Vec<Option<Result<(), wgpu::BufferAsyncError>>> =
             (0..n).map(|_| None).collect();
@@ -138,15 +108,15 @@ impl DownloadProcessor {
                 .take()
                 .unwrap()
                 .map_err(|e| Error::internal(format!("map_async: {e:?}")))?;
-            let bytes = {
+            let mut bytes = {
                 let view = p.staging.slice(..).get_mapped_range();
                 view.to_vec()
             };
+            bytes.truncate(p._src_gbuf.requested_size as usize);
             p.staging.unmap();
             emit.emit(Item::Tile(Tile::new(p.coord, p.meta, Buffer::cpu(bytes))));
         }
         self.flushed_chunks += 1;
-        tracing::debug!("[pixors] download: flushed chunk of {} tiles", n);
         Ok(())
     }
 }
@@ -159,44 +129,40 @@ impl Processor for DownloadProcessor {
             ctx.emit.emit(Item::Tile(tile));
             return Ok(());
         }
-        let gpu_ctx = self.ctx()?;
-        // Flush scheduler so any pending compute dispatches are submitted
-        // before the copy_buffer_to_buffer that reads their output.
-        gpu_ctx.scheduler().flush();
+        let gpu = ctx.gpu.as_ref().ok_or_else(|| Error::internal("GPU unavailable for download"))?;
+        gpu.scheduler().flush();
         let gbuf = tile.data.as_gpu().unwrap().clone();
-        let size = gbuf.size;
-        let staging = gpu_ctx.device().create_buffer(&wgpu::BufferDescriptor {
+        let alloc_size = gbuf.allocated_size;
+        let staging = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("download-staging"),
-            size,
+            size: alloc_size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let encoder = self.encoder.get_or_insert_with(|| {
-            gpu_ctx
-                .device()
+            gpu.device()
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("download-batch"),
                 })
         });
-        encoder.copy_buffer_to_buffer(&gbuf.buffer, 0, &staging, 0, size);
+        encoder.copy_buffer_to_buffer(gbuf.buffer(), 0, &staging, 0, alloc_size);
         self.pending.push(Pending {
             coord: tile.coord,
             meta: tile.meta,
             staging,
+            _src_gbuf: gbuf,
         });
         if self.pending.len() >= BATCH_SIZE {
-            self.flush(ctx.emit)?;
+            self.flush(ctx.emit, gpu)?;
         }
         Ok(())
     }
 
     fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
-        self.flush(ctx.emit)?;
-        tracing::debug!(
-            "[pixors] download: total {} chunks (BATCH_SIZE={})",
-            self.flushed_chunks,
-            BATCH_SIZE
-        );
+        if let Some(gpu) = &ctx.gpu {
+            self.flush(ctx.emit, gpu)?;
+        }
+        tracing::info!("[pixors] download: finish — {} chunks flushed total", self.flushed_chunks);
         Ok(())
     }
 }

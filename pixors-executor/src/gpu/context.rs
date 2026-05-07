@@ -87,7 +87,10 @@ fn init_inner() -> Option<Arc<GpuContext>> {
         &wgpu::DeviceDescriptor {
             label: Some("pixors-gpu"),
             required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_defaults(),
+            // Use adapter-reported limits capped by wgpu defaults (8 storage buffers per
+            // stage, etc.). This avoids the downlevel limit of 4 storage buffers which is
+            // too restrictive for MipDownsample (4 inputs + 1 output = 5).
+            required_limits: adapter.limits(),
             memory_hints: wgpu::MemoryHints::Performance,
         },
         None,

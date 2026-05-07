@@ -3,7 +3,7 @@ pub mod data_transform;
 pub mod error;
 pub mod gpu;
 pub mod graph;
-pub mod model;
+pub mod common;
 pub mod operation;
 pub mod runtime;
 pub mod sink;

@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::model::pixel::meta::PixelMeta;
+use crate::common::pixel::meta::PixelMeta;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
+    ProcessorContext, Stage,
 };
 
 use crate::error::Error;
@@ -46,15 +46,8 @@ impl Stage for ScanLineToTile {
         &SA_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadTransform,
-            prefers_gpu: false,
-        }
-    }
-
     fn device(&self) -> Device {
-        Device::Either
+        Device::Cpu
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {

@@ -2,17 +2,11 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
-};
-
 use crate::error::Error;
 use crate::graph::item::Item;
-
-use crate::debug_stopwatch;
-
-/// Callback: invoked when a tile arrives with its pixel coordinates and RGBA8 bytes.
+use crate::stage::{
+    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
+};
 
 pub type TileCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
@@ -38,8 +32,6 @@ static TS_PORTS: PortSpecification = PortSpecification {
     outputs: PortGroup::Fixed(TS_OUTPUTS),
 };
 
-// ── Stage ───────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileSink;
 
@@ -52,29 +44,19 @@ impl Stage for TileSink {
         &TS_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
+    fn consumer(&self) -> Option<Box<dyn Consumer>> {
         let cb = TILE_SINK.get().cloned()?;
-        Some(Box::new(TileSinkProcessor { cb }))
+        Some(Box::new(TileSinkConsumer { cb }))
     }
 }
 
-// ── Runner ──────────────────────────────────────────────────────────────────
-
-pub struct TileSinkProcessor {
+pub struct TileSinkConsumer {
     cb: Arc<TileCommitFn>,
 }
 
-impl Processor for TileSinkProcessor {
-    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
-        let _sw = debug_stopwatch!("tile_sink:consume");
-        let tile = ProcessorContext::take_tile(item)?;
+impl Consumer for TileSinkConsumer {
+    fn consume(&mut self, item: Item) -> Result<(), Error> {
+        let tile = crate::stage::ProcessorContext::take_tile(item)?;
         let src: &[u8] = match &tile.data {
             crate::data::buffer::Buffer::Cpu(v) => v.as_slice(),
             crate::data::buffer::Buffer::Gpu(_) => {

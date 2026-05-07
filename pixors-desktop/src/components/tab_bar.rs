@@ -8,6 +8,7 @@ use crate::theme::{
 };
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Msg {
     Select(usize),
     Add,

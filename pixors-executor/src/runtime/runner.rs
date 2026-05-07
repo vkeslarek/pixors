@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::graph::item::Item;
 use crate::graph::routed::Routed;
 
-pub const CHANNEL_BOUND: usize = 16;
+pub const CHANNEL_BOUND: usize = 64;
 
 pub type RoutedItem = Routed<Item>;
 pub type ItemSender = std::sync::mpsc::SyncSender<Option<RoutedItem>>;

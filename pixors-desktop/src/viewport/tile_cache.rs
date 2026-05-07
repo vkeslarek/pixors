@@ -50,6 +50,7 @@ impl ViewportCache {
     }
 
     /// All stored tiles for a MIP level — used on full re-upload (MIP switch or resize).
+    #[allow(dead_code)]
     pub fn all_for_mip(&self, mip: u32) -> Vec<(TileGridPos, &CachedTile)> {
         self.entries.iter()
             .filter(|(k, _)| k.mip_level == mip)

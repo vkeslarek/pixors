@@ -1,5 +1,5 @@
 use crate::data::buffer::Buffer;
-use crate::model::pixel::meta::PixelMeta;
+use crate::common::pixel::meta::PixelMeta;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ScanLineCoord {

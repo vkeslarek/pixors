@@ -6,8 +6,7 @@ use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{
-    BufferAccess, DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage, StageHints,
+    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
 };
 
 pub type CacheCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
@@ -44,26 +43,19 @@ impl Stage for ViewportCacheSink {
         &VCS_PORTS
     }
 
-    fn hints(&self) -> StageHints {
-        StageHints {
-            buffer_access: BufferAccess::ReadOnly,
-            prefers_gpu: false,
-        }
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
+    fn consumer(&self) -> Option<Box<dyn Consumer>> {
         let cb = CACHE_SINK.get().cloned()?;
-        Some(Box::new(ViewportCacheSinkProcessor { cb }))
+        Some(Box::new(ViewportCacheSinkConsumer { cb }))
     }
 }
 
-pub struct ViewportCacheSinkProcessor {
+pub struct ViewportCacheSinkConsumer {
     cb: Arc<CacheCommitFn>,
 }
 
-impl Processor for ViewportCacheSinkProcessor {
-    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
-        let tile = ProcessorContext::take_tile(item)?;
+impl Consumer for ViewportCacheSinkConsumer {
+    fn consume(&mut self, item: Item) -> Result<(), Error> {
+        let tile = crate::stage::ProcessorContext::take_tile(item)?;
         let data = match &tile.data {
             Buffer::Cpu(v) => v.as_slice(),
             Buffer::Gpu(_) => return Err(Error::internal("ViewportCacheSink requires CPU tiles")),
