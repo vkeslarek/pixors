@@ -130,6 +130,18 @@ pub fn read_icc_profile(
         .filter(|v| !v.is_empty())
 }
 
+/// Read PlanarConfiguration tag (284). Returns true if planar (chunky = false).
+pub fn read_planar_config(
+    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
+) -> bool {
+    decoder
+        .find_tag_unsigned::<u32>(tiff::tags::Tag::PlanarConfiguration)
+        .ok()
+        .flatten()
+        .map(|v| v == 2)
+        .unwrap_or(false)
+}
+
 /// Read an ASCII string tag.
 pub fn read_tag_ascii(
     decoder: &mut tiff::decoder::Decoder<BufReader<File>>,

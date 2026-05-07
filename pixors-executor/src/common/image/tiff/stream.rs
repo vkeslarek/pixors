@@ -17,6 +17,7 @@ pub struct TiffPageStream {
     pixel_format: PixelFormat,
     width: u32,
     height: u32,
+    planar: bool,
     row: u32,
     done: bool,
 }
@@ -29,6 +30,7 @@ impl TiffPageStream {
         pixel_format: PixelFormat,
         width: u32,
         height: u32,
+        planar: bool,
     ) -> Self {
         Self {
             page_info,
@@ -37,6 +39,7 @@ impl TiffPageStream {
             pixel_format,
             width,
             height,
+            planar,
             row: 0,
             done: false,
         }
@@ -62,7 +65,7 @@ impl PageStream for TiffPageStream {
         );
 
         for _ in 0..count {
-            let raw = tiff_row_bytes(&self.image_data, self.row, self.width, self.color_type)?;
+            let raw = tiff_row_bytes(&self.image_data, self.row, self.width, self.height, self.color_type, self.planar)?;
             items.push(Item::ScanLine(ScanLine::new(
                 0,
                 self.row,
@@ -146,28 +149,30 @@ pub fn tiff_row_bytes(
     result: &tiff::decoder::DecodingResult,
     row: u32,
     width: u32,
+    height: u32,
     ct: tiff::ColorType,
+    planar: bool,
 ) -> Result<Vec<u8>, Error> {
     let w = width as usize;
+    let h = height as usize;
     let spp = ct.num_samples() as usize;
-    let row_start = row as usize * w * spp;
-    let row_end = row_start + w * spp;
-
     match result {
-        tiff::decoder::DecodingResult::U8(data) => Ok(data[row_start..row_end].to_vec()),
-        tiff::decoder::DecodingResult::U16(data) => Ok(data[row_start..row_end]
+        tiff::decoder::DecodingResult::U8(data) => {
+            Ok(row_bytes_u8(data, row, w, h, spp, planar)?.to_vec())
+        }
+        tiff::decoder::DecodingResult::U16(data) => Ok(row_bytes_u16(data, row, w, h, spp, planar)?
             .iter()
             .flat_map(|v| v.to_ne_bytes())
             .collect()),
-        tiff::decoder::DecodingResult::U32(data) => Ok(data[row_start..row_end]
+        tiff::decoder::DecodingResult::U32(data) => Ok(row_bytes_u32(data, row, w, h, spp, planar)?
             .iter()
             .flat_map(|v| v.to_ne_bytes())
             .collect()),
-        tiff::decoder::DecodingResult::F32(data) => Ok(data[row_start..row_end]
+        tiff::decoder::DecodingResult::F32(data) => Ok(row_bytes_f32(data, row, w, h, spp, planar)?
             .iter()
             .flat_map(|v| v.to_ne_bytes())
             .collect()),
-        tiff::decoder::DecodingResult::F16(data) => Ok(data[row_start..row_end]
+        tiff::decoder::DecodingResult::F16(data) => Ok(row_bytes_f16(data, row, w, h, spp, planar)?
             .iter()
             .flat_map(|v| v.to_f32().to_ne_bytes())
             .collect()),
@@ -176,4 +181,59 @@ pub fn tiff_row_bytes(
             result
         ))),
     }
+}
+
+fn row_bytes_u8(data: &[u8], row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<u8>, Error> {
+    let mut out = Vec::with_capacity(w * spp);
+    if planar {
+        let plane_len = w * h;
+        for ch in 0..spp {
+            let start = ch * plane_len + row as usize * w;
+            out.extend_from_slice(data.get(start..start + w).ok_or_else(|| {
+                Error::internal("TIFF planar row out of bounds")
+            })?);
+        }
+    } else {
+        let start = row as usize * w * spp;
+        out.extend_from_slice(data.get(start..start + w * spp).ok_or_else(|| {
+            Error::internal("TIFF row out of bounds")
+        })?);
+    }
+    Ok(out)
+}
+
+fn row_bytes_u16(data: &[u16], row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<u16>, Error> {
+    if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) }
+}
+
+fn row_bytes_u32(data: &[u32], row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<u32>, Error> {
+    if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) }
+}
+
+fn row_bytes_f32(data: &[f32], row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<f32>, Error> {
+    if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) }
+}
+
+fn row_bytes_f16(data: &[half::f16], row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<half::f16>, Error> {
+    if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) }
+}
+
+fn row_interleaved<T: Copy>(data: &[T], row: u32, w: usize, spp: usize) -> Result<Vec<T>, Error> {
+    let start = row as usize * w * spp;
+    data.get(start..start + w * spp)
+        .map(|s| s.to_vec())
+        .ok_or_else(|| Error::internal("TIFF row out of bounds"))
+}
+
+fn row_planar<T: Copy>(data: &[T], row: u32, w: usize, h: usize, spp: usize) -> Result<Vec<T>, Error> {
+    let mut out = Vec::with_capacity(w * spp);
+    let plane_len = w * h;
+    for ch in 0..spp {
+        let start = ch * plane_len + row as usize * w;
+        out.extend_from_slice(
+            data.get(start..start + w)
+                .ok_or_else(|| Error::internal("TIFF planar row out of bounds"))?
+        );
+    }
+    Ok(out)
 }

@@ -4,7 +4,8 @@ mod stream;
 pub use stream::{tiff_pixel_format, tiff_row_bytes, TiffPageStream};
 pub use tags::{
     count_tiff_pages, detect_tiff_color_space, read_exif_blob, read_extra_samples,
-    read_icc_profile, read_orientation, read_page_name, read_page_offset, read_tag_ascii,
+    read_icc_profile, read_orientation, read_page_name, read_page_offset,
+    read_planar_config, read_tag_ascii,
 };
 
 use std::fs::File;
@@ -132,7 +133,8 @@ impl ImageDecoder for TiffDecoder {
             let name = read_page_name(&mut decoder).unwrap_or_else(|| format!("Page {}", i + 1));
             let (ox, oy) = read_page_offset(&mut decoder, pw, ph);
             let orientation = read_orientation(&mut decoder);
-            let extra = read_extra_samples(&mut decoder);
+        let extra = read_extra_samples(&mut decoder);
+
 
             let has_alpha = matches!(pct, tiff::ColorType::RGBA(..) | tiff::ColorType::GrayA(..) | tiff::ColorType::CMYKA(..))
                 || extra.is_some();
@@ -189,6 +191,7 @@ impl ImageDecoder for TiffDecoder {
         let (ox, oy) = read_page_offset(&mut decoder, w, h);
         let orientation = read_orientation(&mut decoder);
         let extra = read_extra_samples(&mut decoder);
+        let planar = read_planar_config(&mut decoder);
 
         let image_data = decoder
             .read_image()
@@ -221,6 +224,7 @@ impl ImageDecoder for TiffDecoder {
             pixel_format,
             w,
             h,
+            planar,
         )))
     }
 }
