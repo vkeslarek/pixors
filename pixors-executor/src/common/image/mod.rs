@@ -35,6 +35,16 @@ pub struct PixelOffset {
 pub enum BlendMode {
     #[default]
     Normal,
+    Source,
+    Over,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DisposeOp {
+    #[default]
+    None,
+    Background,
+    Previous,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -60,6 +70,10 @@ pub struct PageInfo {
     pub blend_mode: BlendMode,
     pub visible: bool,
     pub orientation: Orientation,
+    /// Animation: display time in milliseconds (0 = static).
+    pub delay_ms: u32,
+    /// Animation: what to do with the previous frame.
+    pub dispose: DisposeOp,
 }
 
 #[derive(Debug, Clone)]

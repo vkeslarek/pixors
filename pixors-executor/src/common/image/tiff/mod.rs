@@ -134,6 +134,8 @@ impl ImageDecoder for TiffDecoder {
                 blend_mode: BlendMode::Normal,
                 visible: true,
                 orientation,
+                    delay_ms: 0,
+                    dispose: DisposeOp::None,
             });
         }
 
@@ -195,6 +197,8 @@ impl ImageDecoder for TiffDecoder {
                 blend_mode: BlendMode::Normal,
                 visible: true,
                 orientation,
+                    delay_ms: 0,
+                    dispose: DisposeOp::None,
             },
             image_data,
             ct,

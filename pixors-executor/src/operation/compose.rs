@@ -207,7 +207,8 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], emit: &m
 
 fn blend(top: &[u8; 4], bottom: &[u8; 4], mode: BlendMode) -> [u8; 4] {
     match mode {
-        BlendMode::Normal => alpha_over(top, bottom),
+        BlendMode::Normal | BlendMode::Over => alpha_over(top, bottom),
+        BlendMode::Source => *top,
     }
 }
 

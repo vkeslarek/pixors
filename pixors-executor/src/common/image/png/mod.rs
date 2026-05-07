@@ -33,10 +33,33 @@ impl ImageDecoder for PngDecoder {
         let reader = BufReader::new(file);
         let mut decoder = png::Decoder::new(reader);
         decoder.set_transformations(png::Transformations::EXPAND);
-        let reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
+        let mut reader = decoder.read_info().map_err(|e| Error::Png(e.to_string()))?;
+
+        let color_space = detect_color_space(reader.info());
+        let animated = reader.info().is_animated();
+
+        // Collect APNG frame metadata while we have mutable reader access
+        let mut apng_frames = Vec::new();
+        if animated {
+            let mut frame_num = 1u32;
+            while let Ok(frame) = reader.next_frame_info() {
+                        let delay = (frame.delay_num as u32 * 1000)
+                            .div_ceil(frame.delay_den.max(1) as u32);
+                        let dispose = match frame.dispose_op {
+                            png::DisposeOp::None => DisposeOp::None,
+                            png::DisposeOp::Background => DisposeOp::Background,
+                            png::DisposeOp::Previous => DisposeOp::Previous,
+                        };
+                        let blend = match frame.blend_op {
+                            png::BlendOp::Source => BlendMode::Source,
+                            png::BlendOp::Over => BlendMode::Over,
+                        };
+                        apng_frames.push((delay, dispose, blend, frame.x_offset, frame.y_offset, frame_num));
+                        frame_num += 1;
+            }
+        }
         let info = reader.info();
 
-        let color_space = detect_color_space(info);
         let dpi = info.pixel_dims.and_then(|pdim| {
             if pdim.unit == png::Unit::Meter {
                 Some(Dpi {
@@ -94,6 +117,35 @@ impl ImageDecoder for PngDecoder {
             .unwrap_or("PNG")
             .to_string();
 
+        let mut pages = vec![PageInfo {
+            name: name.clone(),
+            color_space,
+            alpha_policy: AlphaPolicy::Straight,
+            offset: PixelOffset::default(),
+            opacity: 1.0,
+            blend_mode: BlendMode::default(),
+            visible: true,
+            orientation: Orientation::default(),
+            delay_ms: 0,
+            dispose: DisposeOp::None,
+        }];
+
+        // ── APNG frames ────────────────────────────────────────────
+        for (delay, dispose, blend, x_off, y_off, frame_num) in apng_frames {
+            pages.push(PageInfo {
+                name: format!("{name} frame {frame_num}"),
+                color_space,
+                alpha_policy: AlphaPolicy::Straight,
+                offset: PixelOffset { x: x_off as i32, y: y_off as i32 },
+                opacity: 1.0,
+                blend_mode: blend,
+                visible: true,
+                orientation: Orientation::default(),
+                delay_ms: delay,
+                dispose,
+            });
+        }
+
         Ok(ImageDescriptor {
             format: "PNG".to_string(),
             width: info.width,
@@ -103,24 +155,14 @@ impl ImageDecoder for PngDecoder {
             dpi,
             metadata,
             icc_profile,
-            pages: vec![PageInfo {
-                name,
-                color_space,
-                alpha_policy: AlphaPolicy::Straight,
-                offset: PixelOffset::default(),
-                opacity: 1.0,
-                blend_mode: BlendMode::default(),
-                visible: true,
-                orientation: Orientation::default(),
-            }],
+            pages,
         })
     }
 
     fn open_stream(&self, path: &Path, page: usize) -> Result<Box<dyn PageStream>, Error> {
         if page != 0 {
             return Err(Error::invalid_param(format!(
-                "PNG has only 1 page, requested {}",
-                page
+                "PNG page {page} — APNG frame reading not yet implemented"
             )));
         }
         let file = File::open(path).map_err(Error::Io)?;
@@ -152,6 +194,8 @@ impl ImageDecoder for PngDecoder {
                 blend_mode: BlendMode::default(),
                 visible: true,
                 orientation: Orientation::default(),
+                delay_ms: 0,
+                dispose: DisposeOp::None,
             },
             pixel_format,
             color_space,
