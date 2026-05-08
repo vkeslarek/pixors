@@ -80,8 +80,12 @@ impl Pipeline {
             let num_stages = nodes.len();
             let kinds: Vec<_> = nodes.iter().map(|&id| g[id].kind()).collect();
 
-            let chain_name = format!("chain_{idx}_{dev:?}_{}", kinds.join("→"));
-            tracing::info!("[pixors] compile: {chain_name} {} stage(s)", num_stages,);
+            let chain_name = format!("#{idx} [{dev:?}]  {}", kinds.join(" → "));
+            tracing::info!(
+                "[pixors] compile: {chain_name}  ({} stage{})",
+                num_stages,
+                if num_stages == 1 { "" } else { "s" },
+            );
 
             let producer = nodes.first().and_then(|&id| g[id].producer());
             let consumer = nodes.last().and_then(|&id| g[id].consumer());

@@ -45,7 +45,7 @@ impl Stage for ScanLineToTile {
     }
 
     fn hints(&self) -> crate::stage::StageHints {
-        crate::stage::StageHints::prefer_gpu()
+        crate::stage::StageHints::cpu()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
