@@ -69,12 +69,16 @@ impl App {
                     }
                 }
                 PipelineEvent::Error(s) => {
-                    self.dispatcher
-                        .on_pipeline_error(&mut self.state, s.clone());
+                    self.dispatcher.on_pipeline_error(&mut self.state, s.clone());
                     for tab in &mut self.state.tabs {
                         tab.view.loading = false;
                     }
                     self.push_error(s);
+                }
+                PipelineEvent::Cancelled => {
+                    for tab in &mut self.state.tabs {
+                        tab.view.loading = false;
+                    }
                 }
             },
             Msg::ExportDialog(m) => self.handle_export_dialog(m),
@@ -101,6 +105,7 @@ impl App {
                     ) {
                         self.push_error(e);
                     }
+                    self.dispatcher.cleanup_tab(id);
                     self.update_status_from_active_tab();
                 }
                 tab_bar::Msg::DragDrop => {
@@ -320,14 +325,14 @@ impl App {
     fn dispatch_blur_preview(&mut self, radius: u32) {
         let Some(tab) = self.state.active_tab_mut() else { return; };
 
-        // Clear the previous preview generation so old and new tiles don't mix,
-        // which would create visible seams between tiles at different generations.
         let old_gen = tab.view.preview_gen;
-        if old_gen > 0 {
-            if let Ok(mut cache) = tab.viewport_cache.lock() {
+        if old_gen > 0
+            && let Ok(mut cache) = tab.viewport_cache.lock() {
                 cache.clear_generation(old_gen);
             }
-        }
+
+        // Cancel the previous background pipeline so it stops wasting resources
+        self.dispatcher.cancel_background(tab.id);
 
         tab.view.preview_gen += 1;
         let generation = tab.view.preview_gen;

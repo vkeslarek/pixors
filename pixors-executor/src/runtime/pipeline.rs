@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, mpsc::sync_channel};
+use std::thread::{self, JoinHandle};
 
 use petgraph::Direction;
 use petgraph::algo::toposort;
@@ -37,6 +38,7 @@ impl Pipeline {
     pub fn compile(
         graph: &ExecGraph,
         progress_tx: Option<SyncSender<PipelineEvent>>,
+        cancelled: Arc<AtomicBool>,
     ) -> Result<Self, Error> {
         let mut g: Graph = graph.graph.clone();
         let gpu_ok = gpu::context::gpu_available();
@@ -102,6 +104,7 @@ impl Pipeline {
                     gpu_ctx.clone(),
                     progress.clone(),
                     chain_name,
+                    cancelled.clone(),
                 )) as Box<dyn Runner>,
                 inputs,
                 outputs,
@@ -118,50 +121,73 @@ impl Pipeline {
 
 // ── Run ─────────────────────────────────────────────────────────────────────
 
-impl Pipeline {
-    pub fn run(self, events: Option<std::sync::mpsc::Sender<PipelineEvent>>) -> Result<(), Error> {
-        std::thread::scope(|s| {
-            let mut handles = Vec::new();
+pub struct PipelineHandle {
+    cancelled: Arc<AtomicBool>,
+    handles: Vec<JoinHandle<Result<(), Error>>>,
+}
 
-            for (runner, inputs, outputs) in self.chains {
-                let merged = merge_inputs(inputs, s);
+impl PipelineHandle {
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
 
-                let h = s.spawn(move || runner.run(merged, outputs));
-                handles.push(h);
-            }
-
-            let mut first_err: Option<Error> = None;
-            for (i, h) in handles.into_iter().enumerate() {
-                match h.join() {
-                    Ok(Ok(())) => {
-                        tracing::info!("[pixors] pipeline: thread {i} joined OK");
-                    }
-                    Ok(Err(e)) => {
-                        tracing::error!("[pixors] pipeline: thread {i} returned error: {e}");
-                        if let Some(ref tx) = events {
-                            let _ = tx.send(PipelineEvent::Error(e.to_string()));
-                        }
-                        first_err.get_or_insert(e);
-                    }
-                    Err(_) => {
-                        tracing::error!("[pixors] pipeline: thread {i} PANICKED");
-                        first_err.get_or_insert(Error::internal("pipeline thread panicked"));
-                    }
+    pub fn join(self) -> Result<(), Error> {
+        let mut first_err: Option<Error> = None;
+        for (i, h) in self.handles.into_iter().enumerate() {
+            match h.join() {
+                Ok(Ok(())) => {
+                    tracing::info!("[pixors] pipeline: thread {i} joined OK");
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("[pixors] pipeline: thread {i} returned error: {e}");
+                    first_err.get_or_insert(e);
+                }
+                Err(_) => {
+                    tracing::error!("[pixors] pipeline: thread {i} PANICKED");
+                    first_err.get_or_insert(Error::internal("pipeline thread panicked"));
                 }
             }
-
-            if let Some(ref tx) = events {
-                let _ = tx.send(PipelineEvent::Done);
-            }
-            first_err.map(Err).unwrap_or(Ok(()))
-        })
+        }
+        first_err.map(Err).unwrap_or(Ok(()))
     }
 }
 
-fn merge_inputs<'scope, 'env: 'scope>(
-    inputs: Vec<ItemReceiver>,
-    scope: &'scope std::thread::Scope<'scope, 'env>,
-) -> Vec<ItemReceiver> {
+impl Pipeline {
+    pub fn run(
+        self,
+        events: Option<SyncSender<PipelineEvent>>,
+    ) -> PipelineHandle {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let mut handles = Vec::new();
+
+        for (runner, inputs, outputs) in self.chains {
+            let cancelled_clone = cancelled.clone();
+            let merged = merge_inputs(inputs);
+            let events_clone = events.clone();
+
+            let h = thread::spawn(move || {
+                let result = runner.run(merged, outputs);
+                if let Err(ref e) = result
+                    && let Some(ref tx) = events_clone {
+                        let _ = tx.send(PipelineEvent::Error(e.to_string()));
+                    }
+                if cancelled_clone.load(Ordering::Relaxed)
+                    && let Some(ref tx) = events_clone {
+                        let _ = tx.send(PipelineEvent::Cancelled);
+                    }
+                result
+            });
+            handles.push(h);
+        }
+
+        PipelineHandle {
+            cancelled,
+            handles,
+        }
+    }
+}
+
+fn merge_inputs(inputs: Vec<ItemReceiver>) -> Vec<ItemReceiver> {
     if inputs.len() <= 1 {
         return inputs;
     }
@@ -172,7 +198,7 @@ fn merge_inputs<'scope, 'env: 'scope>(
     for recv in inputs {
         let tx = tx.clone();
         let remaining = remaining.clone();
-        scope.spawn(move || {
+        thread::spawn(move || {
             loop {
                 match recv.recv() {
                     Ok(Some(routed)) => {

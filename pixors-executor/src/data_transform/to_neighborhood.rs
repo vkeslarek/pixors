@@ -32,6 +32,8 @@ static NA_PORTS: PortSpecification = PortSpecification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToNeighborhood {
     pub radius: u32,
+    pub image_width: Option<u32>,
+    pub image_height: Option<u32>,
 }
 
 impl Stage for TileToNeighborhood {
@@ -48,7 +50,7 @@ impl Stage for TileToNeighborhood {
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(TileToNeighborhoodProcessor::new(self.radius)))
+        Some(Box::new(TileToNeighborhoodProcessor::new(self.radius, self.image_width, self.image_height)))
     }
 }
 
@@ -56,21 +58,25 @@ pub struct TileToNeighborhoodProcessor {
     pixel_radius: u32,
     tile_cache: HashMap<TileGridPos, Tile>,
     emitted: HashSet<TileGridPos>,
-    image_width: u32,
-    image_height: u32,
+    fixed_width: Option<u32>,
+    fixed_height: Option<u32>,
+    discovered_width: u32,
+    discovered_height: u32,
     tile_size: u32,
     meta: Option<crate::common::pixel::meta::PixelMeta>,
     initialized: bool,
 }
 
 impl TileToNeighborhoodProcessor {
-    pub fn new(pixel_radius: u32) -> Self {
+    pub fn new(pixel_radius: u32, fixed_width: Option<u32>, fixed_height: Option<u32>) -> Self {
         Self {
             pixel_radius,
             tile_cache: HashMap::new(),
             emitted: HashSet::new(),
-            image_width: 0,
-            image_height: 0,
+            fixed_width,
+            fixed_height,
+            discovered_width: 0,
+            discovered_height: 0,
             tile_size: 0,
             meta: None,
             initialized: false,
@@ -96,8 +102,16 @@ impl TileToNeighborhoodProcessor {
     fn update_bounds(&mut self, tile: &Tile) {
         let right = tile.coord.px + tile.coord.width;
         let bottom = tile.coord.py + tile.coord.height;
-        self.image_width = self.image_width.max(right);
-        self.image_height = self.image_height.max(bottom);
+        self.discovered_width = self.discovered_width.max(right);
+        self.discovered_height = self.discovered_height.max(bottom);
+    }
+
+    fn active_width(&self) -> u32 {
+        self.fixed_width.unwrap_or(self.discovered_width)
+    }
+
+    fn active_height(&self) -> u32 {
+        self.fixed_height.unwrap_or(self.discovered_height)
     }
 
     fn try_emit(&mut self, mip: u32, tx: u32, ty: u32, emit: &mut Emitter<Item>) {
@@ -110,8 +124,8 @@ impl TileToNeighborhoodProcessor {
             return;
         }
         let r = self.tile_radius() as i32;
-        let tiles_x = self.image_width.div_ceil(self.tile_size) as i32;
-        let tiles_y = self.image_height.div_ceil(self.tile_size) as i32;
+        let tiles_x = self.active_width().div_ceil(self.tile_size) as i32;
+        let tiles_y = self.active_height().div_ceil(self.tile_size) as i32;
 
         let mut nbhd_tiles = Vec::new();
         let mut center_coord = None;
@@ -152,8 +166,8 @@ impl TileToNeighborhoodProcessor {
             nbhd_tiles,
             EdgeCondition::Clamp,
             self.meta.unwrap(),
-            self.image_width,
-            self.image_height,
+            self.active_width(),
+            self.active_height(),
             self.tile_size,
         );
         self.emitted.insert(key);

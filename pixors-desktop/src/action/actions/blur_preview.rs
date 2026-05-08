@@ -47,6 +47,8 @@ impl Action for BlurPreview {
             })
             .data_xform(TileToNeighborhood {
                 radius: self.radius,
+                image_width: Some(self.img_w),
+                image_height: Some(self.img_h),
             })
             .op(Blur {
                 radius: self.radius,

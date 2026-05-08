@@ -1,6 +1,7 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
+use std::time::Duration;
 
 use crate::data::device::Device;
 use crate::error::Error;
@@ -26,6 +27,7 @@ pub struct ChainRunner {
     pub gpu: Option<Arc<GpuContext>>,
     pub progress: Option<Arc<ProgressState>>,
     pub chain_name: String,
+    pub cancelled: Arc<AtomicBool>,
 }
 
 impl ChainRunner {
@@ -37,6 +39,7 @@ impl ChainRunner {
         gpu: Option<Arc<GpuContext>>,
         progress: Option<Arc<ProgressState>>,
         chain_name: String,
+        cancelled: Arc<AtomicBool>,
     ) -> Self {
         Self {
             producer,
@@ -46,6 +49,7 @@ impl ChainRunner {
             gpu,
             progress,
             chain_name,
+            cancelled,
         }
     }
 
@@ -233,8 +237,12 @@ impl Runner for ChainRunner {
             let recv = &inputs[0];
             let mut item_count = 0u64;
             loop {
+                if self.cancelled.load(Ordering::Relaxed) {
+                    tracing::info!("[pixors] {name}: cancelled after {item_count} items");
+                    return Ok(());
+                }
                 let t_recv = std::time::Instant::now();
-                match recv.recv() {
+                match recv.recv_timeout(Duration::from_millis(100)) {
                     Ok(Some(routed)) => {
                         let elapsed = t_recv.elapsed();
                         if elapsed.as_millis() > 50 {
@@ -257,7 +265,7 @@ impl Runner for ChainRunner {
                         )?;
                         item_count += 1;
                     }
-                    Ok(None) | Err(_) => {
+                    Ok(None) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                         tracing::info!(
                             "[pixors] {name}: received None after {item_count} items, entering finish phase…"
                         );
@@ -274,6 +282,9 @@ impl Runner for ChainRunner {
                             "[pixors] {name}: finish phase complete, signalling Done to {num_outputs} output(s)"
                         );
                         break;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        continue;
                     }
                 }
             }

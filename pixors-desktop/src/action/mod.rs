@@ -1,13 +1,14 @@
 pub mod actions;
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 
 use pixors_executor::graph::graph::ExecGraph;
 use pixors_executor::runtime::event::PipelineEvent;
-use pixors_executor::runtime::pipeline::Pipeline;
+use pixors_executor::runtime::pipeline::{Pipeline, PipelineHandle};
 use tokio::sync::broadcast;
 
 use crate::state::history::SnapshotId;
@@ -72,6 +73,7 @@ pub struct Dispatcher {
     pub event_tx: broadcast::Sender<PipelineEvent>,
     pub tabs: HashMap<TabId, TabDispatcher>,
     active_pipeline_tab: Option<TabId>,
+    background_tasks: HashMap<TabId, PipelineHandle>,
 }
 
 impl Dispatcher {
@@ -80,6 +82,7 @@ impl Dispatcher {
             event_tx,
             tabs: HashMap::new(),
             active_pipeline_tab: None,
+            background_tasks: HashMap::new(),
         }
     }
 
@@ -118,22 +121,24 @@ impl Dispatcher {
                     self.active_pipeline_tab = Some(tid);
                 }
 
+                let cancelled = Arc::new(AtomicBool::new(false));
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-                let pipeline =
-                    Pipeline::compile(&graph, Some(event_tx.clone())).map_err(|e| e.to_string())?;
+                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone())
+                    .map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
-                thread::spawn(move || {
-                    if let Err(e) = pipeline.run(None) {
-                        tracing::error!("[pixors] pipeline error: {e}");
-                    }
-                    let _ = event_tx.send(PipelineEvent::Done);
-                });
                 thread::spawn(move || {
                     while let Ok(event) = event_rx.recv() {
                         let _ = broadcast_tx.send(event);
                     }
                 });
+
+                let handle = pipeline.run(Some(event_tx));
+
+                if !is_apply
+                    && let Some(tid) = tab_id {
+                        self.background_tasks.insert(tid, handle);
+                    }
 
                 Ok(())
             }
@@ -161,5 +166,12 @@ impl Dispatcher {
     #[allow(dead_code)]
     pub fn cleanup_tab(&mut self, id: TabId) {
         self.tabs.remove(&id);
+        self.background_tasks.remove(&id);
+    }
+
+    pub fn cancel_background(&mut self, id: TabId) {
+        if let Some(handle) = self.background_tasks.remove(&id) {
+            handle.cancel();
+        }
     }
 }
