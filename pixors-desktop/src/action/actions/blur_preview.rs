@@ -26,6 +26,8 @@ pub struct BlurPreview {
     pub radius: u32,
     pub generation: u64,
     pub mip: u32,
+    pub image_width: u32,
+    pub image_height: u32,
     pub cache: Arc<Mutex<ViewportCache>>,
 }
 
@@ -35,23 +37,15 @@ impl Action for BlurPreview {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        // Install callback that reads from this tab's ViewportCache (gen=0 for originals).
-        // The cache keeps only the latest generation per tile position.
         let cache = self.cache.clone();
-        let image_width = {
-            let guard = cache.lock().unwrap();
-            guard.active_dims.0
-        };
-        let image_height = {
-            let guard = cache.lock().unwrap();
-            guard.active_dims.1
-        };
+        let image_width = self.image_width;
+        let image_height = self.image_height;
 
         install_viewport_cache_reader(Box::new(
-            move |_key, _gen, mip, _range| {
+            move |_key, generation, mip, _range| {
                 let guard = cache.lock().unwrap();
                 guard
-                    .all_tiles_at_mip(mip)
+                    .tiles_at_mip(mip, generation)
                     .into_iter()
                     .map(|(pos, ct)| {
                         Item::Tile(Tile::new(

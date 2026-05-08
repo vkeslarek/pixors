@@ -352,6 +352,8 @@ impl App {
             radius,
             generation,
             mip,
+            image_width: tab.desc.width,
+            image_height: tab.desc.height,
             cache: tab.viewport_cache.clone(),
         };
 

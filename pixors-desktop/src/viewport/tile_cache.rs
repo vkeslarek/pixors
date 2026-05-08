@@ -140,11 +140,11 @@ impl ViewportCache {
         self.entries.retain(|_, t| t.generation != generation);
     }
 
-    /// Return all tiles at a mip level (latest generation per position).
-    pub fn all_tiles_at_mip(&self, mip: u32) -> Vec<(TileGridPos, &CachedTile)> {
+    /// Return all tiles at a mip level, filtered by generation.
+    pub fn tiles_at_mip(&self, mip: u32, generation: u64) -> Vec<(TileGridPos, &CachedTile)> {
         self.entries
             .iter()
-            .filter(|(k, _)| k.mip_level == mip)
+            .filter(|(k, v)| k.mip_level == mip && v.generation == generation)
             .map(|(k, v)| (*k, v))
             .collect()
     }
