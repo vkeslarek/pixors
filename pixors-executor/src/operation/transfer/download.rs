@@ -59,8 +59,9 @@ impl Processor for DownloadProcessor {
                     .gpu
                     .as_ref()
                     .ok_or_else(|| Error::internal("GPU unavailable for download"))?;
-                let gbuf = tile.data.as_gpu().unwrap();
                 let scheduler = gpu.scheduler();
+                scheduler.flush(); // ensure pending GPU dispatches complete before reading
+                let gbuf = tile.data.as_gpu().unwrap();
                 let bytes = scheduler.read_from_buffer(gbuf.buffer(), 0, gbuf.requested_size);
                 ctx.emit.emit(Item::Tile(Tile::new(
                     tile.coord,
@@ -79,6 +80,7 @@ impl Processor for DownloadProcessor {
                         .as_ref()
                         .ok_or_else(|| Error::internal("GPU unavailable for nbhd download"))?;
                     let scheduler = gpu.scheduler();
+                    scheduler.flush();
 
                     let mut tiles = Vec::new();
                     for info in &tile_infos {

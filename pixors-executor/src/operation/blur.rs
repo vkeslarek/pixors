@@ -190,6 +190,7 @@ fn gpu_blur_process(
                 .and_then(|info| {
                     let gpu_ctx = gpu_ctx_init.as_ref()?;
                     let scheduler = gpu_ctx.scheduler();
+                    scheduler.flush();
                     let data = scheduler.read_from_buffer(
                         consolidated.buffer(),
                         info.data_offset,
