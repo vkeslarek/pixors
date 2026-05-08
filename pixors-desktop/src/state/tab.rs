@@ -67,12 +67,8 @@ pub enum BlendMode {
     Multiply,
 }
 
+#[derive(Default)]
 pub struct EditChain {
     pub ops: Vec<()>,
 }
 
-impl Default for EditChain {
-    fn default() -> Self {
-        Self { ops: Vec::new() }
-    }
-}

@@ -17,19 +17,12 @@ pub enum Msg {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct State {
     pub drag_from: Option<usize>,
     pub drag_over: Option<usize>,
 }
 
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            drag_from: None,
-            drag_over: None,
-        }
-    }
-}
 
 impl State {
     pub fn update(&mut self, msg: Msg, tab_count: usize) {

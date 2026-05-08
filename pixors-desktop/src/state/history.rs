@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use super::tab::{BlendMode, LayerId, LayerSource};
 
+#[derive(Default)]
 pub struct History {
     pub past: Vec<HistoryEntry>,
     pub future: Vec<HistoryEntry>,
@@ -17,6 +18,7 @@ pub struct HistoryEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SnapshotId(pub u64);
 
+#[derive(Default)]
 pub struct HistoryCache {
     pub snapshots: HashMap<SnapshotId, Snapshot>,
     pub next_id: u64,
@@ -35,21 +37,4 @@ pub struct LayerSnapshot {
     pub blend: BlendMode,
 }
 
-impl Default for History {
-    fn default() -> Self {
-        Self {
-            past: Vec::new(),
-            future: Vec::new(),
-            cache: HistoryCache::default(),
-        }
-    }
-}
 
-impl Default for HistoryCache {
-    fn default() -> Self {
-        Self {
-            snapshots: HashMap::new(),
-            next_id: 0,
-        }
-    }
-}

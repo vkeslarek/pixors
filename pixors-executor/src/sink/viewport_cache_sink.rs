@@ -17,6 +17,10 @@ pub fn install_viewport_cache_sink(f: CacheCommitFn) {
     *CACHE_SINK.write().unwrap() = Some(Arc::new(f));
 }
 
+pub fn uninstall_viewport_cache_sink() {
+    *CACHE_SINK.write().unwrap() = None;
+}
+
 pub fn viewport_cache_sink() -> Option<Arc<CacheCommitFn>> {
     CACHE_SINK.read().unwrap().clone()
 }

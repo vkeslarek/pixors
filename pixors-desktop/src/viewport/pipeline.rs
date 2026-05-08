@@ -234,7 +234,12 @@ impl shader::Primitive for ViewportPrimitive {
         let tex_w = self.camera.img_w as u32;
         let tex_h = self.camera.img_h as u32;
 
-        let Some(ref cache_arc) = self.cache else { return; };
+        let Some(ref cache_arc) = self.cache else {
+            pipeline.tiled_texture = None;
+            pipeline.texture_dims = None;
+            pipeline.last_mip = None;
+            return;
+        };
         let Ok(mut cache) = cache_arc.lock() else { return; };
 
         cache.set_active_mip(mip);

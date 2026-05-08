@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use iced::keyboard::{self};
@@ -54,7 +53,6 @@ pub struct App {
     pub status: status_bar::State,
     #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
-    pub image_path: Option<PathBuf>,
     pub show_export_dialog: bool,
     pub export_dialog: crate::dialog::export::ExportDialog,
 }
@@ -90,7 +88,6 @@ impl Default for App {
             filters: filters_panel::State::default(),
             status: status_bar::State::default(),
             errors: Vec::new(),
-            image_path: None,
             show_export_dialog: false,
             export_dialog: crate::dialog::export::ExportDialog::default(),
         };
@@ -119,17 +116,8 @@ impl App {
         let mut subs = vec![
             keyboard::listen().map(Msg::KeyPressed),
             iced::time::every(std::time::Duration::from_millis(33)).map(|_| Msg::Tick),
+            iced::window::frames().map(|_| Msg::Frames),
         ];
-
-        let has_pending = self.state.active_tab()
-            .and_then(|t| t.viewport_cache.lock().ok())
-            .is_some_and(|g| g.has_pending());
-
-        let tab_loading = self.loading_active();
-
-        if tab_loading || has_pending {
-            subs.push(iced::window::frames().map(|_| Msg::Frames));
-        }
 
         subs.push(Self::pipeline_subscription());
 

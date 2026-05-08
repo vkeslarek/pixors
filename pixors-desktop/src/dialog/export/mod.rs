@@ -185,11 +185,10 @@ impl ExportDialog {
             }
             Msg::TiffRowsPerStrip(s) => {
                 self.rows_per_strip_str = s.clone();
-                if let Ok(v) = s.parse::<u32>() {
-                    if v > 0 {
+                if let Ok(v) = s.parse::<u32>()
+                    && v > 0 {
                         self.tiff.layout = TiffLayout::Strip { rows_per_strip: v };
                     }
-                }
             }
             Msg::TiffTileWidth(s) => {
                 self.tile_width_str = s.clone();
@@ -225,24 +224,21 @@ impl ExportDialog {
         self.error = None;
         match self.format {
             ExportFormat::Tiff => {
-                if let TiffLayout::Tile { tile_width, tile_height } = self.tiff.layout {
-                    if tile_width % 16 != 0 || tile_height % 16 != 0 {
+                if let TiffLayout::Tile { tile_width, tile_height } = self.tiff.layout
+                    && (tile_width % 16 != 0 || tile_height % 16 != 0) {
                         self.error =
                             Some("Tile dimensions must be multiples of 16.".to_string());
                         return;
                     }
-                }
                 
                 if let TiffCompression::Deflate { predictor: TiffPredictor::FloatingPoint, .. }
                 | TiffCompression::Lzw { predictor: TiffPredictor::FloatingPoint } =
                     self.tiff.compression
-                {
-                    if self.tiff.bit_depth != TiffBitDepth::ThirtyTwo {
+                    && self.tiff.bit_depth != TiffBitDepth::ThirtyTwo {
                         self.error = Some(
                             "Floating-point predictor requires 32-bit float bit depth.".to_string(),
                         );
                     }
-                }
             }
             ExportFormat::Png => {}
         }

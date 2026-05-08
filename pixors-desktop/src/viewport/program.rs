@@ -122,9 +122,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<shader::Action<Msg>> {
-        let Some(ref vp_state) = self.viewport_state else {
-            return None;
-        };
+        let vp_state = self.viewport_state.as_ref()?;
         let mut state = vp_state.borrow_mut();
 
         if self.tile_generation != state.last_generation.get() {

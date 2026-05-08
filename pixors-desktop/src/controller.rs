@@ -101,11 +101,10 @@ impl App {
                     self.update_status_from_active_tab();
                 }
                 tab_bar::Msg::DragDrop => {
-                    if let (Some(from), Some(to)) = (self.tabs.drag_from, self.tabs.drag_over) {
-                        if from != to {
+                    if let (Some(from), Some(to)) = (self.tabs.drag_from, self.tabs.drag_over)
+                        && from != to {
                             self.state.swap_tabs(from, to);
                         }
-                    }
                     self.tabs.drag_from = None;
                     self.tabs.drag_over = None;
                 }
@@ -198,12 +197,11 @@ impl App {
 
         for (tab_id, mip, range, cache_dir, img_w, img_h) in mip_requests {
             // Skip if all tiles already in cache
-            if let Some(tab) = self.state.tab(tab_id) {
-                if let Ok(guard) = tab.viewport_cache.lock()
+            if let Some(tab) = self.state.tab(tab_id)
+                && let Ok(guard) = tab.viewport_cache.lock()
                     && guard.has_all_tiles(mip, &range) {
                         continue;
                     }
-            }
 
             let _ = self.dispatcher.dispatch(
                 Arc::new(crate::action::actions::mip_fetch::RequestMipFetch {

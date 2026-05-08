@@ -20,12 +20,14 @@ pub enum PipelineMode {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum PipelineStatus {
     Done,
     Error(String),
     Cancelled,
 }
 
+#[allow(dead_code)]
 pub enum PreparedAction {
     StateOnly,
     Pipeline {
@@ -35,6 +37,7 @@ pub enum PreparedAction {
     },
 }
 
+#[allow(dead_code)]
 pub trait Action: std::fmt::Debug + Send + Sync + 'static {
     fn target_tab(&self) -> Option<TabId> {
         None
@@ -94,9 +97,7 @@ impl Dispatcher {
         if let Some(tid) = tab_id {
             let td = self.tab_disp(tid);
             if td.locked {
-                return Err(format!(
-                    "Pipeline running on tab, please wait"
-                ));
+                return Err("Pipeline running on tab, please wait".to_string());
             }
         }
 
@@ -109,11 +110,10 @@ impl Dispatcher {
                 Ok(())
             }
             PreparedAction::Pipeline { mode, graph, .. } => {
-                if mode == PipelineMode::Apply {
-                    if let Some(tid) = tab_id {
+                if mode == PipelineMode::Apply
+                    && let Some(tid) = tab_id {
                         self.tab_disp(tid).locked = true;
                     }
-                }
 
                 if let Some(tid) = tab_id {
                     self.tab_disp(tid).pending_action = Some(Arc::clone(&action));
@@ -160,6 +160,7 @@ impl Dispatcher {
         }
     }
 
+    #[allow(dead_code)]
     pub fn cleanup_tab(&mut self, id: TabId) {
         self.tabs.remove(&id);
     }

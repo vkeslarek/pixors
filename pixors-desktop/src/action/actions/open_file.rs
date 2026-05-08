@@ -171,11 +171,10 @@ impl Action for OpenFile {
     }
 
     fn apply(&self, state: &mut EditorState, status: PipelineStatus) {
-        if let Some(tab_id) = *self.pending_tab_id.lock().unwrap() {
-            if let Some(tab) = state.tab_mut(tab_id) {
+        if let Some(tab_id) = *self.pending_tab_id.lock().unwrap()
+            && let Some(tab) = state.tab_mut(tab_id) {
                 tab.view.loading = false;
             }
-        }
 
         if let PipelineStatus::Error(e) = status {
             tracing::error!("OpenFile failed: {e}");
