@@ -59,6 +59,7 @@ pub struct TabView {
     pub active_mip: u32,
     pub loading: bool,
     pub progress: f32,
+    pub preview_gen: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,4 +72,3 @@ pub enum BlendMode {
 pub struct EditChain {
     pub ops: Vec<()>,
 }
-

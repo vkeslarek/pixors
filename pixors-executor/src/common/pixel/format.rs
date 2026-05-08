@@ -44,33 +44,70 @@ impl PixelFormat {
 
     pub fn channel_count(self) -> usize {
         match self {
-            PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::GrayF16
+            PixelFormat::Gray8
+            | PixelFormat::Gray16
+            | PixelFormat::GrayF16
             | PixelFormat::GrayF32 => 1,
-            PixelFormat::GrayA8 | PixelFormat::GrayA16 | PixelFormat::GrayAF16
+            PixelFormat::GrayA8
+            | PixelFormat::GrayA16
+            | PixelFormat::GrayAF16
             | PixelFormat::GrayAF32 => 2,
-            PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::RgbF16
-            | PixelFormat::RgbF32 | PixelFormat::YCbCr8 | PixelFormat::YCbCrF16
-            | PixelFormat::YCbCrF32 | PixelFormat::Lab8 | PixelFormat::Lab16 => 3,
-            PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::RgbaF16
-            | PixelFormat::RgbaF32 | PixelFormat::Argb32 | PixelFormat::Cmyk8
-            | PixelFormat::Cmyk16 | PixelFormat::CmykF16 | PixelFormat::CmykF32 => 4,
-            PixelFormat::CmykA8 | PixelFormat::CmykA16
-            | PixelFormat::CmykAF16 | PixelFormat::CmykAF32 => 5,
+            PixelFormat::Rgb8
+            | PixelFormat::Rgb16
+            | PixelFormat::RgbF16
+            | PixelFormat::RgbF32
+            | PixelFormat::YCbCr8
+            | PixelFormat::YCbCrF16
+            | PixelFormat::YCbCrF32
+            | PixelFormat::Lab8
+            | PixelFormat::Lab16 => 3,
+            PixelFormat::Rgba8
+            | PixelFormat::Rgba16
+            | PixelFormat::RgbaF16
+            | PixelFormat::RgbaF32
+            | PixelFormat::Argb32
+            | PixelFormat::Cmyk8
+            | PixelFormat::Cmyk16
+            | PixelFormat::CmykF16
+            | PixelFormat::CmykF32 => 4,
+            PixelFormat::CmykA8
+            | PixelFormat::CmykA16
+            | PixelFormat::CmykAF16
+            | PixelFormat::CmykAF32 => 5,
         }
     }
 
     pub fn sample_bytes(self) -> usize {
         match self {
-            PixelFormat::Gray8 | PixelFormat::GrayA8 | PixelFormat::Rgb8
-            | PixelFormat::Rgba8 | PixelFormat::Argb32 | PixelFormat::Cmyk8
-            | PixelFormat::CmykA8 | PixelFormat::YCbCr8 | PixelFormat::Lab8 => 1,
-            PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
-            | PixelFormat::Rgba16 | PixelFormat::GrayF16 | PixelFormat::GrayAF16
-            | PixelFormat::RgbF16 | PixelFormat::RgbaF16 | PixelFormat::Cmyk16
-            | PixelFormat::CmykA16 | PixelFormat::CmykF16 | PixelFormat::CmykAF16
-            | PixelFormat::YCbCrF16 | PixelFormat::Lab16 => 2,
-            PixelFormat::GrayF32 | PixelFormat::GrayAF32 | PixelFormat::RgbF32
-            | PixelFormat::RgbaF32 | PixelFormat::CmykF32 | PixelFormat::CmykAF32
+            PixelFormat::Gray8
+            | PixelFormat::GrayA8
+            | PixelFormat::Rgb8
+            | PixelFormat::Rgba8
+            | PixelFormat::Argb32
+            | PixelFormat::Cmyk8
+            | PixelFormat::CmykA8
+            | PixelFormat::YCbCr8
+            | PixelFormat::Lab8 => 1,
+            PixelFormat::Gray16
+            | PixelFormat::GrayA16
+            | PixelFormat::Rgb16
+            | PixelFormat::Rgba16
+            | PixelFormat::GrayF16
+            | PixelFormat::GrayAF16
+            | PixelFormat::RgbF16
+            | PixelFormat::RgbaF16
+            | PixelFormat::Cmyk16
+            | PixelFormat::CmykA16
+            | PixelFormat::CmykF16
+            | PixelFormat::CmykAF16
+            | PixelFormat::YCbCrF16
+            | PixelFormat::Lab16 => 2,
+            PixelFormat::GrayF32
+            | PixelFormat::GrayAF32
+            | PixelFormat::RgbF32
+            | PixelFormat::RgbaF32
+            | PixelFormat::CmykF32
+            | PixelFormat::CmykAF32
             | PixelFormat::YCbCrF32 => 4,
         }
     }
@@ -101,12 +138,17 @@ impl PixelFormat {
 
     pub fn model_transform(self) -> ColorModelTransform {
         match self {
-            PixelFormat::Cmyk8 | PixelFormat::Cmyk16
-            | PixelFormat::CmykF16 | PixelFormat::CmykF32 => ColorModelTransform::CmykToRgb,
-            PixelFormat::CmykA8 | PixelFormat::CmykA16
-            | PixelFormat::CmykAF16 | PixelFormat::CmykAF32 => ColorModelTransform::CmykAToRgb,
-            PixelFormat::YCbCr8 | PixelFormat::YCbCrF16
-            | PixelFormat::YCbCrF32 => ColorModelTransform::YCbCrToRgb,
+            PixelFormat::Cmyk8
+            | PixelFormat::Cmyk16
+            | PixelFormat::CmykF16
+            | PixelFormat::CmykF32 => ColorModelTransform::CmykToRgb,
+            PixelFormat::CmykA8
+            | PixelFormat::CmykA16
+            | PixelFormat::CmykAF16
+            | PixelFormat::CmykAF32 => ColorModelTransform::CmykAToRgb,
+            PixelFormat::YCbCr8 | PixelFormat::YCbCrF16 | PixelFormat::YCbCrF32 => {
+                ColorModelTransform::YCbCrToRgb
+            }
             PixelFormat::Lab8 | PixelFormat::Lab16 => ColorModelTransform::LabToRgb,
             _ => ColorModelTransform::None,
         }
@@ -114,11 +156,21 @@ impl PixelFormat {
 
     pub fn max_value(self) -> f32 {
         match self {
-            PixelFormat::Gray8 | PixelFormat::GrayA8 | PixelFormat::Rgb8
-            | PixelFormat::Rgba8 | PixelFormat::Argb32 | PixelFormat::Cmyk8
-            | PixelFormat::CmykA8 | PixelFormat::YCbCr8 | PixelFormat::Lab8 => 255.0,
-            PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
-            | PixelFormat::Rgba16 | PixelFormat::Cmyk16 | PixelFormat::CmykA16
+            PixelFormat::Gray8
+            | PixelFormat::GrayA8
+            | PixelFormat::Rgb8
+            | PixelFormat::Rgba8
+            | PixelFormat::Argb32
+            | PixelFormat::Cmyk8
+            | PixelFormat::CmykA8
+            | PixelFormat::YCbCr8
+            | PixelFormat::Lab8 => 255.0,
+            PixelFormat::Gray16
+            | PixelFormat::GrayA16
+            | PixelFormat::Rgb16
+            | PixelFormat::Rgba16
+            | PixelFormat::Cmyk16
+            | PixelFormat::CmykA16
             | PixelFormat::Lab16 => 65535.0,
             _ => 1.0,
         }
@@ -126,11 +178,21 @@ impl PixelFormat {
 
     pub fn scale_to_f32(self) -> f32 {
         match self {
-            PixelFormat::Gray8 | PixelFormat::GrayA8 | PixelFormat::Rgb8
-            | PixelFormat::Rgba8 | PixelFormat::Argb32 | PixelFormat::Cmyk8
-            | PixelFormat::CmykA8 | PixelFormat::YCbCr8 | PixelFormat::Lab8 => 1.0 / 255.0,
-            PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
-            | PixelFormat::Rgba16 | PixelFormat::Cmyk16 | PixelFormat::CmykA16
+            PixelFormat::Gray8
+            | PixelFormat::GrayA8
+            | PixelFormat::Rgb8
+            | PixelFormat::Rgba8
+            | PixelFormat::Argb32
+            | PixelFormat::Cmyk8
+            | PixelFormat::CmykA8
+            | PixelFormat::YCbCr8
+            | PixelFormat::Lab8 => 1.0 / 255.0,
+            PixelFormat::Gray16
+            | PixelFormat::GrayA16
+            | PixelFormat::Rgb16
+            | PixelFormat::Rgba16
+            | PixelFormat::Cmyk16
+            | PixelFormat::CmykA16
             | PixelFormat::Lab16 => 1.0 / 65535.0,
             _ => 1.0,
         }
@@ -138,11 +200,21 @@ impl PixelFormat {
 
     pub fn scale_from_f32(self) -> f32 {
         match self {
-            PixelFormat::Gray8 | PixelFormat::GrayA8 | PixelFormat::Rgb8
-            | PixelFormat::Rgba8 | PixelFormat::Argb32 | PixelFormat::Cmyk8
-            | PixelFormat::CmykA8 | PixelFormat::YCbCr8 | PixelFormat::Lab8 => 255.0,
-            PixelFormat::Gray16 | PixelFormat::GrayA16 | PixelFormat::Rgb16
-            | PixelFormat::Rgba16 | PixelFormat::Cmyk16 | PixelFormat::CmykA16
+            PixelFormat::Gray8
+            | PixelFormat::GrayA8
+            | PixelFormat::Rgb8
+            | PixelFormat::Rgba8
+            | PixelFormat::Argb32
+            | PixelFormat::Cmyk8
+            | PixelFormat::CmykA8
+            | PixelFormat::YCbCr8
+            | PixelFormat::Lab8 => 255.0,
+            PixelFormat::Gray16
+            | PixelFormat::GrayA16
+            | PixelFormat::Rgb16
+            | PixelFormat::Rgba16
+            | PixelFormat::Cmyk16
+            | PixelFormat::CmykA16
             | PixelFormat::Lab16 => 65535.0,
             _ => 1.0,
         }

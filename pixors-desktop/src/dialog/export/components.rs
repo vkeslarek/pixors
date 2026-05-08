@@ -1,15 +1,14 @@
 use iced::widget::{button, checkbox, pick_list, row, slider, text, text_input};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-use crate::theme::{ACCENT, BG_HOVER, BG_SURFACE, BORDER, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY};
-use super::{ExportFormat, Msg};
 use super::presets::TiffLayoutKind;
+use super::{ExportFormat, Msg};
+use crate::theme::{
+    ACCENT, BG_HOVER, BG_SURFACE, BORDER, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+};
 
 pub fn section_label(label: &'static str) -> Element<'static, Msg> {
-    text(label)
-        .size(12)
-        .color(TEXT_MUTED)
-        .into()
+    text(label).size(12).color(TEXT_MUTED).into()
 }
 
 pub fn format_toggle(current: &ExportFormat) -> Element<'_, Msg> {
@@ -22,7 +21,7 @@ pub fn format_toggle(current: &ExportFormat) -> Element<'_, Msg> {
         } else {
             (BG_SURFACE, TEXT_SECONDARY, BORDER)
         };
-        
+
         button(text(label).size(13).color(fg))
             .padding([6, 24])
             .style(move |_, status| {
@@ -31,7 +30,7 @@ pub fn format_toggle(current: &ExportFormat) -> Element<'_, Msg> {
                 } else {
                     bg
                 };
-                
+
                 let radius = if is_left {
                     iced::border::Radius {
                         top_left: 6.0,
@@ -63,9 +62,20 @@ pub fn format_toggle(current: &ExportFormat) -> Element<'_, Msg> {
     };
 
     row![
-        btn("PNG", png_selected, Msg::FormatChanged(ExportFormat::Png), true),
-        btn("TIFF", tiff_selected, Msg::FormatChanged(ExportFormat::Tiff), false)
-    ].into()
+        btn(
+            "PNG",
+            png_selected,
+            Msg::FormatChanged(ExportFormat::Png),
+            true
+        ),
+        btn(
+            "TIFF",
+            tiff_selected,
+            Msg::FormatChanged(ExportFormat::Tiff),
+            false
+        )
+    ]
+    .into()
 }
 
 pub fn layout_toggle(current: TiffLayoutKind) -> Element<'static, Msg> {
@@ -78,7 +88,7 @@ pub fn layout_toggle(current: TiffLayoutKind) -> Element<'static, Msg> {
         } else {
             (BG_SURFACE, TEXT_SECONDARY, BORDER)
         };
-        
+
         button(text(label).size(13).color(fg))
             .padding([6, 16])
             .style(move |_, status| {
@@ -87,7 +97,7 @@ pub fn layout_toggle(current: TiffLayoutKind) -> Element<'static, Msg> {
                 } else {
                     bg
                 };
-                
+
                 let radius = if is_left {
                     iced::border::Radius {
                         top_left: 6.0,
@@ -119,9 +129,20 @@ pub fn layout_toggle(current: TiffLayoutKind) -> Element<'static, Msg> {
     };
 
     row![
-        btn("Strip", strip_selected, Msg::TiffLayoutKind(TiffLayoutKind::Strip), true),
-        btn("Tile", tile_selected, Msg::TiffLayoutKind(TiffLayoutKind::Tile), false)
-    ].into()
+        btn(
+            "Strip",
+            strip_selected,
+            Msg::TiffLayoutKind(TiffLayoutKind::Strip),
+            true
+        ),
+        btn(
+            "Tile",
+            tile_selected,
+            Msg::TiffLayoutKind(TiffLayoutKind::Tile),
+            false
+        )
+    ]
+    .into()
 }
 
 pub fn labeled_pick<'a, T>(
@@ -133,13 +154,16 @@ pub fn labeled_pick<'a, T>(
 where
     T: std::fmt::Display + PartialEq + Clone + 'static,
 {
-    let pl = pick_list(options, Some(selected), msg).style(
-        |_, status| pick_list::Style {
+    let pl = pick_list(options, Some(selected), msg)
+        .style(|_, status| pick_list::Style {
             text_color: TEXT_PRIMARY,
             placeholder_color: TEXT_MUTED,
             handle_color: TEXT_SECONDARY,
             background: Background::Color(
-                if matches!(status, pick_list::Status::Hovered | pick_list::Status::Opened { .. }) {
+                if matches!(
+                    status,
+                    pick_list::Status::Hovered | pick_list::Status::Opened { .. }
+                ) {
                     BG_HOVER
                 } else {
                     BG_SURFACE
@@ -150,8 +174,9 @@ where
                 width: 1.0,
                 radius: 6.0.into(),
             },
-        },
-    ).padding([6, 10]).text_size(13);
+        })
+        .padding([6, 10])
+        .text_size(13);
 
     row![text(label).size(13).color(TEXT_SECONDARY).width(140), pl]
         .align_y(Alignment::Center)
@@ -165,13 +190,14 @@ pub fn labeled_checkbox<M: Clone + 'static>(
 ) -> Element<'static, M> {
     let cb = checkbox(checked).on_toggle(msg).style(move |_, status| {
         let is_checked = checked;
-        let hovered = matches!(
-            status,
-            iced::widget::checkbox::Status::Hovered { .. }
-        );
+        let hovered = matches!(status, iced::widget::checkbox::Status::Hovered { .. });
         iced::widget::checkbox::Style {
             background: Background::Color(if is_checked {
-                if hovered { Color::from_rgb(0.45, 0.60, 0.95) } else { ACCENT }
+                if hovered {
+                    Color::from_rgb(0.45, 0.60, 0.95)
+                } else {
+                    ACCENT
+                }
             } else {
                 if hovered { BG_HOVER } else { BG_SURFACE }
             }),
@@ -206,17 +232,18 @@ pub fn labeled_slider<'a>(
         .width(Length::Fill)
         .style(|_, status| iced::widget::slider::Style {
             rail: iced::widget::slider::Rail {
-                backgrounds: (
-                    Background::Color(ACCENT),
-                    Background::Color(BG_HOVER),
-                ),
+                backgrounds: (Background::Color(ACCENT), Background::Color(BG_HOVER)),
                 width: 4.0,
                 border: Border::default(),
             },
             handle: iced::widget::slider::Handle {
                 shape: iced::widget::slider::HandleShape::Circle { radius: 7.0 },
                 background: Background::Color(
-                    if matches!(status, iced::widget::slider::Status::Hovered | iced::widget::slider::Status::Dragged) {
+                    if matches!(
+                        status,
+                        iced::widget::slider::Status::Hovered
+                            | iced::widget::slider::Status::Dragged
+                    ) {
                         Color::from_rgb(0.45, 0.60, 0.95)
                     } else {
                         ACCENT
@@ -249,10 +276,7 @@ pub fn labeled_text_input<'a>(
         .style(|_, status| iced::widget::text_input::Style {
             background: Background::Color(BG_SURFACE),
             border: Border {
-                color: if matches!(
-                    status,
-                    iced::widget::text_input::Status::Focused { .. }
-                ) {
+                color: if matches!(status, iced::widget::text_input::Status::Focused { .. }) {
                     ACCENT
                 } else {
                     BORDER

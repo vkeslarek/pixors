@@ -1,8 +1,8 @@
 pub mod actions;
 
 use std::collections::HashMap;
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 use std::thread;
 
 use pixors_executor::graph::graph::ExecGraph;
@@ -110,19 +110,17 @@ impl Dispatcher {
                 Ok(())
             }
             PreparedAction::Pipeline { mode, graph, .. } => {
-                if mode == PipelineMode::Apply
-                    && let Some(tid) = tab_id {
-                        self.tab_disp(tid).locked = true;
-                    }
+                let is_apply = mode == PipelineMode::Apply;
 
-                if let Some(tid) = tab_id {
+                if is_apply && let Some(tid) = tab_id {
+                    self.tab_disp(tid).locked = true;
                     self.tab_disp(tid).pending_action = Some(Arc::clone(&action));
+                    self.active_pipeline_tab = Some(tid);
                 }
-                self.active_pipeline_tab = tab_id;
 
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()))
-                    .map_err(|e| e.to_string())?;
+                let pipeline =
+                    Pipeline::compile(&graph, Some(event_tx.clone())).map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
                 thread::spawn(move || {

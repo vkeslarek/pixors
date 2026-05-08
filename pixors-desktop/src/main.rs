@@ -1,15 +1,15 @@
 mod action;
 mod app;
-mod controller;
 mod components;
+mod controller;
 mod dialog;
 mod icons;
 mod pages;
 mod path_builder;
 mod state;
 mod theme;
-mod widgets;
 mod viewport;
+mod widgets;
 
 use app::App;
 
@@ -27,7 +27,7 @@ fn main() -> iced::Result {
                 .add_directive("wgpu_hal=warn".parse().unwrap())
                 .add_directive("naga=warn".parse().unwrap())
                 .add_directive("iced_wgpu=info".parse().unwrap())
-                .add_directive("iced_winit=info".parse().unwrap())
+                .add_directive("iced_winit=info".parse().unwrap()),
         )
         .init();
 

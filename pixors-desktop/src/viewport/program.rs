@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use iced::mouse;
 use iced::widget::shader;
 use iced::{Event, Point, Rectangle, Size};
-use iced::mouse;
 use pixors_executor::source::cache_reader::TileRange;
 
 use crate::state::TabId;
@@ -37,7 +37,12 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             return ViewportPrimitive {
                 camera: Camera::new(1.0, 1.0).to_uniform(0),
                 cache: None,
-                visible_range: TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 },
+                visible_range: TileRange {
+                    tx_start: 0,
+                    tx_end: 0,
+                    ty_start: 0,
+                    ty_end: 0,
+                },
             };
         };
         let mut state = vp_state.borrow_mut();
@@ -46,12 +51,13 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
         if let Some(ref cache) = self.cache
             && let Ok(mut guard) = cache.lock()
-                && let Some((img_w, img_h)) = guard.take_new_img() {
-                    state.camera.img_w = img_w as f32;
-                    state.camera.img_h = img_h as f32;
-                    state.camera.fit();
-                    state.current_mip = state.camera.visible_mip_level();
-                }
+            && let Some((img_w, img_h)) = guard.take_new_img()
+        {
+            state.camera.img_w = img_w as f32;
+            state.camera.img_h = img_h as f32;
+            state.camera.fit();
+            state.current_mip = state.camera.visible_mip_level();
+        }
 
         let size = Size::new(bounds.width, bounds.height);
         if state.last_bounds != Some(size) {
@@ -67,29 +73,58 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let mut target_mip = state.camera.visible_mip_level();
 
         if let Some(ref cache) = self.cache
-            && let Ok(guard) = cache.lock() {
-                let base_mip = state.camera.floor_mip();
-                if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
-                    tracing::info!("[pixors] viewport: fallback from target {} to mip {}", target_mip, base_mip);
-                    target_mip = base_mip;
-                }
+            && let Ok(guard) = cache.lock()
+        {
+            let base_mip = state.camera.floor_mip();
+            if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
+                tracing::info!(
+                    "[pixors] viewport: fallback from target {} to mip {}",
+                    target_mip,
+                    base_mip
+                );
+                target_mip = base_mip;
             }
+        }
 
         if state.current_mip != target_mip {
-            tracing::info!("[pixors] viewport: draw() setting current_mip to {}", target_mip);
+            tracing::info!(
+                "[pixors] viewport: draw() setting current_mip to {}",
+                target_mip
+            );
         }
         state.current_mip = target_mip;
 
         let mut reqs = Vec::new();
         if let Some(tab_id) = self.tab_id {
-            reqs.push((tab_id, state.current_mip, state.camera.padded_tile_range(state.current_mip, TILE_SIZE, 3)));
+            reqs.push((
+                tab_id,
+                state.current_mip,
+                state
+                    .camera
+                    .padded_tile_range(state.current_mip, TILE_SIZE, 3),
+            ));
 
-            let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
+            let max_mip = crate::viewport::camera::compute_max_mip(
+                state.camera.img_w as u32,
+                state.camera.img_h as u32,
+            );
             if state.current_mip < max_mip {
-                reqs.push((tab_id, state.current_mip + 1, state.camera.padded_tile_range(state.current_mip + 1, TILE_SIZE, 2)));
+                reqs.push((
+                    tab_id,
+                    state.current_mip + 1,
+                    state
+                        .camera
+                        .padded_tile_range(state.current_mip + 1, TILE_SIZE, 2),
+                ));
             }
             if state.current_mip > 0 {
-                reqs.push((tab_id, state.current_mip - 1, state.camera.padded_tile_range(state.current_mip - 1, TILE_SIZE, 2)));
+                reqs.push((
+                    tab_id,
+                    state.current_mip - 1,
+                    state
+                        .camera
+                        .padded_tile_range(state.current_mip - 1, TILE_SIZE, 2),
+                ));
             }
         }
 
@@ -111,7 +146,9 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         ViewportPrimitive {
             camera: state.camera.to_uniform(state.current_mip),
             cache: self.cache.clone(),
-            visible_range: state.camera.padded_tile_range(state.current_mip, TILE_SIZE, 3),
+            visible_range: state
+                .camera
+                .padded_tile_range(state.current_mip, TILE_SIZE, 3),
         }
     }
 
@@ -126,7 +163,11 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let mut state = vp_state.borrow_mut();
 
         if self.tile_generation != state.last_generation.get() {
-            tracing::info!("[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw", state.last_generation.get(), self.tile_generation);
+            tracing::info!(
+                "[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw",
+                state.last_generation.get(),
+                self.tile_generation
+            );
             state.last_generation.set(self.tile_generation);
             return Some(shader::Action::request_redraw());
         }
@@ -166,8 +207,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                         mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
                     };
                     let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
-                    let pos =
-                        cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
+                    let pos = cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
                     state.camera.zoom_at(factor, pos.x, pos.y);
                     Some(shader::Action::request_redraw().and_capture())
                 } else {

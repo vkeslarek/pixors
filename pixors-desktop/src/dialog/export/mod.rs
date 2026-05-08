@@ -12,8 +12,8 @@ use pixors_executor::common::image::codec::{
 };
 
 use presets::{
-    current_deflate_level, current_tiff_predictor, PngCompressionPreset, TiffCompressionKind,
-    TiffLayoutKind,
+    PngCompressionPreset, TiffCompressionKind, TiffLayoutKind, current_deflate_level,
+    current_tiff_predictor,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,9 +89,10 @@ impl Default for ExportDialog {
             TiffLayout::Tile { .. } => "8".to_string(),
         };
         let (tile_width_str, tile_height_str) = match &tiff.layout {
-            TiffLayout::Tile { tile_width, tile_height } => {
-                (tile_width.to_string(), tile_height.to_string())
-            }
+            TiffLayout::Tile {
+                tile_width,
+                tile_height,
+            } => (tile_width.to_string(), tile_height.to_string()),
             TiffLayout::Strip { .. } => ("256".to_string(), "256".to_string()),
         };
         Self {
@@ -146,9 +147,9 @@ impl ExportDialog {
                 self.tiff.compression = match k {
                     TiffCompressionKind::None => TiffCompression::None,
                     TiffCompressionKind::PackBits => TiffCompression::PackBits,
-                    TiffCompressionKind::Lzw => {
-                        TiffCompression::Lzw { predictor: prev_pred }
-                    }
+                    TiffCompressionKind::Lzw => TiffCompression::Lzw {
+                        predictor: prev_pred,
+                    },
                     TiffCompressionKind::Deflate => TiffCompression::Deflate {
                         level: prev_lvl,
                         predictor: prev_pred,
@@ -157,8 +158,10 @@ impl ExportDialog {
             }
             Msg::TiffDeflateLevel(v) => {
                 if let TiffCompression::Deflate { predictor, .. } = self.tiff.compression {
-                    self.tiff.compression =
-                        TiffCompression::Deflate { level: v as u8, predictor };
+                    self.tiff.compression = TiffCompression::Deflate {
+                        level: v as u8,
+                        predictor,
+                    };
                 }
             }
             Msg::TiffPredictor(p) => match self.tiff.compression {
@@ -166,7 +169,10 @@ impl ExportDialog {
                     self.tiff.compression = TiffCompression::Lzw { predictor: p };
                 }
                 TiffCompression::Deflate { level, .. } => {
-                    self.tiff.compression = TiffCompression::Deflate { level, predictor: p };
+                    self.tiff.compression = TiffCompression::Deflate {
+                        level,
+                        predictor: p,
+                    };
                 }
                 _ => {}
             },
@@ -174,42 +180,53 @@ impl ExportDialog {
                 self.tiff.layout = match k {
                     TiffLayoutKind::Strip => {
                         let rps = self.rows_per_strip_str.parse().unwrap_or(8);
-                        TiffLayout::Strip { rows_per_strip: rps }
+                        TiffLayout::Strip {
+                            rows_per_strip: rps,
+                        }
                     }
                     TiffLayoutKind::Tile => {
                         let tw = self.tile_width_str.parse().unwrap_or(256);
                         let th = self.tile_height_str.parse().unwrap_or(256);
-                        TiffLayout::Tile { tile_width: tw, tile_height: th }
+                        TiffLayout::Tile {
+                            tile_width: tw,
+                            tile_height: th,
+                        }
                     }
                 };
             }
             Msg::TiffRowsPerStrip(s) => {
                 self.rows_per_strip_str = s.clone();
                 if let Ok(v) = s.parse::<u32>()
-                    && v > 0 {
-                        self.tiff.layout = TiffLayout::Strip { rows_per_strip: v };
-                    }
+                    && v > 0
+                {
+                    self.tiff.layout = TiffLayout::Strip { rows_per_strip: v };
+                }
             }
             Msg::TiffTileWidth(s) => {
                 self.tile_width_str = s.clone();
-                if let (Ok(w), Ok(h)) =
-                    (s.parse::<u32>(), self.tile_height_str.parse::<u32>())
-                {
-                    self.tiff.layout = TiffLayout::Tile { tile_width: w, tile_height: h };
+                if let (Ok(w), Ok(h)) = (s.parse::<u32>(), self.tile_height_str.parse::<u32>()) {
+                    self.tiff.layout = TiffLayout::Tile {
+                        tile_width: w,
+                        tile_height: h,
+                    };
                 }
             }
             Msg::TiffTileHeight(s) => {
                 self.tile_height_str = s.clone();
-                if let (Ok(w), Ok(h)) =
-                    (self.tile_width_str.parse::<u32>(), s.parse::<u32>())
-                {
-                    self.tiff.layout = TiffLayout::Tile { tile_width: w, tile_height: h };
+                if let (Ok(w), Ok(h)) = (self.tile_width_str.parse::<u32>(), s.parse::<u32>()) {
+                    self.tiff.layout = TiffLayout::Tile {
+                        tile_width: w,
+                        tile_height: h,
+                    };
                 }
             }
             Msg::TiffByteOrder(v) => self.tiff.byte_order = v,
             Msg::TiffBigTiff(v) => {
-                self.tiff.tiff_variant =
-                    if v { TiffVariant::BigTiff } else { TiffVariant::Classic };
+                self.tiff.tiff_variant = if v {
+                    TiffVariant::BigTiff
+                } else {
+                    TiffVariant::Classic
+                };
             }
             Msg::TiffMultipage(v) => self.tiff.multipage = v,
             Msg::TiffEmbedDpi(v) => self.tiff.embed_dpi = v,
@@ -224,21 +241,29 @@ impl ExportDialog {
         self.error = None;
         match self.format {
             ExportFormat::Tiff => {
-                if let TiffLayout::Tile { tile_width, tile_height } = self.tiff.layout
-                    && (tile_width % 16 != 0 || tile_height % 16 != 0) {
-                        self.error =
-                            Some("Tile dimensions must be multiples of 16.".to_string());
-                        return;
-                    }
-                
-                if let TiffCompression::Deflate { predictor: TiffPredictor::FloatingPoint, .. }
-                | TiffCompression::Lzw { predictor: TiffPredictor::FloatingPoint } =
-                    self.tiff.compression
-                    && self.tiff.bit_depth != TiffBitDepth::ThirtyTwo {
-                        self.error = Some(
-                            "Floating-point predictor requires 32-bit float bit depth.".to_string(),
-                        );
-                    }
+                if let TiffLayout::Tile {
+                    tile_width,
+                    tile_height,
+                } = self.tiff.layout
+                    && (tile_width % 16 != 0 || tile_height % 16 != 0)
+                {
+                    self.error = Some("Tile dimensions must be multiples of 16.".to_string());
+                    return;
+                }
+
+                if let TiffCompression::Deflate {
+                    predictor: TiffPredictor::FloatingPoint,
+                    ..
+                }
+                | TiffCompression::Lzw {
+                    predictor: TiffPredictor::FloatingPoint,
+                } = self.tiff.compression
+                    && self.tiff.bit_depth != TiffBitDepth::ThirtyTwo
+                {
+                    self.error = Some(
+                        "Floating-point predictor requires 32-bit float bit depth.".to_string(),
+                    );
+                }
             }
             ExportFormat::Png => {}
         }

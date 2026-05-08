@@ -130,7 +130,12 @@ impl Camera {
         let tx_end = (((x1 / mip_scale / ts).ceil() as u32) + padding).min(ntx);
         let ty_end = (((y1 / mip_scale / ts).ceil() as u32) + padding).min(nty);
 
-        TileRange { tx_start, tx_end, ty_start, ty_end }
+        TileRange {
+            tx_start,
+            tx_end,
+            ty_start,
+            ty_end,
+        }
     }
 
     pub fn to_uniform(&self, mip_level: u32) -> CameraUniform {

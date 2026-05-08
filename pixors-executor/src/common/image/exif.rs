@@ -51,7 +51,10 @@ pub enum Metadata {
     ImageWidth(u32),
     ImageHeight(u32),
     BitsPerSample(Vec<u16>),
-    Dpi { x: f32, y: f32 },
+    Dpi {
+        x: f32,
+        y: f32,
+    },
     Orientation(u16),
     ExifVersion(String),
     ColorSpaceTag(String),
@@ -68,8 +71,14 @@ pub enum Metadata {
     PhotometricInterpretation(u16),
 
     // ── HDR (PNG) ───────────────────────────────────────────────────────
-    MasteringDisplayLuminance { min: f64, max: f64 },
-    ContentLightLevel { max_fall: f64, max_cll: f64 },
+    MasteringDisplayLuminance {
+        min: f64,
+        max: f64,
+    },
+    ContentLightLevel {
+        max_fall: f64,
+        max_cll: f64,
+    },
 
     // ── GPS ─────────────────────────────────────────────────────────────
     GpsLatitudeRef(String),
@@ -85,7 +94,10 @@ pub enum Metadata {
     PlanarConfiguration(u16),
 
     // ── Catch-all ────────────────────────────────────────────────────────
-    Custom { key: String, value: String },
+    Custom {
+        key: String,
+        value: String,
+    },
 }
 
 // ── EXIF → Metadata mapper ─────────────────────────────────────────────────
@@ -107,9 +119,7 @@ fn exif_uint(f: &exif::Field) -> Option<u32> {
 
 fn exif_rational(f: &exif::Field) -> Option<String> {
     match &f.value {
-        exif::Value::Rational(v) if !v.is_empty() => {
-            Some(format!("{}/{}", v[0].num, v[0].denom))
-        }
+        exif::Value::Rational(v) if !v.is_empty() => Some(format!("{}/{}", v[0].num, v[0].denom)),
         exif::Value::SRational(v) if !v.is_empty() => {
             let n = v[0].num;
             let d = v[0].denom;
@@ -212,7 +222,9 @@ pub fn from_exif_fields(fields: &[exif::Field]) -> Vec<Metadata> {
                 }
             }
             exif::Tag::GPSAltitudeRef => exif_uint(f).map(|v| Metadata::GpsAltitudeRef(v as u8)),
-            exif::Tag::GPSAltitude => exif_rational_float(f).and_then(|s| s.parse().ok()).map(Metadata::GpsAltitude),
+            exif::Tag::GPSAltitude => exif_rational_float(f)
+                .and_then(|s| s.parse().ok())
+                .map(Metadata::GpsAltitude),
             exif::Tag::GPSDateStamp => exif_ascii(f).map(Metadata::GpsDateStamp),
 
             // BitsPerSample

@@ -53,10 +53,9 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     row![
         app.tools.view().map(Msg::Toolbar),
         canvas,
-        crate::components::sidebar_grid::view(
-            &app.panes,
-            |pane, kind| pane_content(app, pane, kind)
-        ),
+        crate::components::sidebar_grid::view(&app.panes, |pane, kind| pane_content(
+            app, pane, kind
+        )),
     ]
     .height(Length::Fill)
     .into()

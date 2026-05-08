@@ -1,5 +1,5 @@
-use crate::data::buffer::Buffer;
 use crate::common::pixel::meta::PixelMeta;
+use crate::data::buffer::Buffer;
 
 pub const DEFAULT_TILE_SIZE: u32 = 256;
 

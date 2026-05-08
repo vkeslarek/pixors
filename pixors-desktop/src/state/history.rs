@@ -36,5 +36,3 @@ pub struct LayerSnapshot {
     pub opacity: f32,
     pub blend: BlendMode,
 }
-
-

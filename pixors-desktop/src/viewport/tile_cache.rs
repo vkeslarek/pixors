@@ -9,6 +9,7 @@ pub struct CachedTile {
     pub width: u32,
     pub height: u32,
     pub bytes: Vec<u8>,
+    pub generation: u64,
 }
 
 pub struct ViewportCache {
@@ -30,14 +31,25 @@ impl ViewportCache {
         }))
     }
 
-    pub fn insert(&mut self, key: TileGridPos, tile: CachedTile) {
+    /// Insert a tile for a given generation. If a tile at the same position
+    /// already exists with a HIGHER generation, this insert is silently ignored.
+    /// Lower-generation tiles are replaced. This ensures parallel pipelines
+    /// writing different generations don't conflict.
+    pub fn insert(&mut self, generation: u64, key: TileGridPos, tile: CachedTile) {
+        if let Some(existing) = self.entries.get(&key)
+            && existing.generation > generation
+        {
+            return;
+        }
         self.entries.insert(key, tile);
         self.pending.insert(key);
     }
 
     /// Drains pending keys for a MIP level (marks them as uploaded).
     pub fn take_pending_keys_for_mip(&mut self, mip: u32) -> Vec<TileGridPos> {
-        let keys: Vec<TileGridPos> = self.pending.iter()
+        let keys: Vec<TileGridPos> = self
+            .pending
+            .iter()
             .filter(|k| k.mip_level == mip)
             .copied()
             .collect();
@@ -52,17 +64,26 @@ impl ViewportCache {
     /// All stored tiles for a MIP level — used on full re-upload (MIP switch or resize).
     #[allow(dead_code)]
     pub fn all_for_mip(&self, mip: u32) -> Vec<(TileGridPos, &CachedTile)> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .filter(|(k, _)| k.mip_level == mip)
             .map(|(k, v)| (*k, v))
             .collect()
     }
 
-    pub fn tiles_in_range(&self, mip: u32, range: &pixors_executor::source::cache_reader::TileRange) -> Vec<(TileGridPos, &CachedTile)> {
+    pub fn tiles_in_range(
+        &self,
+        mip: u32,
+        range: &pixors_executor::source::cache_reader::TileRange,
+    ) -> Vec<(TileGridPos, &CachedTile)> {
         let mut res = Vec::new();
         for ty in range.ty_start..range.ty_end {
             for tx in range.tx_start..range.tx_end {
-                let pos = TileGridPos { mip_level: mip, tx, ty };
+                let pos = TileGridPos {
+                    mip_level: mip,
+                    tx,
+                    ty,
+                };
                 if let Some(tile) = self.entries.get(&pos) {
                     res.push((pos, tile));
                 }
@@ -75,10 +96,18 @@ impl ViewportCache {
         self.entries.keys().any(|k| k.mip_level == mip)
     }
 
-    pub fn has_all_tiles(&self, mip: u32, range: &pixors_executor::source::cache_reader::TileRange) -> bool {
+    pub fn has_all_tiles(
+        &self,
+        mip: u32,
+        range: &pixors_executor::source::cache_reader::TileRange,
+    ) -> bool {
         for ty in range.ty_start..range.ty_end {
             for tx in range.tx_start..range.tx_end {
-                let pos = TileGridPos { mip_level: mip, tx, ty };
+                let pos = TileGridPos {
+                    mip_level: mip,
+                    tx,
+                    ty,
+                };
                 if !self.entries.contains_key(&pos) {
                     return false;
                 }
@@ -102,6 +131,13 @@ impl ViewportCache {
         self.new_img = None;
         self.active_dims = (1, 1);
         self.active_mip = 0;
+    }
+
+    /// Remove all tiles belonging to a specific generation.
+    pub fn clear_generation(&mut self, generation: u64) {
+        self.entries.retain(|_, t| t.generation != generation);
+        // Pending doesn't track gen, but entries with that gen are gone
+        // so they won't be uploaded. Keep pending list clean enough.
     }
 
     pub fn signal_new_img(&mut self, w: u32, h: u32) {

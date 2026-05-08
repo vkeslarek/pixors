@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::stage::{
-    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
-};
+use crate::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
 
 static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
@@ -88,7 +86,12 @@ impl Consumer for CacheWriterConsumer {
         };
 
         std::fs::write(&path, &data_to_write)?;
-        tracing::debug!("[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {}×{} to {}", w, h, path.display());
+        tracing::debug!(
+            "[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {}×{} to {}",
+            w,
+            h,
+            path.display()
+        );
         Ok(())
     }
 }

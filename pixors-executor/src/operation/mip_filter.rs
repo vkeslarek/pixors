@@ -1,8 +1,7 @@
 use crate::data::device::Device;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 use serde::{Deserialize, Serialize};
 

@@ -1,4 +1,4 @@
-use iced::widget::{container, pane_grid, PaneGrid};
+use iced::widget::{PaneGrid, container, pane_grid};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::{Msg, PaneKind};
@@ -21,9 +21,7 @@ pub fn view<'a>(
         .on_drag(Msg::PaneDragged)
         .style(|_| pane_grid::Style {
             hovered_region: pane_grid::Highlight {
-                background: Background::Color(Color::from_rgba(
-                    ACCENT.r, ACCENT.g, ACCENT.b, 0.30,
-                )),
+                background: Background::Color(Color::from_rgba(ACCENT.r, ACCENT.g, ACCENT.b, 0.30)),
                 border: Border {
                     color: ACCENT,
                     width: 2.0,

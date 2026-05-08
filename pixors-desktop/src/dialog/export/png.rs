@@ -1,11 +1,11 @@
-use iced::widget::Column;
 use iced::Element;
+use iced::widget::Column;
 
 use pixors_executor::common::image::codec::PngCompression;
 
-use super::{ExportDialog, Msg};
-use super::presets::*;
 use super::components::*;
+use super::presets::*;
+use super::{ExportDialog, Msg};
 
 pub fn png_options(dialog: &ExportDialog) -> Element<'_, Msg> {
     let cfg = &dialog.png;
@@ -44,7 +44,11 @@ pub fn png_options(dialog: &ExportDialog) -> Element<'_, Msg> {
     let meta_col = Column::new()
         .spacing(12)
         .push(section_label("METADATA"))
-        .push(labeled_checkbox("Embed DPI", cfg.embed_dpi, Msg::PngEmbedDpi))
+        .push(labeled_checkbox(
+            "Embed DPI",
+            cfg.embed_dpi,
+            Msg::PngEmbedDpi,
+        ))
         .push(labeled_checkbox(
             "Embed ICC profile",
             cfg.embed_icc,

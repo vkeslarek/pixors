@@ -7,8 +7,8 @@ use iced_aw::style::status::Status;
 use iced_aw::{menu_bar, menu_items};
 
 use crate::theme::{
-    ACCENT, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE, MENUBAR_H,
-    TEXT_PRIMARY, TEXT_SECONDARY,
+    ACCENT, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE, MENUBAR_H, TEXT_PRIMARY,
+    TEXT_SECONDARY,
 };
 
 #[derive(Debug, Clone)]
@@ -32,24 +32,36 @@ pub fn view() -> Element<'static, Msg> {
     let mtpl = |items| Menu::new(items).max_width(220.0).offset(6.0).spacing(2.0);
 
     let mb = menu_bar!(
-        (trigger("File"), mtpl(menu_items!(
-            (item("Open\u{2026}", "Ctrl+O", Msg::OpenFile)),
-            (item("Export\u{2026}", "Ctrl+E", Msg::Export)),
-            (separator()),
-            (item("Exit", "Alt+F4", Msg::Exit)),
-        )).width(200.0)),
-        (trigger("View"), mtpl(menu_items!(
-            (item("Zoom In", "Ctrl++", Msg::ZoomIn)),
-            (item("Zoom Out", "Ctrl+-", Msg::ZoomOut)),
-            (item("Fit to Screen", "Ctrl+0", Msg::FitToScreen)),
-            (item("Actual Size", "Ctrl+1", Msg::ActualSize)),
-        )).width(200.0)),
-        (trigger("Window"), mtpl(menu_items!(
-            (item("Toggle Layers", "", Msg::ToggleLayers)),
-            (item("Toggle Filters", "", Msg::ToggleFilters)),
-            (separator()),
-            (item("Reset Layout", "", Msg::ResetLayout)),
-        )).width(200.0)),
+        (
+            trigger("File"),
+            mtpl(menu_items!(
+                (item("Open\u{2026}", "Ctrl+O", Msg::OpenFile)),
+                (item("Export\u{2026}", "Ctrl+E", Msg::Export)),
+                (separator()),
+                (item("Exit", "Alt+F4", Msg::Exit)),
+            ))
+            .width(200.0)
+        ),
+        (
+            trigger("View"),
+            mtpl(menu_items!(
+                (item("Zoom In", "Ctrl++", Msg::ZoomIn)),
+                (item("Zoom Out", "Ctrl+-", Msg::ZoomOut)),
+                (item("Fit to Screen", "Ctrl+0", Msg::FitToScreen)),
+                (item("Actual Size", "Ctrl+1", Msg::ActualSize)),
+            ))
+            .width(200.0)
+        ),
+        (
+            trigger("Window"),
+            mtpl(menu_items!(
+                (item("Toggle Layers", "", Msg::ToggleLayers)),
+                (item("Toggle Filters", "", Msg::ToggleFilters)),
+                (separator()),
+                (item("Reset Layout", "", Msg::ResetLayout)),
+            ))
+            .width(200.0)
+        ),
     )
     .draw_path(menu::DrawPath::Backdrop)
     .style(|theme: &iced::Theme, status: Status| menu::Style {
@@ -104,10 +116,18 @@ fn trigger(label: &str) -> button::Button<'_, Msg, iced::Theme, iced::Renderer> 
     .on_press(Msg::None)
     .style(|_, status| {
         let hovered = matches!(status, button::Status::Hovered);
-        let bg = if hovered { BG_HOVER } else { Color::TRANSPARENT };
+        let bg = if hovered {
+            BG_HOVER
+        } else {
+            Color::TRANSPARENT
+        };
         button::Style {
             background: Some(Background::Color(bg)),
-            text_color: if hovered { TEXT_PRIMARY } else { TEXT_SECONDARY },
+            text_color: if hovered {
+                TEXT_PRIMARY
+            } else {
+                TEXT_SECONDARY
+            },
             border: Border::default().rounded(4),
             ..Default::default()
         }
@@ -127,7 +147,10 @@ fn item(
             .into()
     } else {
         row![
-            text(label).size(12).color(TEXT_SECONDARY).width(Length::Fill),
+            text(label)
+                .size(12)
+                .color(TEXT_SECONDARY)
+                .width(Length::Fill),
             text(shortcut).size(11).color(crate::theme::TEXT_MUTED),
         ]
         .align_y(iced::Alignment::Center)
@@ -140,10 +163,18 @@ fn item(
         .on_press(msg)
         .style(|_, status| {
             let hovered = matches!(status, button::Status::Hovered);
-            let bg = if hovered { BG_HOVER } else { Color::TRANSPARENT };
+            let bg = if hovered {
+                BG_HOVER
+            } else {
+                Color::TRANSPARENT
+            };
             button::Style {
                 background: Some(Background::Color(bg)),
-                text_color: if hovered { TEXT_PRIMARY } else { TEXT_SECONDARY },
+                text_color: if hovered {
+                    TEXT_PRIMARY
+                } else {
+                    TEXT_SECONDARY
+                },
                 border: Border::default().rounded(4),
                 ..Default::default()
             }

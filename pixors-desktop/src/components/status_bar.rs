@@ -1,11 +1,10 @@
 use iced::widget::{container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::theme::{
-    ACCENT, BG_SURFACE, BORDER_SUBTLE, OK_GREEN, STATUSBAR_H, TEXT_MUTED,
-    TEXT_SECONDARY,
-};
 use crate::components::toolbar::Tool;
+use crate::theme::{
+    ACCENT, BG_SURFACE, BORDER_SUBTLE, OK_GREEN, STATUSBAR_H, TEXT_MUTED, TEXT_SECONDARY,
+};
 
 #[derive(Debug, Clone)]
 pub struct State {
@@ -43,7 +42,9 @@ impl State {
         ) -> Element<'a, Msg> {
             row![
                 text(label.to_string()).size(10).color(TEXT_MUTED),
-                text(value).size(10).color(value_color.unwrap_or(TEXT_SECONDARY)),
+                text(value)
+                    .size(10)
+                    .color(value_color.unwrap_or(TEXT_SECONDARY)),
             ]
             .spacing(4)
             .align_y(iced::Alignment::Center)
@@ -71,9 +72,13 @@ impl State {
                     border: Border::default().rounded(999),
                     ..Default::default()
                 }),
-            text(if self.connected { "Connected" } else { "Disconnected" })
-                .size(10)
-                .color(TEXT_MUTED),
+            text(if self.connected {
+                "Connected"
+            } else {
+                "Disconnected"
+            })
+            .size(10)
+            .color(TEXT_MUTED),
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center);

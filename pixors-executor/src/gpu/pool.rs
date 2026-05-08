@@ -80,7 +80,8 @@ impl GpuBuffer {
 impl Drop for GpuBuffer {
     fn drop(&mut self) {
         if let Some(buf) = self.buffer.take() {
-            self.pool.return_buffer(buf, self.allocated_size, self.usage);
+            self.pool
+                .return_buffer(buf, self.allocated_size, self.usage);
         }
     }
 }

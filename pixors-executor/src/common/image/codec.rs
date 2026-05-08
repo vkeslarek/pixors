@@ -1,10 +1,10 @@
-use std::path::Path;
-use serde::{Deserialize, Serialize};
-use crate::common::image::{Dpi, ImageDescriptor, Orientation, PageInfo};
 use crate::common::color::space::ColorSpace;
+use crate::common::image::{Dpi, ImageDescriptor, Orientation, PageInfo};
 use crate::common::pixel::{AlphaPolicy, PixelFormat};
 use crate::error::Error;
 use crate::graph::item::Item;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 pub trait ImageDecoder: Send + Sync {
     fn probe(&self, path: &Path) -> Result<bool, Error>;
@@ -170,11 +170,18 @@ pub struct PngFrameConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PngDisposeOp { None, Background, Previous }
+pub enum PngDisposeOp {
+    None,
+    Background,
+    Previous,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PngBlendOp { Source, Over }
+pub enum PngBlendOp {
+    Source,
+    Over,
+}
 
 // ── TIFF export config ─────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-use iced::widget::tooltip::{Position};
+use iced::widget::tooltip::Position;
 use iced::widget::{container, text};
 use iced::{Background, Border, Element};
 

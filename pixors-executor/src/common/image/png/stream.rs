@@ -1,15 +1,15 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use ::png as png;
+use ::png;
 
+use crate::common::color::space::ColorSpace;
+use crate::common::pixel::PixelFormat;
+use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
 use crate::data::scanline::ScanLine;
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::common::color::space::ColorSpace;
-use crate::common::pixel::PixelFormat;
-use crate::common::pixel::meta::PixelMeta;
 
 use super::super::codec::PageStream;
 use super::super::*;
@@ -68,7 +68,11 @@ impl PageStream for PngPageStream {
         let remaining = self.height.saturating_sub(self.row) as usize;
         let count = max_items.min(remaining);
         let mut items = Vec::with_capacity(count);
-        let meta = PixelMeta::new(self.pixel_format, self.color_space, self.page_info.alpha_policy);
+        let meta = PixelMeta::new(
+            self.pixel_format,
+            self.color_space,
+            self.page_info.alpha_policy,
+        );
         let w = self.width;
 
         for _ in 0..count {
@@ -82,9 +86,7 @@ impl PageStream for PngPageStream {
 
                     // Scale sub-byte grayscale to full 0..255 range.
                     // png EXPAND widths values to bytes but does NOT scale (e.g. 1-bit → 0/1).
-                    if self.bit_depth < 8
-                        && matches!(self.color_type, png::ColorType::Grayscale)
-                    {
+                    if self.bit_depth < 8 && matches!(self.color_type, png::ColorType::Grayscale) {
                         let mul = 255u8 / ((1u8 << self.bit_depth) - 1);
                         if self.pixel_format == PixelFormat::GrayA8 {
                             // tRNS expansion produced [gray, alpha] pairs — scale only gray
@@ -135,7 +137,11 @@ pub fn png_pixel_format(info: &png::Info, is_16bit: bool) -> PixelFormat {
     match info.color_type {
         png::ColorType::Grayscale => {
             if has_trns {
-                if is_16bit { PixelFormat::GrayA16 } else { PixelFormat::GrayA8 }
+                if is_16bit {
+                    PixelFormat::GrayA16
+                } else {
+                    PixelFormat::GrayA8
+                }
             } else if is_16bit {
                 PixelFormat::Gray16
             } else {
@@ -143,11 +149,19 @@ pub fn png_pixel_format(info: &png::Info, is_16bit: bool) -> PixelFormat {
             }
         }
         png::ColorType::GrayscaleAlpha => {
-            if is_16bit { PixelFormat::GrayA16 } else { PixelFormat::GrayA8 }
+            if is_16bit {
+                PixelFormat::GrayA16
+            } else {
+                PixelFormat::GrayA8
+            }
         }
         png::ColorType::Rgb => {
             if has_trns {
-                if is_16bit { PixelFormat::Rgba16 } else { PixelFormat::Rgba8 }
+                if is_16bit {
+                    PixelFormat::Rgba16
+                } else {
+                    PixelFormat::Rgba8
+                }
             } else if is_16bit {
                 PixelFormat::Rgb16
             } else {
@@ -155,10 +169,18 @@ pub fn png_pixel_format(info: &png::Info, is_16bit: bool) -> PixelFormat {
             }
         }
         png::ColorType::Rgba => {
-            if is_16bit { PixelFormat::Rgba16 } else { PixelFormat::Rgba8 }
+            if is_16bit {
+                PixelFormat::Rgba16
+            } else {
+                PixelFormat::Rgba8
+            }
         }
         png::ColorType::Indexed => {
-            if has_trns { PixelFormat::Rgba8 } else { PixelFormat::Rgb8 }
+            if has_trns {
+                PixelFormat::Rgba8
+            } else {
+                PixelFormat::Rgb8
+            }
         }
     }
 }

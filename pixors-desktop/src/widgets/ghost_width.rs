@@ -15,7 +15,8 @@ impl<'a, Message, Theme, Renderer> GhostWidth<'a, Message, Theme, Renderer> {
     }
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for GhostWidth<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for GhostWidth<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
 {
@@ -23,13 +24,11 @@ where
         Size::new(Length::Shrink, Length::Shrink)
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> Node {
-        let child = self.content.as_widget_mut().layout(&mut tree.children[0], renderer, limits);
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) -> Node {
+        let child = self
+            .content
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits);
         Node::with_children(Size::new(0.0, child.size().height), vec![child])
     }
 

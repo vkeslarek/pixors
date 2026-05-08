@@ -1,6 +1,5 @@
 use crate::theme::{
-    ACCENT, ACCENT_DIM, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED,
-    TEXT_SECONDARY, TOOLBAR_W,
+    ACCENT, ACCENT_DIM, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY, TOOLBAR_W,
 };
 use iced::widget::{button, column, container, mouse_area, row, text};
 use iced::{Background, Border, Color, Element, Length};
@@ -63,7 +62,6 @@ impl State {
             }
         }
 
-
         let ctn = container(
             column(items)
                 .spacing(2)
@@ -91,7 +89,8 @@ impl State {
                     radius: 0.0.into(),
                 },
                 ..Default::default()
-            }).into()
+            })
+            .into()
     }
 }
 
@@ -109,37 +108,33 @@ fn tool_btn(t: Tool, active: bool) -> Element<'static, Msg> {
     .center_x(Length::Fill)
     .center_y(Length::Fill);
 
-    let btn = container(
-        mouse_area(
-            button(inner)
-                .on_press(Msg::Select(t))
-                .style(move |_, status| {
-                    let hovered = matches!(status, button::Status::Hovered);
-                    let bg = if active {
-                        ACCENT_DIM
-                    } else if hovered {
-                        BG_HOVER
-                    } else {
-                        Color::TRANSPARENT
-                    };
-                    let border_color = if active {
-                        crate::theme::ACCENT_GLOW
-                    } else {
-                        Color::TRANSPARENT
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        text_color: if active { ACCENT } else { TEXT_SECONDARY },
-                        border: Border {
-                            width: if active { 1.0 } else { 0.0 },
-                            color: border_color,
-                            radius: 6.0.into(),
-                        },
-                        ..Default::default()
-                    }
-                }),
-        )
-    )
+    let btn = container(mouse_area(button(inner).on_press(Msg::Select(t)).style(
+        move |_, status| {
+            let hovered = matches!(status, button::Status::Hovered);
+            let bg = if active {
+                ACCENT_DIM
+            } else if hovered {
+                BG_HOVER
+            } else {
+                Color::TRANSPARENT
+            };
+            let border_color = if active {
+                crate::theme::ACCENT_GLOW
+            } else {
+                Color::TRANSPARENT
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                text_color: if active { ACCENT } else { TEXT_SECONDARY },
+                border: Border {
+                    width: if active { 1.0 } else { 0.0 },
+                    color: border_color,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            }
+        },
+    )))
     .width(Length::Shrink);
 
     crate::widgets::tooltip(btn, t.label(), iced::widget::tooltip::Position::Right)

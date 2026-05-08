@@ -1,13 +1,12 @@
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::data::buffer::Buffer;
 use crate::data::tile::Tile;
 use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
 use crate::debug_stopwatch;
@@ -60,7 +59,10 @@ impl Processor for UploadProcessor {
             ctx.emit.emit(Item::Tile(tile));
             return Ok(());
         }
-        let gpu = ctx.gpu.as_ref().ok_or_else(|| Error::internal("GPU unavailable for upload"))?;
+        let gpu = ctx
+            .gpu
+            .as_ref()
+            .ok_or_else(|| Error::internal("GPU unavailable for upload"))?;
         let bytes: &[u8] = tile.data.as_cpu_slice().unwrap();
         let gbuf = gpu.scheduler().upload_bytes(bytes);
         ctx.emit.emit(Item::Tile(Tile::new(

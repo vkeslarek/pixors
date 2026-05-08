@@ -1,8 +1,12 @@
+use std::path::PathBuf;
+
 use pixors_executor::common::color::space::ColorSpace;
 use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_executor::data_transform::to_neighborhood::TileToNeighborhood;
+use pixors_executor::operation::blur::Blur;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::sink::viewport_cache_sink::ViewportCacheSink;
-use pixors_executor::source::cache_reader::{CacheReader, TileRange};
+use pixors_executor::source::cache_reader::CacheReader;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
@@ -11,22 +15,25 @@ use crate::state::{EditorState, TabId};
 const TILE_SIZE: u32 = 256;
 
 #[derive(Debug)]
-pub struct RequestMipFetch {
+pub struct BlurPreview {
     pub tab: TabId,
-    pub mip: u32,
-    pub range: TileRange,
-    pub cache_dir: std::path::PathBuf,
+    pub radius: u32,
+    pub generation: u64,
+    pub cache_dir: PathBuf,
     pub img_w: u32,
     pub img_h: u32,
+    pub mip: u32,
+    pub range: pixors_executor::source::cache_reader::TileRange,
 }
 
-impl Action for RequestMipFetch {
+impl Action for BlurPreview {
     fn target_tab(&self) -> Option<TabId> {
         Some(self.tab)
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        // CacheReader reads ACEScg f16 from disk; convert to sRGB for the viewport.
+        // CacheReader reads ACEScg f16 tiles from disk (stored by CacheWriter during open).
+        // Blur works directly in ACEScg. Convert to sRGB only for the viewport sink.
         let graph = PathBuilder::new()
             .src(CacheReader {
                 cache_dir: self.cache_dir.clone(),
@@ -36,12 +43,18 @@ impl Action for RequestMipFetch {
                 image_height: self.img_h,
                 tile_range: Some(self.range.clone()),
             })
+            .data_xform(TileToNeighborhood {
+                radius: self.radius,
+            })
+            .op(Blur {
+                radius: self.radius,
+            })
             .op(ColorConvert {
                 target_format: PixelFormat::Rgba8,
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
             })
-            .sink(ViewportCacheSink::new(0))
+            .sink(ViewportCacheSink::new(self.generation))
             .compile();
 
         Ok(PreparedAction::Pipeline {

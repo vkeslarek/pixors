@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use half::f16;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::data::buffer::{Buffer, GpuBuffer};
 use crate::data::device::Device;
@@ -17,8 +17,7 @@ use crate::gpu::kernel::{
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
 const MIP_DOWNSAMPLE_SPV: &[u8] =
@@ -121,7 +120,11 @@ impl MipDownsampleProcessor {
 
         if self.is_block_ready(mip, tx_tl, ty_tl) {
             let tiles = self.take_block(mip, tx_tl, ty_tl);
-            let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
+            let coord = TileBlockCoord {
+                mip_level: mip,
+                tx_tl,
+                ty_tl,
+            };
             let block = TileBlock { coord, tiles };
             self.downsample_block(block, emit);
         }
@@ -200,19 +203,21 @@ impl MipDownsampleProcessor {
         let gpu_ctx = self.gpu.as_deref();
         let out_tile = if all_gpu {
             match gpu_ctx {
-                Some(g) => match gpu_downsample_block(g, &block, mip, tx, ty, self.tile_size, mip_w, mip_h) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        tracing::warn!("GPU mip downsample failed ({e}), falling back to CPU");
-                        cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+                Some(g) => {
+                    match gpu_downsample_block(g, &block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+                    {
+                        Ok(t) => t,
+                        Err(e) => {
+                            tracing::warn!("GPU mip downsample failed ({e}), falling back to CPU");
+                            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+                        }
                     }
-                },
+                }
                 None => cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h),
             }
         } else {
             cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
         };
-
 
         emit.emit(Item::Tile(out_tile.clone()));
 
@@ -246,36 +251,72 @@ impl MipDownsampleProcessor {
 
             for (tx_tl, ty_tl) in block_tls {
                 let slots = [
-                    TileGridPos { mip_level: mip, tx: tx_tl,     ty: ty_tl },
-                    TileGridPos { mip_level: mip, tx: tx_tl + 1, ty: ty_tl },
-                    TileGridPos { mip_level: mip, tx: tx_tl,     ty: ty_tl + 1 },
-                    TileGridPos { mip_level: mip, tx: tx_tl + 1, ty: ty_tl + 1 },
+                    TileGridPos {
+                        mip_level: mip,
+                        tx: tx_tl,
+                        ty: ty_tl,
+                    },
+                    TileGridPos {
+                        mip_level: mip,
+                        tx: tx_tl + 1,
+                        ty: ty_tl,
+                    },
+                    TileGridPos {
+                        mip_level: mip,
+                        tx: tx_tl,
+                        ty: ty_tl + 1,
+                    },
+                    TileGridPos {
+                        mip_level: mip,
+                        tx: tx_tl + 1,
+                        ty: ty_tl + 1,
+                    },
                 ];
 
                 let filler_key = slots.iter().find(|k| self.grid.contains_key(k));
-                let Some(filler_key) = filler_key else { continue; };
+                let Some(filler_key) = filler_key else {
+                    continue;
+                };
                 let filler = self.grid.get(filler_key).unwrap().clone();
 
                 let tiles: [Tile; 4] = [
-                    self.grid.remove(&slots[0]).unwrap_or_else(|| filler.clone()),
-                    self.grid.remove(&slots[1]).unwrap_or_else(|| filler.clone()),
-                    self.grid.remove(&slots[2]).unwrap_or_else(|| filler.clone()),
-                    self.grid.remove(&slots[3]).unwrap_or_else(|| filler.clone()),
+                    self.grid
+                        .remove(&slots[0])
+                        .unwrap_or_else(|| filler.clone()),
+                    self.grid
+                        .remove(&slots[1])
+                        .unwrap_or_else(|| filler.clone()),
+                    self.grid
+                        .remove(&slots[2])
+                        .unwrap_or_else(|| filler.clone()),
+                    self.grid
+                        .remove(&slots[3])
+                        .unwrap_or_else(|| filler.clone()),
                 ];
 
-                let coord = TileBlockCoord { mip_level: mip, tx_tl, ty_tl };
+                let coord = TileBlockCoord {
+                    mip_level: mip,
+                    tx_tl,
+                    ty_tl,
+                };
                 let block = TileBlock { coord, tiles };
                 self.downsample_block(block, emit);
             }
 
             iteration += 1;
             if iteration > 50 {
-                tracing::error!("[pixors] mip_downsample: flush_remaining ABORT after {iteration} iterations — possible infinite loop");
+                tracing::error!(
+                    "[pixors] mip_downsample: flush_remaining ABORT after {iteration} iterations — possible infinite loop"
+                );
                 break;
             }
         }
         if start_len > 0 {
-            tracing::debug!("[pixors] mip_downsample: flush_remaining flushed {} tiles in {} iterations", start_len, iteration);
+            tracing::debug!(
+                "[pixors] mip_downsample: flush_remaining flushed {} tiles in {} iterations",
+                start_len,
+                iteration
+            );
         }
     }
 }
@@ -411,8 +452,10 @@ fn gpu_downsample_block(
         name: "cs_mip_downsample",
         entry: match block.tiles[0].meta.format {
             crate::common::pixel::PixelFormat::Rgba16 => "cs_mip_downsample_rgba16",
-            crate::common::pixel::PixelFormat::RgbaF16 | crate::common::pixel::PixelFormat::RgbF16 => "cs_mip_downsample_rgbaf16",
-            crate::common::pixel::PixelFormat::RgbaF32 | crate::common::pixel::PixelFormat::RgbF32 => "cs_mip_downsample_rgbaf32",
+            crate::common::pixel::PixelFormat::RgbaF16
+            | crate::common::pixel::PixelFormat::RgbF16 => "cs_mip_downsample_rgbaf16",
+            crate::common::pixel::PixelFormat::RgbaF32
+            | crate::common::pixel::PixelFormat::RgbF32 => "cs_mip_downsample_rgbaf32",
             _ => "cs_mip_downsample_rgba8",
         },
         inputs: MIP_INPUTS,
@@ -472,7 +515,7 @@ fn gpu_downsample_block(
     };
     let dispatch_x = out_w.div_ceil(8);
     let dispatch_y = out_h.div_ceil(8);
-    
+
     let out_gbuf = scheduler.allocate_buffer(out_size);
 
     let out_gbuf = scheduler
@@ -611,9 +654,17 @@ fn sample_average_f32(tiles: &[Tile; 4], sx: usize, sy: usize, w0: usize, h0: us
         let py = sy + dy;
 
         let (tile_idx, lx, ly) = if py < h0 {
-            if px < w0 { (0, px, py) } else { (1, px - w0, py) }
+            if px < w0 {
+                (0, px, py)
+            } else {
+                (1, px - w0, py)
+            }
         } else {
-            if px < w0 { (2, px, py - h0) } else { (3, px - w0, py - h0) }
+            if px < w0 {
+                (2, px, py - h0)
+            } else {
+                (3, px - w0, py - h0)
+            }
         };
 
         let tile = &tiles[tile_idx];

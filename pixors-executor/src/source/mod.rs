@@ -16,9 +16,13 @@ pub enum SourceNode {
 delegate_stage!(SourceNode, ImageStream, CacheReader);
 
 impl From<ImageStreamSource> for SourceNode {
-    fn from(v: ImageStreamSource) -> Self { Self::ImageStream(v) }
+    fn from(v: ImageStreamSource) -> Self {
+        Self::ImageStream(v)
+    }
 }
 
 impl From<CacheReader> for SourceNode {
-    fn from(v: CacheReader) -> Self { Self::CacheReader(v) }
+    fn from(v: CacheReader) -> Self {
+        Self::CacheReader(v)
+    }
 }

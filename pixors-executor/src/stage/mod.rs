@@ -10,7 +10,7 @@ mod context;
 mod kinds;
 mod node;
 
-pub use actors::{Consumer, Producer, Processor};
+pub use actors::{Consumer, Processor, Producer};
 pub use context::ProcessorContext;
 pub use kinds::{DataKind, PortDeclaration, PortGroup, PortSpecification};
 pub use node::{Stage, StageNode, StageRole};

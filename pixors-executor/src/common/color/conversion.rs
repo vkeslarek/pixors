@@ -1,11 +1,11 @@
 //! Color conversion engine — precomputed LUTs for fast pixel conversion.
 
-use crate::error::Error;
 use crate::common::color::matrix::Matrix3x3;
-use crate::common::pixel::PixelFormat;
 use crate::common::color::space::ColorSpace;
 use crate::common::color::transfer::TransferFn;
+use crate::common::pixel::PixelFormat;
 use crate::common::pixel::{AlphaPolicy, Pixel};
+use crate::error::Error;
 use wide::f32x4;
 
 /// Precomputed converter between two color spaces.
@@ -58,8 +58,13 @@ impl ColorConversion {
         &self.encode
     }
 
-
-    pub fn convert_pixels<S: Pixel, D: Pixel>(&self, src: &[S], src_fmt: PixelFormat, src_alpha: AlphaPolicy, dst_alpha: AlphaPolicy) -> Vec<D> {
+    pub fn convert_pixels<S: Pixel, D: Pixel>(
+        &self,
+        src: &[S],
+        src_fmt: PixelFormat,
+        src_alpha: AlphaPolicy,
+        dst_alpha: AlphaPolicy,
+    ) -> Vec<D> {
         let n = src.len();
 
         if self.src == self.dst && std::any::TypeId::of::<S>() == std::any::TypeId::of::<D>() {
@@ -171,145 +176,319 @@ impl ColorConversion {
 
         match (src_fmt, dst_fmt) {
             // ── Cmyk8 → X ──────────────────────────────────
-            (PixelFormat::Cmyk8, PixelFormat::Rgba8)   => conv::<Cmyk<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Cmyk8, PixelFormat::RgbaF16) => conv::<Cmyk<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Cmyk8, PixelFormat::RgbaF32) => conv::<Cmyk<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Cmyk8, PixelFormat::Rgba8) => {
+                conv::<Cmyk<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Cmyk8, PixelFormat::RgbaF16) => {
+                conv::<Cmyk<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Cmyk8, PixelFormat::RgbaF32) => {
+                conv::<Cmyk<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── CmykA8 → X ─────────────────────────────────
-            (PixelFormat::CmykA8, PixelFormat::Rgba8)   => conv::<CmykA<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykA8, PixelFormat::RgbaF16) => conv::<CmykA<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykA8, PixelFormat::RgbaF32) => conv::<CmykA<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykA8, PixelFormat::Rgba8) => {
+                conv::<CmykA<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykA8, PixelFormat::RgbaF16) => {
+                conv::<CmykA<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykA8, PixelFormat::RgbaF32) => {
+                conv::<CmykA<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── YCbCr8 → X ──────────────────────────────────
-            (PixelFormat::YCbCr8, PixelFormat::Rgba8)   => conv::<YCbCr<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::YCbCr8, PixelFormat::RgbaF16) => conv::<YCbCr<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::YCbCr8, PixelFormat::RgbaF32) => conv::<YCbCr<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::YCbCr8, PixelFormat::Rgba8) => {
+                conv::<YCbCr<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::YCbCr8, PixelFormat::RgbaF16) => {
+                conv::<YCbCr<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::YCbCr8, PixelFormat::RgbaF32) => {
+                conv::<YCbCr<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Cmyk16 → X ─────────────────────────────────
-            (PixelFormat::Cmyk16, PixelFormat::Rgba8)   => conv::<Cmyk<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Cmyk16, PixelFormat::RgbaF16) => conv::<Cmyk<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Cmyk16, PixelFormat::RgbaF32) => conv::<Cmyk<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Cmyk16, PixelFormat::Rgba8) => {
+                conv::<Cmyk<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Cmyk16, PixelFormat::RgbaF16) => {
+                conv::<Cmyk<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Cmyk16, PixelFormat::RgbaF32) => {
+                conv::<Cmyk<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── CmykA16 → X ────────────────────────────────
-            (PixelFormat::CmykA16, PixelFormat::Rgba8)   => conv::<CmykA<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykA16, PixelFormat::RgbaF16) => conv::<CmykA<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykA16, PixelFormat::RgbaF32) => conv::<CmykA<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykA16, PixelFormat::Rgba8) => {
+                conv::<CmykA<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykA16, PixelFormat::RgbaF16) => {
+                conv::<CmykA<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykA16, PixelFormat::RgbaF32) => {
+                conv::<CmykA<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── CmykF16 → X ────────────────────────────────
-            (PixelFormat::CmykF16, PixelFormat::Rgba8)   => conv::<Cmyk<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykF16, PixelFormat::RgbaF16) => conv::<Cmyk<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykF16, PixelFormat::RgbaF32) => conv::<Cmyk<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykF16, PixelFormat::Rgba8) => {
+                conv::<Cmyk<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykF16, PixelFormat::RgbaF16) => {
+                conv::<Cmyk<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykF16, PixelFormat::RgbaF32) => {
+                conv::<Cmyk<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── CmykAF16 → X ───────────────────────────────
-            (PixelFormat::CmykAF16, PixelFormat::Rgba8)   => conv::<CmykA<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykAF16, PixelFormat::RgbaF16) => conv::<CmykA<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykAF16, PixelFormat::RgbaF32) => conv::<CmykA<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykAF16, PixelFormat::Rgba8) => {
+                conv::<CmykA<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykAF16, PixelFormat::RgbaF16) => {
+                conv::<CmykA<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykAF16, PixelFormat::RgbaF32) => {
+                conv::<CmykA<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── CmykF32 → X ────────────────────────────────
-            (PixelFormat::CmykF32, PixelFormat::Rgba8)   => conv::<Cmyk<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykF32, PixelFormat::RgbaF16) => conv::<Cmyk<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykF32, PixelFormat::RgbaF32) => conv::<Cmyk<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykF32, PixelFormat::Rgba8) => {
+                conv::<Cmyk<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykF32, PixelFormat::RgbaF16) => {
+                conv::<Cmyk<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykF32, PixelFormat::RgbaF32) => {
+                conv::<Cmyk<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── CmykAF32 → X ───────────────────────────────
-            (PixelFormat::CmykAF32, PixelFormat::Rgba8)   => conv::<CmykA<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykAF32, PixelFormat::RgbaF16) => conv::<CmykA<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::CmykAF32, PixelFormat::RgbaF32) => conv::<CmykA<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::CmykAF32, PixelFormat::Rgba8) => {
+                conv::<CmykA<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykAF32, PixelFormat::RgbaF16) => {
+                conv::<CmykA<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::CmykAF32, PixelFormat::RgbaF32) => {
+                conv::<CmykA<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── YCbCrF16 → X ───────────────────────────────
-            (PixelFormat::YCbCrF16, PixelFormat::Rgba8)   => conv::<YCbCr<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::YCbCrF16, PixelFormat::RgbaF16) => conv::<YCbCr<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::YCbCrF16, PixelFormat::RgbaF32) => conv::<YCbCr<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::YCbCrF16, PixelFormat::Rgba8) => {
+                conv::<YCbCr<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::YCbCrF16, PixelFormat::RgbaF16) => {
+                conv::<YCbCr<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::YCbCrF16, PixelFormat::RgbaF32) => {
+                conv::<YCbCr<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── YCbCrF32 → X ───────────────────────────────
-            (PixelFormat::YCbCrF32, PixelFormat::Rgba8)   => conv::<YCbCr<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::YCbCrF32, PixelFormat::RgbaF16) => conv::<YCbCr<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::YCbCrF32, PixelFormat::RgbaF32) => conv::<YCbCr<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::YCbCrF32, PixelFormat::Rgba8) => {
+                conv::<YCbCr<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::YCbCrF32, PixelFormat::RgbaF16) => {
+                conv::<YCbCr<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::YCbCrF32, PixelFormat::RgbaF32) => {
+                conv::<YCbCr<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Lab8 → X ───────────────────────────────────
-            (PixelFormat::Lab8, PixelFormat::Rgba8)   => conv::<Lab<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Lab8, PixelFormat::RgbaF16) => conv::<Lab<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Lab8, PixelFormat::RgbaF32) => conv::<Lab<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Lab8, PixelFormat::Rgba8) => {
+                conv::<Lab<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Lab8, PixelFormat::RgbaF16) => {
+                conv::<Lab<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Lab8, PixelFormat::RgbaF32) => {
+                conv::<Lab<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Lab16 → X ──────────────────────────────────
-            (PixelFormat::Lab16, PixelFormat::Rgba8)   => conv::<Lab<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Lab16, PixelFormat::RgbaF16) => conv::<Lab<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Lab16, PixelFormat::RgbaF32) => conv::<Lab<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Lab16, PixelFormat::Rgba8) => {
+                conv::<Lab<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Lab16, PixelFormat::RgbaF16) => {
+                conv::<Lab<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Lab16, PixelFormat::RgbaF32) => {
+                conv::<Lab<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Rgba8 → X ──────────────────────────────────
-            (PixelFormat::Rgba8, PixelFormat::RgbaF16) => conv::<Rgba<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgba8, PixelFormat::RgbaF32) => conv::<Rgba<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgba8, PixelFormat::Rgba8) => conv::<Rgba<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgba8, PixelFormat::RgbaF16) => {
+                conv::<Rgba<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgba8, PixelFormat::RgbaF32) => {
+                conv::<Rgba<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgba8, PixelFormat::Rgba8) => {
+                conv::<Rgba<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Rgb8 → X ───────────────────────────────────
-            (PixelFormat::Rgb8, PixelFormat::RgbaF16) => conv::<Rgb<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgb8, PixelFormat::RgbaF32) => conv::<Rgb<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgb8, PixelFormat::Rgba8) => conv::<Rgb<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgb8, PixelFormat::RgbaF16) => {
+                conv::<Rgb<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgb8, PixelFormat::RgbaF32) => {
+                conv::<Rgb<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgb8, PixelFormat::Rgba8) => {
+                conv::<Rgb<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Gray8 → X ──────────────────────────────────
-            (PixelFormat::Gray8, PixelFormat::RgbaF16) => conv::<Gray<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Gray8, PixelFormat::RgbaF32) => conv::<Gray<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Gray8, PixelFormat::Rgba8) => conv::<Gray<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Gray8, PixelFormat::RgbaF16) => {
+                conv::<Gray<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Gray8, PixelFormat::RgbaF32) => {
+                conv::<Gray<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Gray8, PixelFormat::Rgba8) => {
+                conv::<Gray<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── GrayA8 → X ─────────────────────────────────
-            (PixelFormat::GrayA8, PixelFormat::RgbaF16) => conv::<GrayAlpha<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayA8, PixelFormat::RgbaF32) => conv::<GrayAlpha<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayA8, PixelFormat::Rgba8) => conv::<GrayAlpha<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayA8, PixelFormat::RgbaF16) => {
+                conv::<GrayAlpha<u8>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayA8, PixelFormat::RgbaF32) => {
+                conv::<GrayAlpha<u8>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayA8, PixelFormat::Rgba8) => {
+                conv::<GrayAlpha<u8>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Gray16 → X ─────────────────────────────────
-            (PixelFormat::Gray16, PixelFormat::Rgba8)   => conv::<Gray<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Gray16, PixelFormat::RgbaF16) => conv::<Gray<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Gray16, PixelFormat::RgbaF32) => conv::<Gray<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Gray16, PixelFormat::Rgba8) => {
+                conv::<Gray<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Gray16, PixelFormat::RgbaF16) => {
+                conv::<Gray<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Gray16, PixelFormat::RgbaF32) => {
+                conv::<Gray<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── GrayA16 → X ────────────────────────────────
-            (PixelFormat::GrayA16, PixelFormat::Rgba8)   => conv::<GrayAlpha<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayA16, PixelFormat::RgbaF16) => conv::<GrayAlpha<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayA16, PixelFormat::RgbaF32) => conv::<GrayAlpha<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayA16, PixelFormat::Rgba8) => {
+                conv::<GrayAlpha<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayA16, PixelFormat::RgbaF16) => {
+                conv::<GrayAlpha<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayA16, PixelFormat::RgbaF32) => {
+                conv::<GrayAlpha<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── GrayF16 → X ────────────────────────────────
-            (PixelFormat::GrayF16, PixelFormat::Rgba8)   => conv::<Gray<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayF16, PixelFormat::RgbaF16) => conv::<Gray<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayF16, PixelFormat::RgbaF32) => conv::<Gray<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayF16, PixelFormat::Rgba8) => {
+                conv::<Gray<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayF16, PixelFormat::RgbaF16) => {
+                conv::<Gray<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayF16, PixelFormat::RgbaF32) => {
+                conv::<Gray<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── GrayAF16 → X ───────────────────────────────
-            (PixelFormat::GrayAF16, PixelFormat::Rgba8)   => conv::<GrayAlpha<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayAF16, PixelFormat::RgbaF16) => conv::<GrayAlpha<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayAF16, PixelFormat::RgbaF32) => conv::<GrayAlpha<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayAF16, PixelFormat::Rgba8) => {
+                conv::<GrayAlpha<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayAF16, PixelFormat::RgbaF16) => {
+                conv::<GrayAlpha<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayAF16, PixelFormat::RgbaF32) => {
+                conv::<GrayAlpha<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── GrayAF32 → X ───────────────────────────────
-            (PixelFormat::GrayAF32, PixelFormat::Rgba8)   => conv::<GrayAlpha<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayAF32, PixelFormat::RgbaF16) => conv::<GrayAlpha<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayAF32, PixelFormat::RgbaF32) => conv::<GrayAlpha<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayAF32, PixelFormat::Rgba8) => {
+                conv::<GrayAlpha<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayAF32, PixelFormat::RgbaF16) => {
+                conv::<GrayAlpha<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayAF32, PixelFormat::RgbaF32) => {
+                conv::<GrayAlpha<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── GrayF32 → X ────────────────────────────────
-            (PixelFormat::GrayF32, PixelFormat::Rgba8)   => conv::<Gray<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayF32, PixelFormat::RgbaF16) => conv::<Gray<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::GrayF32, PixelFormat::RgbaF32) => conv::<Gray<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::GrayF32, PixelFormat::Rgba8) => {
+                conv::<Gray<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayF32, PixelFormat::RgbaF16) => {
+                conv::<Gray<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::GrayF32, PixelFormat::RgbaF32) => {
+                conv::<Gray<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Rgba16 → X ──────────────────────────────────
-            (PixelFormat::Rgba16, PixelFormat::RgbaF16) => conv::<Rgba<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgba16, PixelFormat::RgbaF32) => conv::<Rgba<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgba16, PixelFormat::Rgba8) => conv::<Rgba<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgba16, PixelFormat::RgbaF16) => {
+                conv::<Rgba<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgba16, PixelFormat::RgbaF32) => {
+                conv::<Rgba<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgba16, PixelFormat::Rgba8) => {
+                conv::<Rgba<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── Rgb16 → X ───────────────────────────────────
-            (PixelFormat::Rgb16, PixelFormat::RgbaF16) => conv::<Rgb<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgb16, PixelFormat::RgbaF32) => conv::<Rgb<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::Rgb16, PixelFormat::Rgba8) => conv::<Rgb<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::Rgb16, PixelFormat::RgbaF16) => {
+                conv::<Rgb<u16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgb16, PixelFormat::RgbaF32) => {
+                conv::<Rgb<u16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::Rgb16, PixelFormat::Rgba8) => {
+                conv::<Rgb<u16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── F16 ─────────────────────────────────────────
-            (PixelFormat::RgbaF16, PixelFormat::RgbaF16) => self.same_or_pass(src, src_fmt, dst_fmt),
-            (PixelFormat::RgbaF16, PixelFormat::Rgba8)   => conv::<Rgba<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbaF16, PixelFormat::RgbaF32) => conv::<Rgba<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbF16,  PixelFormat::RgbaF16) => conv::<Rgb<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbF16,  PixelFormat::Rgba8)   => conv::<Rgb<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbF16,  PixelFormat::RgbaF32) => conv::<Rgb<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbaF16, PixelFormat::RgbaF16) => {
+                self.same_or_pass(src, src_fmt, dst_fmt)
+            }
+            (PixelFormat::RgbaF16, PixelFormat::Rgba8) => {
+                conv::<Rgba<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbaF16, PixelFormat::RgbaF32) => {
+                conv::<Rgba<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbF16, PixelFormat::RgbaF16) => {
+                conv::<Rgb<f16>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbF16, PixelFormat::Rgba8) => {
+                conv::<Rgb<f16>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbF16, PixelFormat::RgbaF32) => {
+                conv::<Rgb<f16>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             // ── F32 ↔ F32 ──────────────────────────────────
-            (PixelFormat::RgbaF32, PixelFormat::RgbaF32) => self.same_or_pass(src, src_fmt, dst_fmt),
-            (PixelFormat::RgbaF32, PixelFormat::Rgba8) => conv::<Rgba<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbaF32, PixelFormat::RgbaF16) => conv::<Rgba<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbF32, PixelFormat::RgbaF32) => conv::<Rgb<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbF32, PixelFormat::Rgba8) => conv::<Rgb<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha),
-            (PixelFormat::RgbF32, PixelFormat::RgbaF16) => conv::<Rgb<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha),
+            (PixelFormat::RgbaF32, PixelFormat::RgbaF32) => {
+                self.same_or_pass(src, src_fmt, dst_fmt)
+            }
+            (PixelFormat::RgbaF32, PixelFormat::Rgba8) => {
+                conv::<Rgba<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbaF32, PixelFormat::RgbaF16) => {
+                conv::<Rgba<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbF32, PixelFormat::RgbaF32) => {
+                conv::<Rgb<f32>, Rgba<f32>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbF32, PixelFormat::Rgba8) => {
+                conv::<Rgb<f32>, Rgba<u8>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
+            (PixelFormat::RgbF32, PixelFormat::RgbaF16) => {
+                conv::<Rgb<f32>, Rgba<f16>>(self, src, src_fmt, src_alpha, dst_alpha)
+            }
 
             _ => Err(Error::internal(format!(
                 "unsupported conversion: {src_fmt:?} -> {dst_fmt:?}"
@@ -317,8 +496,17 @@ impl ColorConversion {
         }
     }
 
-    fn same_or_pass(&self, src: &[u8], src_fmt: PixelFormat, dst_fmt: PixelFormat) -> Result<Vec<u8>, Error> {
-        if src_fmt == dst_fmt { Ok(src.to_vec()) } else { Err(Error::internal("internal")) }
+    fn same_or_pass(
+        &self,
+        src: &[u8],
+        src_fmt: PixelFormat,
+        dst_fmt: PixelFormat,
+    ) -> Result<Vec<u8>, Error> {
+        if src_fmt == dst_fmt {
+            Ok(src.to_vec())
+        } else {
+            Err(Error::internal("internal"))
+        }
     }
 }
 
@@ -389,7 +577,13 @@ pub fn apply_mode_one(linear: [f32; 3], a: f32, mode: AlphaPolicy) -> [f32; 3] {
 
 /// Un-premultiply source RGB by alpha if the source was premultiplied.
 #[inline]
-fn src_unpremul(rr: f32x4, gg: f32x4, bb: f32x4, aa: f32x4, src_alpha: AlphaPolicy) -> (f32x4, f32x4, f32x4) {
+fn src_unpremul(
+    rr: f32x4,
+    gg: f32x4,
+    bb: f32x4,
+    aa: f32x4,
+    src_alpha: AlphaPolicy,
+) -> (f32x4, f32x4, f32x4) {
     if src_alpha == AlphaPolicy::PremultiplyOnPack {
         let safe_aa = f32x4::splat(1e-8).max(aa);
         (rr / safe_aa, gg / safe_aa, bb / safe_aa)
@@ -499,8 +693,12 @@ mod tests {
                 a: f16::from_f32(0.0),
             },
         ];
-        let result: Vec<[u8; 4]> =
-            conv.convert_pixels::<Rgba<f16>, [u8; 4]>(&pixels, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
+        let result: Vec<[u8; 4]> = conv.convert_pixels::<Rgba<f16>, [u8; 4]>(
+            &pixels,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::Straight,
+        );
         assert_eq!(result.len(), pixels.len());
     }
 
@@ -542,11 +740,19 @@ mod tests {
         })
         .collect();
 
-        let acescg: Vec<Rgba<f16>> = srgb_to_acescg
-            .convert_pixels::<Rgba<f16>, Rgba<f16>>(&colors_f16, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+        let acescg: Vec<Rgba<f16>> = srgb_to_acescg.convert_pixels::<Rgba<f16>, Rgba<f16>>(
+            &colors_f16,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::PremultiplyOnPack,
+        );
 
-        let result: Vec<[u8; 4]> =
-            acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
+        let result: Vec<[u8; 4]> = acescg_to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(
+            &acescg,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::Straight,
+        );
 
         for (i, (orig, out)) in colors_f16.iter().zip(result.iter()).enumerate() {
             let expected_r = (orig.r.to_f32().clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -585,8 +791,12 @@ mod tests {
             })
             .collect();
 
-        let dst: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+        let dst: Vec<Rgba<f16>> = conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(
+            &src,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::PremultiplyOnPack,
+        );
 
         assert_eq!(dst.len(), src.len());
         for (i, (s, d)) in src.iter().zip(dst.iter()).enumerate() {
@@ -608,10 +818,18 @@ mod tests {
             a: f16::from_f32(0.5),
         }];
 
-        let premul: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
-        let straight: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
+        let premul: Vec<Rgba<f16>> = conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(
+            &src,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::PremultiplyOnPack,
+        );
+        let straight: Vec<Rgba<f16>> = conv.convert_pixels::<Rgba<f16>, Rgba<f16>>(
+            &src,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::Straight,
+        );
 
         let p = &premul[0];
         let s = &straight[0];
@@ -656,8 +874,12 @@ mod tests {
             },
         ];
 
-        let dst: Vec<Rgba<f16>> =
-            conv.convert_pixels::<Rgb<f16>, Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
+        let dst: Vec<Rgba<f16>> = conv.convert_pixels::<Rgb<f16>, Rgba<f16>>(
+            &src,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::Straight,
+        );
 
         assert_eq!(dst.len(), 2);
         let first = &dst[0];
@@ -696,8 +918,12 @@ mod tests {
 
         let src: Vec<[u8; 4]> = vec![[255, 0, 0, 128], [0, 255, 0, 255], [128, 128, 128, 64]];
 
-        let f16: Vec<Rgba<f16>> =
-            conv.convert_pixels::<[u8; 4], Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
+        let f16: Vec<Rgba<f16>> = conv.convert_pixels::<[u8; 4], Rgba<f16>>(
+            &src,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::Straight,
+        );
 
         assert_eq!(f16.len(), 3);
         // u8→f16 Straight: values scaled to [0,1], alpha preserved as-is
@@ -730,11 +956,19 @@ mod tests {
 
         let src: Vec<[u8; 4]> = vec![[200, 100, 50, 255], [0, 128, 255, 128]];
 
-        let acescg: Vec<Rgba<f16>> =
-            to_acescg.convert_pixels::<[u8; 4], Rgba<f16>>(&src, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::PremultiplyOnPack);
+        let acescg: Vec<Rgba<f16>> = to_acescg.convert_pixels::<[u8; 4], Rgba<f16>>(
+            &src,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::PremultiplyOnPack,
+        );
 
-        let back: Vec<[u8; 4]> =
-            to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(&acescg, PixelFormat::RgbaF16, AlphaPolicy::Straight, AlphaPolicy::Straight);
+        let back: Vec<[u8; 4]> = to_srgb.convert_pixels::<Rgba<f16>, [u8; 4]>(
+            &acescg,
+            PixelFormat::RgbaF16,
+            AlphaPolicy::Straight,
+            AlphaPolicy::Straight,
+        );
 
         assert_eq!(back.len(), 2);
         // u8 roundtrip through ACEScg should approximately preserve values

@@ -12,8 +12,10 @@ fn compile_slang(slangc: &str, src: &Path, include_dir: &Path, dest: &Path) -> b
             format!("{home}/.local/lib")
         })
         .arg(src)
-        .arg("-I").arg(include_dir)
-        .arg("-target").arg("spirv")
+        .arg("-I")
+        .arg(include_dir)
+        .arg("-target")
+        .arg("spirv")
         .arg("-fvk-use-entrypoint-name")
         .output()
         .map(|o| {
@@ -38,7 +40,9 @@ fn compile_slang(slangc: &str, src: &Path, include_dir: &Path, dest: &Path) -> b
 /// Walk `dir` recursively, compiling every .slang file found.
 /// Directories named "lib" are skipped entirely — they contain shared modules only.
 fn compile_dir(dir: &Path, shaders_root: &Path, kernels_dir: &Path, slangc: &str) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -60,8 +64,8 @@ fn compile_dir(dir: &Path, shaders_root: &Path, kernels_dir: &Path, slangc: &str
 
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let shaders_dir  = Path::new(&manifest_dir).join("shaders");
-    let kernels_dir  = Path::new(&manifest_dir).join("kernels");
+    let shaders_dir = Path::new(&manifest_dir).join("shaders");
+    let kernels_dir = Path::new(&manifest_dir).join("kernels");
     let _ = std::fs::create_dir_all(&kernels_dir);
 
     println!("cargo:rerun-if-changed=build.rs");
@@ -73,7 +77,7 @@ fn main() {
         return;
     }
 
-    let home   = std::env::var("HOME").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_default();
     let slangc = if Command::new("slangc").arg("--version").output().is_ok() {
         "slangc".to_string()
     } else {

@@ -45,9 +45,7 @@ impl shader::Pipeline for ViewportPipeline {
                     binding: 1,
                     visibility: iced::wgpu::ShaderStages::FRAGMENT,
                     ty: iced::wgpu::BindingType::Texture {
-                        sample_type: iced::wgpu::TextureSampleType::Float {
-                            filterable: true,
-                        },
+                        sample_type: iced::wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: iced::wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -56,9 +54,7 @@ impl shader::Pipeline for ViewportPipeline {
                 iced::wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: iced::wgpu::ShaderStages::FRAGMENT,
-                    ty: iced::wgpu::BindingType::Sampler(
-                        iced::wgpu::SamplerBindingType::Filtering,
-                    ),
+                    ty: iced::wgpu::BindingType::Sampler(iced::wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -71,32 +67,31 @@ impl shader::Pipeline for ViewportPipeline {
                 push_constant_ranges: &[],
             });
 
-        let pipeline =
-            device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
-                label: Some("viewport"),
-                layout: Some(&pipeline_layout),
-                vertex: iced::wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs"),
-                    buffers: &[],
-                    compilation_options: iced::wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(iced::wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs"),
-                    targets: &[Some(iced::wgpu::ColorTargetState {
-                        format,
-                        blend: Some(iced::wgpu::BlendState::REPLACE),
-                        write_mask: iced::wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: iced::wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: iced::wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: iced::wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
+        let pipeline = device.create_render_pipeline(&iced::wgpu::RenderPipelineDescriptor {
+            label: Some("viewport"),
+            layout: Some(&pipeline_layout),
+            vertex: iced::wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                buffers: &[],
+                compilation_options: iced::wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(iced::wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                targets: &[Some(iced::wgpu::ColorTargetState {
+                    format,
+                    blend: Some(iced::wgpu::BlendState::REPLACE),
+                    write_mask: iced::wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: iced::wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: iced::wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: iced::wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
         let camera_buffer = device.create_buffer(&iced::wgpu::BufferDescriptor {
             label: Some("camera_uniform"),
@@ -116,22 +111,14 @@ impl shader::Pipeline for ViewportPipeline {
             sample_count: 1,
             dimension: iced::wgpu::TextureDimension::D2,
             format: iced::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING
-                | iced::wgpu::TextureUsages::COPY_DST,
+            usage: iced::wgpu::TextureUsages::TEXTURE_BINDING | iced::wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let dummy_view =
-            dummy_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
-        let dummy_sampler =
-            device.create_sampler(&iced::wgpu::SamplerDescriptor::default());
+        let dummy_view = dummy_tex.create_view(&iced::wgpu::TextureViewDescriptor::default());
+        let dummy_sampler = device.create_sampler(&iced::wgpu::SamplerDescriptor::default());
 
-        let bind_group = Self::make_bind_group(
-            device,
-            &bgl,
-            &camera_buffer,
-            &dummy_view,
-            &dummy_sampler,
-        );
+        let bind_group =
+            Self::make_bind_group(device, &bgl, &camera_buffer, &dummy_view, &dummy_sampler);
 
         Self {
             pipeline,
@@ -206,7 +193,12 @@ impl Clone for ViewportPrimitive {
         Self {
             camera: self.camera,
             cache: self.cache.clone(),
-            visible_range: pixors_executor::source::cache_reader::TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 },
+            visible_range: pixors_executor::source::cache_reader::TileRange {
+                tx_start: 0,
+                tx_end: 0,
+                ty_start: 0,
+                ty_end: 0,
+            },
         }
     }
 }
@@ -240,7 +232,9 @@ impl shader::Primitive for ViewportPrimitive {
             pipeline.last_mip = None;
             return;
         };
-        let Ok(mut cache) = cache_arc.lock() else { return; };
+        let Ok(mut cache) = cache_arc.lock() else {
+            return;
+        };
 
         cache.set_active_mip(mip);
 
@@ -255,19 +249,29 @@ impl shader::Primitive for ViewportPrimitive {
         }
 
         // Full re-upload when MIP level changes or texture was resized (new image).
-        let full_reload = pipeline.last_mip != Some(mip)
-            || pipeline.texture_dims != Some((tex_w, tex_h));
+        let full_reload =
+            pipeline.last_mip != Some(mip) || pipeline.texture_dims != Some((tex_w, tex_h));
 
-        ensure_texture(&mut pipeline.tiled_texture, device, queue, tex_w, tex_h, mip);
+        ensure_texture(
+            &mut pipeline.tiled_texture,
+            device,
+            queue,
+            tex_w,
+            tex_h,
+            mip,
+        );
 
         if let Some(ref tex_arc) = pipeline.tiled_texture {
             let tex = tex_arc.lock().unwrap();
             let mut pending = cache.take_pending_keys_for_mip(mip);
-            
+
             let tiles: Vec<_> = if full_reload {
                 cache.tiles_in_range(mip, &self.visible_range)
             } else {
-                pending.drain(..).filter_map(|k| cache.get(&k).map(|v| (k, v))).collect()
+                pending
+                    .drain(..)
+                    .filter_map(|k| cache.get(&k).map(|v| (k, v)))
+                    .collect()
             };
 
             for (_, tile) in tiles {
@@ -285,11 +289,7 @@ impl shader::Primitive for ViewportPrimitive {
         let use_linear = self.camera.zoom < 4.0;
         pipeline.last_mip = Some(mip);
         pipeline.rebind_if_needed(device, use_linear);
-        queue.write_buffer(
-            &pipeline.camera_buffer,
-            0,
-            bytemuck::bytes_of(&self.camera),
-        );
+        queue.write_buffer(&pipeline.camera_buffer, 0, bytemuck::bytes_of(&self.camera));
     }
 
     fn render(

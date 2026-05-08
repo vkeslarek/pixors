@@ -1,11 +1,11 @@
+use crate::common::pixel::PixelFormat;
+use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
 use crate::data::scanline::ScanLine;
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::common::pixel::PixelFormat;
-use crate::common::pixel::meta::PixelMeta;
 
-use ::tiff as tiff;
+use ::tiff;
 
 use super::super::codec::PageStream;
 use super::super::*;
@@ -71,7 +71,14 @@ impl PageStream for TiffPageStream {
         );
 
         for _ in 0..count {
-            let mut raw = tiff_row_bytes(&self.image_data, self.row, self.width, self.height, self.color_type, self.planar)?;
+            let mut raw = tiff_row_bytes(
+                &self.image_data,
+                self.row,
+                self.width,
+                self.height,
+                self.color_type,
+                self.planar,
+            )?;
 
             // Palette expansion: each byte is a colormap index → 3 bytes RGB
             if let Some(ref colormap) = self.palette {
@@ -139,7 +146,11 @@ pub fn tiff_pixel_format(
             tiff::ColorType::Gray(_) => PixelFormat::Gray8,
             tiff::ColorType::GrayA(_) => PixelFormat::GrayA8,
             tiff::ColorType::RGB(_) => {
-                if is_lab { PixelFormat::Lab8 } else { PixelFormat::Rgb8 }
+                if is_lab {
+                    PixelFormat::Lab8
+                } else {
+                    PixelFormat::Rgb8
+                }
             }
             tiff::ColorType::RGBA(_) => PixelFormat::Rgba8,
             tiff::ColorType::CMYK(_) => PixelFormat::Cmyk8,
@@ -155,13 +166,20 @@ pub fn tiff_pixel_format(
             tiff::ColorType::Gray(_) => PixelFormat::Gray16,
             tiff::ColorType::GrayA(_) => PixelFormat::GrayA16,
             tiff::ColorType::RGB(_) => {
-                if is_lab { PixelFormat::Lab16 } else { PixelFormat::Rgb16 }
+                if is_lab {
+                    PixelFormat::Lab16
+                } else {
+                    PixelFormat::Rgb16
+                }
             }
             tiff::ColorType::RGBA(_) => PixelFormat::Rgba16,
             tiff::ColorType::CMYK(_) => PixelFormat::Cmyk16,
             tiff::ColorType::CMYKA(_) => PixelFormat::CmykA16,
             _ => {
-                tracing::warn!("Unsupported U16 TIFF color: {:?}, falling back to Rgba16", ct);
+                tracing::warn!(
+                    "Unsupported U16 TIFF color: {:?}, falling back to Rgba16",
+                    ct
+                );
                 PixelFormat::Rgba16
             }
         },
@@ -174,7 +192,10 @@ pub fn tiff_pixel_format(
             tiff::ColorType::CMYKA(_) => PixelFormat::CmykAF32,
             tiff::ColorType::YCbCr(_) => PixelFormat::YCbCrF32,
             _ => {
-                tracing::warn!("Unsupported F32 TIFF color: {:?}, falling back to RgbaF32", ct);
+                tracing::warn!(
+                    "Unsupported F32 TIFF color: {:?}, falling back to RgbaF32",
+                    ct
+                );
                 PixelFormat::RgbaF32
             }
         },
@@ -189,7 +210,10 @@ pub fn tiff_pixel_format(
             tiff::ColorType::RGB(_) | tiff::ColorType::YCbCr(_) => PixelFormat::RgbF32,
             tiff::ColorType::RGBA(_) => PixelFormat::RgbaF32,
             _ => {
-                tracing::warn!("Unsupported wide-int/signed TIFF color: {:?}, falling back to RgbaF32", ct);
+                tracing::warn!(
+                    "Unsupported wide-int/signed TIFF color: {:?}, falling back to RgbaF32",
+                    ct
+                );
                 PixelFormat::RgbaF32
             }
         },
@@ -202,7 +226,10 @@ pub fn tiff_pixel_format(
             tiff::ColorType::CMYKA(_) => PixelFormat::CmykAF16,
             tiff::ColorType::YCbCr(_) => PixelFormat::YCbCrF16,
             _ => {
-                tracing::warn!("Unsupported F16 TIFF color: {:?}, falling back to RgbaF16", ct);
+                tracing::warn!(
+                    "Unsupported F16 TIFF color: {:?}, falling back to RgbaF16",
+                    ct
+                );
                 PixelFormat::RgbaF16
             }
         },
@@ -224,50 +251,75 @@ pub fn tiff_row_bytes(
         tiff::decoder::DecodingResult::U8(data) => {
             Ok(row_bytes_u8(data, row, w, h, spp, planar)?.to_vec())
         }
-        tiff::decoder::DecodingResult::U16(data) => Ok(row_bytes_u16(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| v.to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::U32(data) => Ok(row_bytes_u32(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| ((*v as f64 / u32::MAX as f64) as f32).to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::U64(data) => Ok(row_bytes_u64(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| ((*v as f64 / u64::MAX as f64) as f32).to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::F32(data) => Ok(row_bytes_f32(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| v.to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::F64(data) => Ok(row_bytes_f64(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| (*v as f32).to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::F16(data) => Ok(row_bytes_f16(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| v.to_bits().to_ne_bytes())
-            .collect()),
+        tiff::decoder::DecodingResult::U16(data) => {
+            Ok(row_bytes_u16(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| v.to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::U32(data) => {
+            Ok(row_bytes_u32(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| ((*v as f64 / u32::MAX as f64) as f32).to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::U64(data) => {
+            Ok(row_bytes_u64(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| ((*v as f64 / u64::MAX as f64) as f32).to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::F32(data) => {
+            Ok(row_bytes_f32(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| v.to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::F64(data) => {
+            Ok(row_bytes_f64(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| (*v as f32).to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::F16(data) => {
+            Ok(row_bytes_f16(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| v.to_bits().to_ne_bytes())
+                .collect())
+        }
         tiff::decoder::DecodingResult::I8(data) => Ok(row_bytes_i8(data, row, w, h, spp, planar)?
             .iter()
             .flat_map(|v| ((*v as f32 + 128.0) / 255.0).to_ne_bytes())
             .collect()),
-        tiff::decoder::DecodingResult::I16(data) => Ok(row_bytes_i16(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| ((*v as f32 + 32768.0) / 65535.0).to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::I32(data) => Ok(row_bytes_i32(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| ((*v as f64 / i32::MAX as f64 * 0.5 + 0.5) as f32).to_ne_bytes())
-            .collect()),
-        tiff::decoder::DecodingResult::I64(data) => Ok(row_bytes_i64(data, row, w, h, spp, planar)?
-            .iter()
-            .flat_map(|v| ((*v as f64 / i64::MAX as f64 * 0.5 + 0.5) as f32).to_ne_bytes())
-            .collect()),
+        tiff::decoder::DecodingResult::I16(data) => {
+            Ok(row_bytes_i16(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| ((*v as f32 + 32768.0) / 65535.0).to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::I32(data) => {
+            Ok(row_bytes_i32(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| ((*v as f64 / i32::MAX as f64 * 0.5 + 0.5) as f32).to_ne_bytes())
+                .collect())
+        }
+        tiff::decoder::DecodingResult::I64(data) => {
+            Ok(row_bytes_i64(data, row, w, h, spp, planar)?
+                .iter()
+                .flat_map(|v| ((*v as f64 / i64::MAX as f64 * 0.5 + 0.5) as f32).to_ne_bytes())
+                .collect())
+        }
     }
 }
 
-fn row_bytes_u8(data: &[u8], row: u32, w: usize, _h: usize, spp: usize, planar: bool) -> Result<Vec<u8>, Error> {
+fn row_bytes_u8(
+    data: &[u8],
+    row: u32,
+    w: usize,
+    _h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<u8>, Error> {
     let mut out = Vec::with_capacity(w * spp);
     if planar {
         let plane_len = data.len() / spp;
@@ -280,23 +332,154 @@ fn row_bytes_u8(data: &[u8], row: u32, w: usize, _h: usize, spp: usize, planar: 
         }
     } else {
         let start = row as usize * w * spp;
-        out.extend_from_slice(data.get(start..start + w * spp).ok_or_else(|| {
-            Error::internal("TIFF row out of bounds")
-        })?);
+        out.extend_from_slice(
+            data.get(start..start + w * spp)
+                .ok_or_else(|| Error::internal("TIFF row out of bounds"))?,
+        );
     }
     Ok(out)
 }
 
-fn row_bytes_u16(data: &[u16],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<u16>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_u32(data: &[u32],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<u32>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_u64(data: &[u64],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<u64>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_f32(data: &[f32],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<f32>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_f64(data: &[f64],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<f64>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_f16(data: &[half::f16], row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<half::f16>, Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_i8 (data: &[i8],      row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<i8>,      Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_i16(data: &[i16],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<i16>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_i32(data: &[i32],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<i32>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
-fn row_bytes_i64(data: &[i64],     row: u32, w: usize, h: usize, spp: usize, planar: bool) -> Result<Vec<i64>,     Error> { if planar { row_planar(data, row, w, h, spp) } else { row_interleaved(data, row, w, spp) } }
+fn row_bytes_u16(
+    data: &[u16],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<u16>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_u32(
+    data: &[u32],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<u32>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_u64(
+    data: &[u64],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<u64>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_f32(
+    data: &[f32],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<f32>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_f64(
+    data: &[f64],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<f64>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_f16(
+    data: &[half::f16],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<half::f16>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_i8(
+    data: &[i8],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<i8>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_i16(
+    data: &[i16],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<i16>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_i32(
+    data: &[i32],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<i32>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
+fn row_bytes_i64(
+    data: &[i64],
+    row: u32,
+    w: usize,
+    h: usize,
+    spp: usize,
+    planar: bool,
+) -> Result<Vec<i64>, Error> {
+    if planar {
+        row_planar(data, row, w, h, spp)
+    } else {
+        row_interleaved(data, row, w, spp)
+    }
+}
 
 fn row_interleaved<T: Copy>(data: &[T], row: u32, w: usize, spp: usize) -> Result<Vec<T>, Error> {
     let start = row as usize * w * spp;
@@ -305,7 +488,13 @@ fn row_interleaved<T: Copy>(data: &[T], row: u32, w: usize, spp: usize) -> Resul
         .ok_or_else(|| Error::internal("TIFF row out of bounds"))
 }
 
-fn row_planar<T: Copy + Default>(data: &[T], row: u32, w: usize, _h: usize, spp: usize) -> Result<Vec<T>, Error> {
+fn row_planar<T: Copy + Default>(
+    data: &[T],
+    row: u32,
+    w: usize,
+    _h: usize,
+    spp: usize,
+) -> Result<Vec<T>, Error> {
     let total = data.len();
     let plane_len = total / spp;
     let mut out = Vec::with_capacity(w * spp);

@@ -16,13 +16,11 @@ pub enum Msg {
     DragDrop,
 }
 
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct State {
     pub drag_from: Option<usize>,
     pub drag_over: Option<usize>,
 }
-
 
 impl State {
     pub fn update(&mut self, msg: Msg, tab_count: usize) {
@@ -156,8 +154,13 @@ fn tab_view<'a>(
                 Color::TRANSPARENT
             };
 
-            let current_border_width =
-                if is_hover_target { 2.0 } else if is_active { 1.0 } else { 0.0 };
+            let current_border_width = if is_hover_target {
+                2.0
+            } else if is_active {
+                1.0
+            } else {
+                0.0
+            };
 
             button::Style {
                 background: Some(Background::Color(bg)),

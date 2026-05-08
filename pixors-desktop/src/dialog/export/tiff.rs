@@ -1,4 +1,4 @@
-use iced::widget::{row, text, Column};
+use iced::widget::{Column, row, text};
 use iced::{Alignment, Element};
 
 use pixors_executor::common::image::codec::{
@@ -7,9 +7,9 @@ use pixors_executor::common::image::codec::{
 
 use crate::theme::TEXT_SECONDARY;
 
-use super::{ExportDialog, Msg};
-use super::presets::*;
 use super::components::*;
+use super::presets::*;
+use super::{ExportDialog, Msg};
 
 pub fn tiff_options(dialog: &ExportDialog) -> Element<'_, Msg> {
     let cfg = &dialog.tiff;
@@ -23,12 +23,11 @@ pub fn tiff_options(dialog: &ExportDialog) -> Element<'_, Msg> {
     let deflate_level = current_deflate_level(&cfg.compression) as f32;
     let predictor = current_tiff_predictor(&cfg.compression);
 
-    let predictor_options: &[TiffPredictor] =
-        if cfg.bit_depth == TiffBitDepth::ThirtyTwo {
-            TIFF_PREDICTORS_ALL
-        } else {
-            TIFF_PREDICTORS_INT
-        };
+    let predictor_options: &[TiffPredictor] = if cfg.bit_depth == TiffBitDepth::ThirtyTwo {
+        TIFF_PREDICTORS_ALL
+    } else {
+        TIFF_PREDICTORS_INT
+    };
 
     let mut compression_col = Column::new()
         .spacing(12)
@@ -107,7 +106,11 @@ pub fn tiff_options(dialog: &ExportDialog) -> Element<'_, Msg> {
     let meta_col = Column::new()
         .spacing(12)
         .push(section_label("METADATA"))
-        .push(labeled_checkbox("Embed DPI", cfg.embed_dpi, Msg::TiffEmbedDpi))
+        .push(labeled_checkbox(
+            "Embed DPI",
+            cfg.embed_dpi,
+            Msg::TiffEmbedDpi,
+        ))
         .push(labeled_checkbox(
             "Embed ICC profile",
             cfg.embed_icc,
@@ -118,7 +121,11 @@ pub fn tiff_options(dialog: &ExportDialog) -> Element<'_, Msg> {
             cfg.embed_exif,
             Msg::TiffEmbedExif,
         ))
-        .push(labeled_checkbox("Multipage", cfg.multipage, Msg::TiffMultipage));
+        .push(labeled_checkbox(
+            "Multipage",
+            cfg.multipage,
+            Msg::TiffMultipage,
+        ));
 
     Column::new()
         .spacing(24)

@@ -19,13 +19,7 @@ pub enum ColorModelTransform {
 }
 
 impl ColorModelTransform {
-    pub fn decode_4(
-        &self,
-        c0: f32x4,
-        c1: f32x4,
-        c2: f32x4,
-        c3: f32x4,
-    ) -> (f32x4, f32x4, f32x4) {
+    pub fn decode_4(&self, c0: f32x4, c1: f32x4, c2: f32x4, c3: f32x4) -> (f32x4, f32x4, f32x4) {
         match self {
             Self::None => (c0, c1, c2),
             Self::CmykToRgb | Self::CmykAToRgb => {
@@ -118,12 +112,15 @@ mod tests {
         // e.g. L*=50, a*=100 (very saturated red) → r > 1 in sRGB
         let a_norm = 100.0_f32 / 128.0;
         let [r, _g, _b] = ColorModelTransform::LabToRgb.decode_1(&[0.5, a_norm, 0.0, 1.0]);
-        assert!(r > 1.0 || r > 0.9, "expected large r for saturated Lab, got r={r}");
+        assert!(
+            r > 1.0 || r > 0.9,
+            "expected large r for saturated Lab, got r={r}"
+        );
     }
 
     #[test]
     fn cmyk_white() {
-        let [r, g, b] = ColorModelTransform::CmykToRgb.decode_1(&[0.0, 0.0, 0.0, 0.0, ]);
+        let [r, g, b] = ColorModelTransform::CmykToRgb.decode_1(&[0.0, 0.0, 0.0, 0.0]);
         assert!(approx(r, 1.0, 1e-6));
         assert!(approx(g, 1.0, 1e-6));
         assert!(approx(b, 1.0, 1e-6));
@@ -175,7 +172,11 @@ fn lab_to_linear_srgb(l_norm: f32, a_norm: f32, b_norm: f32) -> [f32; 3] {
     const DELTA: f32 = 6.0 / 29.0;
     const DELTA2: f32 = 3.0 * DELTA * DELTA;
     let finv = |t: f32| {
-        if t > DELTA { t * t * t } else { DELTA2 * (t - 4.0 / 29.0) }
+        if t > DELTA {
+            t * t * t
+        } else {
+            DELTA2 * (t - 4.0 / 29.0)
+        }
     };
 
     // D50 white point: Xn=0.96422, Yn=1.0, Zn=0.82521

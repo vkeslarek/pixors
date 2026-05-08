@@ -5,7 +5,7 @@ use crate::sink::SinkNode;
 use crate::source::SourceNode;
 use serde::{Deserialize, Serialize};
 
-use super::actors::{Consumer, Producer, Processor};
+use super::actors::{Consumer, Processor, Producer};
 use super::kinds::PortSpecification;
 
 // ── Stage trait ────────────────────────────────────────────────────────────────

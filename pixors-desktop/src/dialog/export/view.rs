@@ -1,10 +1,13 @@
-use iced::widget::{button, container, row, scrollable, text, Column};
+use iced::widget::{Column, button, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Padding};
 
-use crate::theme::{ACCENT, BG_ELEVATED, BG_HOVER, BORDER, BORDER_SUBTLE, DANGER, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY};
+use crate::theme::{
+    ACCENT, BG_ELEVATED, BG_HOVER, BORDER, BORDER_SUBTLE, DANGER, TEXT_MUTED, TEXT_PRIMARY,
+    TEXT_SECONDARY,
+};
 
-use super::{ExportDialog, ExportFormat, Msg};
 use super::components::*;
+use super::{ExportDialog, ExportFormat, Msg};
 
 pub fn view(dialog: &ExportDialog) -> Element<'_, Msg> {
     let card = card_view(dialog);
@@ -80,9 +83,7 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
         .push(options);
 
     if let Some(ref err) = dialog.error {
-        body = body.push(
-            text(err.as_str()).size(13).color(DANGER),
-        );
+        body = body.push(text(err.as_str()).size(13).color(DANGER));
     }
 
     // Action buttons

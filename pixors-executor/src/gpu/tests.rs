@@ -1,5 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::common::color::space::ColorSpace;
+    use crate::common::pixel::meta::PixelMeta;
+    use crate::common::pixel::{AlphaPolicy, PixelFormat};
     use crate::data::buffer::Buffer;
     use crate::data::device::Device;
     use crate::data::neighborhood::{EdgeCondition, Neighborhood};
@@ -7,9 +10,6 @@ mod tests {
     use crate::gpu;
     use crate::graph::emitter::Emitter;
     use crate::graph::item::Item;
-    use crate::common::color::space::ColorSpace;
-    use crate::common::pixel::meta::PixelMeta;
-    use crate::common::pixel::{AlphaPolicy, PixelFormat};
     use crate::operation::blur::BlurProcessor;
     use crate::stage::{Processor, ProcessorContext};
 

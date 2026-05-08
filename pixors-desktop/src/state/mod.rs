@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-pub mod tab;
 pub mod editor;
 pub mod history;
+pub mod tab;
 
-pub use tab::{Tab, TabId, TabSource, TabView};
 pub use editor::EditorState;
+pub use tab::{Tab, TabId, TabSource, TabView};

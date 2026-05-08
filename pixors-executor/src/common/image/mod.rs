@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Error;
 use crate::common::color::space::ColorSpace;
 use crate::common::pixel::AlphaPolicy;
+use crate::error::Error;
 
 pub mod codec;
 pub mod exif;

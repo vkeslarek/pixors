@@ -5,11 +5,10 @@ use serde::{Deserialize, Serialize};
 use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::stage::{
-    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
-};
+use crate::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
 
-pub type CacheCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+pub type CacheCommitFn = Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+//               gen, mip,  tx,  ty,  px,  py,   w,   h, bytes
 
 static CACHE_SINK: RwLock<Option<Arc<CacheCommitFn>>> = RwLock::new(None);
 
@@ -36,7 +35,15 @@ static VCS_PORTS: PortSpecification = PortSpecification {
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ViewportCacheSink;
+pub struct ViewportCacheSink {
+    pub generation: u64,
+}
+
+impl ViewportCacheSink {
+    pub fn new(generation: u64) -> Self {
+        Self { generation }
+    }
+}
 
 impl Stage for ViewportCacheSink {
     fn kind(&self) -> &'static str {
@@ -49,12 +56,16 @@ impl Stage for ViewportCacheSink {
 
     fn consumer(&self) -> Option<Box<dyn Consumer>> {
         let cb = CACHE_SINK.read().unwrap().clone()?;
-        Some(Box::new(ViewportCacheSinkConsumer { cb }))
+        Some(Box::new(ViewportCacheSinkConsumer {
+            cb,
+            generation: self.generation,
+        }))
     }
 }
 
 pub struct ViewportCacheSinkConsumer {
     cb: Arc<CacheCommitFn>,
+    generation: u64,
 }
 
 impl Consumer for ViewportCacheSinkConsumer {
@@ -65,6 +76,7 @@ impl Consumer for ViewportCacheSinkConsumer {
             Buffer::Gpu(_) => return Err(Error::internal("ViewportCacheSink requires CPU tiles")),
         };
         (self.cb)(
+            self.generation,
             tile.coord.mip_level,
             tile.coord.tx,
             tile.coord.ty,

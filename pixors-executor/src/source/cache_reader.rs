@@ -2,16 +2,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::color::space::ColorSpace;
+use crate::common::pixel::meta::PixelMeta;
+use crate::common::pixel::{AlphaPolicy, PixelFormat};
 use crate::data::buffer::Buffer;
 use crate::data::tile::{Tile, TileCoord};
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::common::color::space::ColorSpace;
-use crate::common::pixel::meta::PixelMeta;
-use crate::common::pixel::{AlphaPolicy, PixelFormat};
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Producer,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, ProcessorContext, Producer, Stage,
 };
 
 static CR_INPUTS: &[PortDeclaration] = &[];
@@ -83,7 +82,12 @@ impl Stage for CacheReader {
         let rows = mip_h.div_ceil(self.tile_size);
 
         let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
-            Some(r) => (r.tx_start, r.tx_end.min(cols), r.ty_start, r.ty_end.min(rows)),
+            Some(r) => (
+                r.tx_start,
+                r.tx_end.min(cols),
+                r.ty_start,
+                r.ty_end.min(rows),
+            ),
             None => (0, cols, 0, rows),
         };
 
@@ -109,7 +113,12 @@ impl Producer for CacheReaderProducer {
         let rows = mip_h.div_ceil(self.tile_size);
 
         let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
-            Some(r) => (r.tx_start, r.tx_end.min(cols), r.ty_start, r.ty_end.min(rows)),
+            Some(r) => (
+                r.tx_start,
+                r.tx_end.min(cols),
+                r.ty_start,
+                r.ty_end.min(rows),
+            ),
             None => (0, cols, 0, rows),
         };
 
@@ -117,7 +126,10 @@ impl Producer for CacheReaderProducer {
         let dir = self.cache_dir.join(format!("mip_{}", self.mip_level));
 
         if !dir.is_dir() {
-            tracing::warn!("[pixors] cache_reader: cache dir does not exist: {}", dir.display());
+            tracing::warn!(
+                "[pixors] cache_reader: cache dir does not exist: {}",
+                dir.display()
+            );
             return Ok(());
         }
 
@@ -128,7 +140,10 @@ impl Producer for CacheReaderProducer {
                     Ok(b) => b,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(e) => {
-                        tracing::warn!("[pixors] cache_reader: failed to read {}: {e}", path.display());
+                        tracing::warn!(
+                            "[pixors] cache_reader: failed to read {}: {e}",
+                            path.display()
+                        );
                         continue;
                     }
                 };
@@ -137,7 +152,10 @@ impl Producer for CacheReaderProducer {
                     match lz4_flex::decompress_size_prepended(&bytes) {
                         Ok(b) => b,
                         Err(e) => {
-                            tracing::warn!("[pixors] cache_reader: failed to decompress {}: {e}", path.display());
+                            tracing::warn!(
+                                "[pixors] cache_reader: failed to decompress {}: {e}",
+                                path.display()
+                            );
                             continue;
                         }
                     }
@@ -149,7 +167,8 @@ impl Producer for CacheReaderProducer {
                 if coord.width == 0 || coord.height == 0 {
                     continue;
                 }
-                ctx.emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
+                ctx.emit
+                    .emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
             }
         }
         Ok(())

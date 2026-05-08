@@ -40,7 +40,11 @@ impl Pipeline {
     ) -> Result<Self, Error> {
         let mut g: Graph = graph.graph.clone();
         let gpu_ok = gpu::context::gpu_available();
-        let gpu_ctx = if gpu_ok { gpu::context::try_init() } else { None };
+        let gpu_ctx = if gpu_ok {
+            gpu::context::try_init()
+        } else {
+            None
+        };
 
         validate_ports(&g)?;
 
@@ -75,17 +79,10 @@ impl Pipeline {
             let kinds: Vec<_> = nodes.iter().map(|&id| g[id].kind()).collect();
 
             let chain_name = format!("chain_{idx}_{dev:?}_{}", kinds.join("→"));
-            tracing::info!(
-                "[pixors] compile: {chain_name} {} stage(s)",
-                num_stages,
-            );
+            tracing::info!("[pixors] compile: {chain_name} {} stage(s)", num_stages,);
 
-            let producer = nodes
-                .first()
-                .and_then(|&id| g[id].producer());
-            let consumer = nodes
-                .last()
-                .and_then(|&id| g[id].consumer());
+            let producer = nodes.first().and_then(|&id| g[id].producer());
+            let consumer = nodes.last().and_then(|&id| g[id].consumer());
             let mid_start = if producer.is_some() { 1 } else { 0 };
             let mid_end = nodes.len() - if consumer.is_some() { 1 } else { 0 };
             let kernels: Vec<Box<dyn crate::stage::Processor>> = nodes[mid_start..mid_end]
@@ -97,16 +94,25 @@ impl Pipeline {
                 })
                 .collect::<Result<_, _>>()?;
             compiled.push((
-                Box::new(ChainRunner::new(producer, kernels, consumer, dev, gpu_ctx.clone(), progress.clone(), chain_name)) as Box<dyn Runner>,
+                Box::new(ChainRunner::new(
+                    producer,
+                    kernels,
+                    consumer,
+                    dev,
+                    gpu_ctx.clone(),
+                    progress.clone(),
+                    chain_name,
+                )) as Box<dyn Runner>,
                 inputs,
                 outputs,
             ));
         }
 
-        tracing::info!("[pixors] compile: {} chains built, total_work={total_work}", compiled.len());
-        Ok(Pipeline {
-            chains: compiled,
-        })
+        tracing::info!(
+            "[pixors] compile: {} chains built, total_work={total_work}",
+            compiled.len()
+        );
+        Ok(Pipeline { chains: compiled })
     }
 }
 
@@ -264,7 +270,13 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
         .map(|id| {
             let d = match g[id].device() {
                 Device::Gpu if !gpu_ok => Device::Cpu,
-                Device::Either => if gpu_ok { Device::Gpu } else { Device::Cpu },
+                Device::Either => {
+                    if gpu_ok {
+                        Device::Gpu
+                    } else {
+                        Device::Cpu
+                    }
+                }
                 other => other,
             };
             (id, d)
@@ -431,6 +443,9 @@ fn compute_work_total(g: &Graph, order: &[StageId]) -> usize {
         output_work.insert(id, ow);
     }
 
-    tracing::info!("[pixors] compute_work_total: total_received={}", total_received);
+    tracing::info!(
+        "[pixors] compute_work_total: total_received={}",
+        total_received
+    );
     total_received
 }

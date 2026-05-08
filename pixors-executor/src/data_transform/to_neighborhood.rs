@@ -6,8 +6,7 @@ use crate::data::tile::{Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 use serde::{Deserialize, Serialize};
 

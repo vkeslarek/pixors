@@ -2,16 +2,15 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
 use crate::data::tile::Tile;
 use crate::data::tile::TileCoord;
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::common::pixel::meta::PixelMeta;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
 use crate::debug_stopwatch;
@@ -72,7 +71,11 @@ impl DownloadProcessor {
         }
     }
 
-    fn flush(&mut self, emit: &mut Emitter<Item>, gpu: &crate::gpu::context::GpuContext) -> Result<(), Error> {
+    fn flush(
+        &mut self,
+        emit: &mut Emitter<Item>,
+        gpu: &crate::gpu::context::GpuContext,
+    ) -> Result<(), Error> {
         if self.pending.is_empty() {
             return Ok(());
         }
@@ -129,7 +132,10 @@ impl Processor for DownloadProcessor {
             ctx.emit.emit(Item::Tile(tile));
             return Ok(());
         }
-        let gpu = ctx.gpu.as_ref().ok_or_else(|| Error::internal("GPU unavailable for download"))?;
+        let gpu = ctx
+            .gpu
+            .as_ref()
+            .ok_or_else(|| Error::internal("GPU unavailable for download"))?;
         gpu.scheduler().flush();
         let gbuf = tile.data.as_gpu().unwrap().clone();
         let alloc_size = gbuf.allocated_size;
@@ -162,7 +168,10 @@ impl Processor for DownloadProcessor {
         if let Some(gpu) = &ctx.gpu {
             self.flush(ctx.emit, gpu)?;
         }
-        tracing::info!("[pixors] download: finish — {} chunks flushed total", self.flushed_chunks);
+        tracing::info!(
+            "[pixors] download: finish — {} chunks flushed total",
+            self.flushed_chunks
+        );
         Ok(())
     }
 }

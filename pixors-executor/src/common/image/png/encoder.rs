@@ -51,8 +51,7 @@ fn write_png(
         info.icc_profile = Some(Cow::Owned(icc.clone()));
     }
 
-    let mut encoder = png::Encoder::with_info(w, info)
-        .map_err(|e| Error::Png(e.to_string()))?;
+    let mut encoder = png::Encoder::with_info(w, info).map_err(|e| Error::Png(e.to_string()))?;
 
     encoder.set_color(png_color_type(cfg.color_type));
     encoder.set_depth(png_bit_depth(cfg.bit_depth));
@@ -112,7 +111,9 @@ fn write_png(
             encoder
                 .set_dispose_op(match frame.dispose_op {
                     crate::common::image::codec::PngDisposeOp::None => png::DisposeOp::None,
-                    crate::common::image::codec::PngDisposeOp::Background => png::DisposeOp::Background,
+                    crate::common::image::codec::PngDisposeOp::Background => {
+                        png::DisposeOp::Background
+                    }
                     crate::common::image::codec::PngDisposeOp::Previous => png::DisposeOp::Previous,
                 })
                 .map_err(|e| Error::Png(e.to_string()))?;
@@ -190,9 +191,17 @@ fn png_filter(f: PngFilter) -> png::Filter {
 
 fn png_srgb_intent(i: crate::common::image::codec::PngSrgbIntent) -> png::SrgbRenderingIntent {
     match i {
-        crate::common::image::codec::PngSrgbIntent::Perceptual => png::SrgbRenderingIntent::Perceptual,
-        crate::common::image::codec::PngSrgbIntent::RelativeColorimetric => png::SrgbRenderingIntent::RelativeColorimetric,
-        crate::common::image::codec::PngSrgbIntent::Saturation => png::SrgbRenderingIntent::Saturation,
-        crate::common::image::codec::PngSrgbIntent::AbsoluteColorimetric => png::SrgbRenderingIntent::AbsoluteColorimetric,
+        crate::common::image::codec::PngSrgbIntent::Perceptual => {
+            png::SrgbRenderingIntent::Perceptual
+        }
+        crate::common::image::codec::PngSrgbIntent::RelativeColorimetric => {
+            png::SrgbRenderingIntent::RelativeColorimetric
+        }
+        crate::common::image::codec::PngSrgbIntent::Saturation => {
+            png::SrgbRenderingIntent::Saturation
+        }
+        crate::common::image::codec::PngSrgbIntent::AbsoluteColorimetric => {
+            png::SrgbRenderingIntent::AbsoluteColorimetric
+        }
     }
 }

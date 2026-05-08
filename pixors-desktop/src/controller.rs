@@ -6,8 +6,8 @@ use pixors_executor::source::cache_reader::TileRange;
 use std::sync::Arc;
 
 use crate::app::{App, Msg, PaneKind};
-use crate::components::{filters_panel, layers_panel, menu_bar, tab_bar};
 use crate::components::toolbar::Tool;
+use crate::components::{filters_panel, layers_panel, menu_bar, tab_bar};
 
 impl App {
     pub(crate) fn find_pane(&self, kind: PaneKind) -> Option<pane_grid::Pane> {
@@ -22,9 +22,7 @@ impl App {
         }
         let target = self.panes.iter().next().map(|(p, _)| *p);
         if let Some(target) = target {
-            let _ = self
-                .panes
-                .split(pane_grid::Axis::Horizontal, target, kind);
+            let _ = self.panes.split(pane_grid::Axis::Horizontal, target, kind);
         } else {
             let (state, _) = pane_grid::State::new(kind);
             self.panes = state;
@@ -52,7 +50,11 @@ impl App {
             Msg::Frames => {} // Just to wake up the event loop
             Msg::PipelineEvent(e) => match e {
                 PipelineEvent::Progress { done, total } => {
-                    let p = if total > 0 { done as f32 / total as f32 } else { 1.0 };
+                    let p = if total > 0 {
+                        done as f32 / total as f32
+                    } else {
+                        1.0
+                    };
                     for tab in &mut self.state.tabs {
                         if tab.view.loading {
                             tab.view.progress = p;
@@ -67,7 +69,8 @@ impl App {
                     }
                 }
                 PipelineEvent::Error(s) => {
-                    self.dispatcher.on_pipeline_error(&mut self.state, s.clone());
+                    self.dispatcher
+                        .on_pipeline_error(&mut self.state, s.clone());
                     for tab in &mut self.state.tabs {
                         tab.view.loading = false;
                     }
@@ -102,9 +105,10 @@ impl App {
                 }
                 tab_bar::Msg::DragDrop => {
                     if let (Some(from), Some(to)) = (self.tabs.drag_from, self.tabs.drag_over)
-                        && from != to {
-                            self.state.swap_tabs(from, to);
-                        }
+                        && from != to
+                    {
+                        self.state.swap_tabs(from, to);
+                    }
                     self.tabs.drag_from = None;
                     self.tabs.drag_over = None;
                 }
@@ -178,7 +182,8 @@ impl App {
     pub(crate) fn handle_tick(&mut self) {
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        let mut mip_requests: Vec<(TabId, u32, TileRange, std::path::PathBuf, u32, u32)> = Vec::new();
+        let mut mip_requests: Vec<(TabId, u32, TileRange, std::path::PathBuf, u32, u32)> =
+            Vec::new();
 
         for tab in &mut self.state.tabs {
             if tab.viewport_cache.lock().is_ok_and(|g| g.has_pending()) {
@@ -199,9 +204,10 @@ impl App {
             // Skip if all tiles already in cache
             if let Some(tab) = self.state.tab(tab_id)
                 && let Ok(guard) = tab.viewport_cache.lock()
-                    && guard.has_all_tiles(mip, &range) {
-                        continue;
-                    }
+                && guard.has_all_tiles(mip, &range)
+            {
+                continue;
+            }
 
             let _ = self.dispatcher.dispatch(
                 Arc::new(crate::action::actions::mip_fetch::RequestMipFetch {
@@ -254,7 +260,9 @@ impl App {
                         )
                         .save_file()
                     {
-                        let Some(tab) = self.state.active_tab_mut() else { return; };
+                        let Some(tab) = self.state.active_tab_mut() else {
+                            return;
+                        };
                         let tab_id = tab.id;
                         tab.view.loading = true;
                         tab.view.progress = 0.0;
@@ -297,8 +305,61 @@ impl App {
     pub(crate) fn handle_filters_msg(&mut self, m: filters_panel::Msg) {
         match m {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
-            _ => self.filters.update(m),
+            filters_panel::Msg::SetBlur(v) => {
+                self.filters.blur_radius = v;
+                self.filters.previewing = true;
+                self.dispatch_blur_preview(v as u32);
+            }
+            filters_panel::Msg::CancelPreview => {
+                self.filters.previewing = false;
+                self.dispatch_blur_cancel();
+            }
         }
+    }
+
+    fn dispatch_blur_preview(&mut self, radius: u32) {
+        let Some(tab) = self.state.active_tab_mut() else {
+            return;
+        };
+        tab.view.preview_gen += 1;
+        let generation = tab.view.preview_gen;
+
+        let (mip, range) = {
+            let vp = tab.viewport_state.borrow();
+            let mip = vp.current_mip;
+            let range = vp
+                .camera
+                .padded_tile_range(mip, crate::viewport::program::TILE_SIZE, 2);
+            (mip, range)
+        };
+
+        let action = crate::action::actions::blur_preview::BlurPreview {
+            tab: tab.id,
+            radius,
+            generation,
+            cache_dir: tab.cache_dir.clone(),
+            img_w: tab.desc.width,
+            img_h: tab.desc.height,
+            mip,
+            range,
+        };
+
+        let _ = self.dispatcher.dispatch(Arc::new(action), &mut self.state);
+    }
+
+    fn dispatch_blur_cancel(&mut self) {
+        let Some(tab) = self.state.active_tab_mut() else {
+            return;
+        };
+        let generation = tab.view.preview_gen;
+        tab.view.preview_gen = 0;
+
+        let action = crate::action::actions::blur_cancel::BlurCancel {
+            tab: tab.id,
+            generation,
+        };
+
+        let _ = self.dispatcher.dispatch(Arc::new(action), &mut self.state);
     }
 
     pub(crate) fn push_error(&mut self, msg: String) {

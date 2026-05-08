@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::gpu::kernel::GpuKernel;
 use crate::gpu::pool::{BufferPool, GpuBuffer};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::encoder::EncoderSlot;
 use super::cache::{self, PipelineCache};
+use super::encoder::EncoderSlot;
 
 const NUM_SLOTS: usize = 4;
 const BATCH_SIZE: usize = 32;
@@ -60,7 +60,13 @@ impl Scheduler {
         dispatch_y: u32,
     ) -> Result<GpuBuffer, String> {
         let input_bufs: Vec<&wgpu::Buffer> = inputs.iter().map(|b| b.buffer()).collect();
-        self.record_dispatch(kernel, &input_bufs, out_buf.buffer(), dispatch_x, dispatch_y);
+        self.record_dispatch(
+            kernel,
+            &input_bufs,
+            out_buf.buffer(),
+            dispatch_x,
+            dispatch_y,
+        );
         Ok(out_buf)
     }
 
@@ -150,7 +156,9 @@ impl Scheduler {
     pub fn allocate_buffer(&self, size: u64) -> GpuBuffer {
         self.pool.acquire(
             size,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
         )
     }
 

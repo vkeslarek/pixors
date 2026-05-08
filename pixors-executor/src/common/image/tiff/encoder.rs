@@ -66,10 +66,16 @@ fn deflate_level(l: u8) -> tiff::encoder::DeflateLevel {
     }
 }
 
-fn tiff_compression(c: &crate::common::image::codec::TiffCompression) -> tiff::encoder::Compression {
+fn tiff_compression(
+    c: &crate::common::image::codec::TiffCompression,
+) -> tiff::encoder::Compression {
     match c {
-        crate::common::image::codec::TiffCompression::None => tiff::encoder::Compression::Uncompressed,
-        crate::common::image::codec::TiffCompression::PackBits => tiff::encoder::Compression::Packbits,
+        crate::common::image::codec::TiffCompression::None => {
+            tiff::encoder::Compression::Uncompressed
+        }
+        crate::common::image::codec::TiffCompression::PackBits => {
+            tiff::encoder::Compression::Packbits
+        }
         crate::common::image::codec::TiffCompression::Lzw { .. } => tiff::encoder::Compression::Lzw,
         crate::common::image::codec::TiffCompression::Deflate { level, .. } => {
             tiff::encoder::Compression::Deflate(deflate_level(*level))
@@ -82,7 +88,9 @@ fn tiff_predictor(
 ) -> Option<tiff::encoder::Predictor> {
     use crate::common::image::codec::TiffCompression;
     let pred = match c {
-        TiffCompression::Lzw { predictor } | TiffCompression::Deflate { predictor, .. } => *predictor,
+        TiffCompression::Lzw { predictor } | TiffCompression::Deflate { predictor, .. } => {
+            *predictor
+        }
         _ => TiffPredictor::None,
     };
     match pred {

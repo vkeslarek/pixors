@@ -88,9 +88,9 @@ impl PathBuilder {
 
         for (i, stage) in inner.stages.iter().enumerate() {
             let key = format!("{:?}", stage);
-            let sid = *seen.entry(key).or_insert_with(|| {
-                graph.add_stage(stage.clone())
-            });
+            let sid = *seen
+                .entry(key)
+                .or_insert_with(|| graph.add_stage(stage.clone()));
             remap[i] = Some(sid);
         }
 

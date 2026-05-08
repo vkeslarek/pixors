@@ -2,8 +2,7 @@ use iced::widget::{button, column, container, text};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::theme::{
-    self, ACCENT, BG_BASE, BG_HOVER, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY,
-    WORKSPACE_BAR_W,
+    self, ACCENT, BG_BASE, BG_HOVER, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY, WORKSPACE_BAR_W,
 };
 
 #[derive(Debug, Clone)]
@@ -70,7 +69,12 @@ fn ws_btn(ws: Workspace, is_active: bool) -> Element<'static, Msg> {
     } else if available {
         TEXT_SECONDARY
     } else {
-        Color::from_rgba(theme::TEXT_MUTED.r, theme::TEXT_MUTED.g, theme::TEXT_MUTED.b, 0.4)
+        Color::from_rgba(
+            theme::TEXT_MUTED.r,
+            theme::TEXT_MUTED.g,
+            theme::TEXT_MUTED.b,
+            0.4,
+        )
     };
     let icon = text(ws.icon())
         .size(20)
@@ -89,22 +93,20 @@ fn ws_btn(ws: Workspace, is_active: bool) -> Element<'static, Msg> {
             ..Default::default()
         });
 
-    let mut btn = button(inner)
-        .width(Length::Fill)
-        .style(move |_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            let bg = if hovered && available {
-                BG_HOVER
-            } else {
-                Color::TRANSPARENT
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border::default().rounded(8),
-                text_color: icon_color,
-                ..Default::default()
-            }
-        });
+    let mut btn = button(inner).width(Length::Fill).style(move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered);
+        let bg = if hovered && available {
+            BG_HOVER
+        } else {
+            Color::TRANSPARENT
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border::default().rounded(8),
+            text_color: icon_color,
+            ..Default::default()
+        }
+    });
     if available {
         btn = btn.on_press(Msg::Select(ws));
     }
@@ -120,15 +122,19 @@ fn footer_btn(label: &'static str) -> Element<'static, Msg> {
                 .color(TEXT_MUTED)
                 .center(),
         )
-            .width(Length::Fill)
-            .height(34)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill),
+        .width(Length::Fill)
+        .height(34)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill),
     )
     .width(Length::Fill)
     .style(|_, status| {
         let hovered = matches!(status, button::Status::Hovered);
-        let bg = if hovered { BG_HOVER } else { Color::TRANSPARENT };
+        let bg = if hovered {
+            BG_HOVER
+        } else {
+            Color::TRANSPARENT
+        };
         button::Style {
             background: Some(Background::Color(bg)),
             border: Border::default().rounded(8),

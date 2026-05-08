@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use pixors_executor::common::color::space::ColorSpace;
-use pixors_executor::common::image::codec::EncoderConfig;
 use pixors_executor::common::image::Image;
+use pixors_executor::common::image::codec::EncoderConfig;
 use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::operation::color::ColorConvert;
@@ -41,22 +41,22 @@ impl Action for Export {
         )));
 
         let encoder_sink = match &self.config {
-            EncoderConfig::Png(png_cfg) => SinkNode::PngEncoderV2(
-                pixors_executor::sink::png_encoder_v2::PngEncoderV2 {
+            EncoderConfig::Png(png_cfg) => {
+                SinkNode::PngEncoderV2(pixors_executor::sink::png_encoder_v2::PngEncoderV2 {
                     path: self.save_path.clone(),
                     config: png_cfg.clone(),
                     dpi: self.dpi,
                     icc_profile: self.icc_profile.clone(),
-                },
-            ),
-            EncoderConfig::Tiff(tiff_cfg) => SinkNode::TiffEncoder(
-                pixors_executor::sink::tiff_encoder::TiffEncoderStage {
+                })
+            }
+            EncoderConfig::Tiff(tiff_cfg) => {
+                SinkNode::TiffEncoder(pixors_executor::sink::tiff_encoder::TiffEncoderStage {
                     path: self.save_path.clone(),
                     config: tiff_cfg.clone(),
                     dpi: self.dpi,
                     icc_profile: self.icc_profile.clone(),
-                },
-            ),
+                })
+            }
         };
 
         let graph = PathBuilder::new()

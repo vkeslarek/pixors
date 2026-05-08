@@ -39,7 +39,11 @@ impl TiledTexture {
     fn create_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
         device.create_texture(&wgpu::TextureDescriptor {
             label: Some("viewport_tiled_texture"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -83,11 +87,7 @@ impl TiledTexture {
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: px,
-                    y: py,
-                    z: 0,
-                },
+                origin: wgpu::Origin3d { x: px, y: py, z: 0 },
                 aspect: wgpu::TextureAspect::All,
             },
             bytes,

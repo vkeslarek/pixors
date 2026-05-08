@@ -13,7 +13,6 @@ pub use component::Component;
 // Alpha policy — runtime param controlling premultiplication on pack
 // ---------------------------------------------------------------------------
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlphaPolicy {
     PremultiplyOnPack,
@@ -74,8 +73,8 @@ mod ycbcr;
 
 pub use cmyk::{Cmyk, CmykA};
 pub use format::PixelFormat;
-pub use lab::Lab;
 pub use gray::{Gray, GrayAlpha};
+pub use lab::Lab;
 pub use meta::PixelMeta;
 pub use rgb::Rgb;
 pub use rgba::Rgba;

@@ -3,8 +3,7 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
 use crate::data::device::Device;

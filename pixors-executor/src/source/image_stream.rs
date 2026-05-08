@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::image::codec::PageStream;
 use crate::error::Error;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, ProcessorContext,
-    Producer, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, ProcessorContext, Producer, Stage,
 };
 
 static IMG_STREAM_INPUTS: &[PortDeclaration] = &[];

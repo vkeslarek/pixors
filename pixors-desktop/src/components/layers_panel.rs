@@ -22,11 +22,36 @@ pub struct LayerInfo {
 impl LayerInfo {
     fn fake_layers() -> Vec<Self> {
         vec![
-            LayerInfo { name: "Background".into(), visible: true, opacity: 1.0, color: Color::from_rgb(0.3, 0.5, 0.8) },
-            LayerInfo { name: "Gradient Map".into(), visible: true, opacity: 0.8, color: Color::from_rgb(0.8, 0.3, 0.5) },
-            LayerInfo { name: "Text overlay".into(), visible: true, opacity: 1.0, color: Color::from_rgb(0.9, 0.9, 0.2) },
-            LayerInfo { name: "Vignette".into(), visible: false, opacity: 0.5, color: Color::from_rgb(0.1, 0.1, 0.1) },
-            LayerInfo { name: "Sharpening".into(), visible: true, opacity: 1.0, color: Color::from_rgb(0.5, 0.5, 0.5) },
+            LayerInfo {
+                name: "Background".into(),
+                visible: true,
+                opacity: 1.0,
+                color: Color::from_rgb(0.3, 0.5, 0.8),
+            },
+            LayerInfo {
+                name: "Gradient Map".into(),
+                visible: true,
+                opacity: 0.8,
+                color: Color::from_rgb(0.8, 0.3, 0.5),
+            },
+            LayerInfo {
+                name: "Text overlay".into(),
+                visible: true,
+                opacity: 1.0,
+                color: Color::from_rgb(0.9, 0.9, 0.2),
+            },
+            LayerInfo {
+                name: "Vignette".into(),
+                visible: false,
+                opacity: 0.5,
+                color: Color::from_rgb(0.1, 0.1, 0.1),
+            },
+            LayerInfo {
+                name: "Sharpening".into(),
+                visible: true,
+                opacity: 1.0,
+                color: Color::from_rgb(0.5, 0.5, 0.5),
+            },
         ]
     }
 }
@@ -60,7 +85,11 @@ impl State {
                 .map(|(i, layer)| layer_row(i, layer, i == self.active))
                 .collect();
 
-            column(items).spacing(2).padding([4, 8]).width(Length::Fill).into()
+            column(items)
+                .spacing(2)
+                .padding([4, 8])
+                .width(Length::Fill)
+                .into()
         }
     }
 }
@@ -74,14 +103,16 @@ fn layer_row<'a>(i: usize, layer: &'a LayerInfo, is_active: bool) -> Element<'a,
             border: Border {
                 radius: 3.0.into(),
                 width: if is_active { 2.0 } else { 0.0 },
-                color: if is_active { ACCENT } else { Color::TRANSPARENT },
+                color: if is_active {
+                    ACCENT
+                } else {
+                    Color::TRANSPARENT
+                },
             },
             ..Default::default()
         });
 
-    let name = text(layer.name.as_str())
-        .size(11)
-        .color(TEXT_SECONDARY);
+    let name = text(layer.name.as_str()).size(11).color(TEXT_SECONDARY);
 
     let eye_icon = if layer.visible { "👁" } else { "—" };
     let visibility_btn = button(text(eye_icon).size(12))
@@ -89,7 +120,11 @@ fn layer_row<'a>(i: usize, layer: &'a LayerInfo, is_active: bool) -> Element<'a,
         .padding(2)
         .style(|_, status| {
             let hovered = matches!(status, button::Status::Hovered);
-            let bg = if hovered { Color::from_rgba(1.0, 1.0, 1.0, 0.08) } else { Color::TRANSPARENT };
+            let bg = if hovered {
+                Color::from_rgba(1.0, 1.0, 1.0, 0.08)
+            } else {
+                Color::TRANSPARENT
+            };
             button::Style {
                 background: Some(Background::Color(bg)),
                 border: Border::default().rounded(3),
@@ -102,14 +137,24 @@ fn layer_row<'a>(i: usize, layer: &'a LayerInfo, is_active: bool) -> Element<'a,
         .size(9)
         .color(TEXT_MUTED);
 
-    let row_content = row![thumb, name, iced::widget::Space::new().width(Length::Fill), opacity_text, visibility_btn]
-        .spacing(6)
-        .align_y(iced::Alignment::Center);
+    let row_content = row![
+        thumb,
+        name,
+        iced::widget::Space::new().width(Length::Fill),
+        opacity_text,
+        visibility_btn
+    ]
+    .spacing(6)
+    .align_y(iced::Alignment::Center);
 
     container(row_content)
         .padding([6, 8])
         .style(move |_| container::Style {
-            background: Some(Background::Color(if is_active { BG_ELEVATED } else { Color::TRANSPARENT })),
+            background: Some(Background::Color(if is_active {
+                BG_ELEVATED
+            } else {
+                Color::TRANSPARENT
+            })),
             border: Border {
                 radius: 4.0.into(),
                 ..Default::default()

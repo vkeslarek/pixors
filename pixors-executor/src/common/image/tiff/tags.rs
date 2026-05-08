@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use ::tiff as tiff;
+use ::tiff;
 
-use crate::common::color::space::ColorSpace;
 use super::super::Orientation;
+use crate::common::color::space::ColorSpace;
 
 // ── Missing from tiff::tags::Tag enum ──────────────────────────────────────
 const TAG_PAGE_NAME: u16 = 285;
@@ -43,12 +43,16 @@ pub fn read_rational_tag(
         Some(Value::Rational(num, den)) if den != 0 => Some(num as f32 / den as f32),
         Some(Value::List(vals)) if !vals.is_empty() => {
             if let Value::Rational(num, den) = vals[0] {
-                if den != 0 { Some(num as f32 / den as f32) } else { None }
+                if den != 0 {
+                    Some(num as f32 / den as f32)
+                } else {
+                    None
+                }
             } else {
                 None
             }
         }
-        Some(Value::Short(v))    => Some(v as f32),
+        Some(Value::Short(v)) => Some(v as f32),
         Some(Value::Unsigned(v)) => Some(v as f32),
         _ => None,
     }
@@ -126,9 +130,7 @@ pub fn detect_tiff_color_space(
 
 /// Read ExtraSamples tag (338). Returns the extra sample type if present.
 /// 0 = unspecified, 1 = associated (premultiplied), 2 = unassociated (straight).
-pub fn read_extra_samples(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> Option<u32> {
+pub fn read_extra_samples(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> Option<u32> {
     decoder
         .find_tag_unsigned::<u32>(tiff::tags::Tag::ExtraSamples)
         .ok()
@@ -136,9 +138,7 @@ pub fn read_extra_samples(
 }
 
 /// Read EXIF blob from TIFF sub-IFD (tag 34665).
-pub fn read_exif_blob(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> Option<Vec<u8>> {
+pub fn read_exif_blob(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> Option<Vec<u8>> {
     decoder
         .get_tag_u8_vec(tiff::tags::Tag::ExifDirectory)
         .ok()
@@ -146,9 +146,7 @@ pub fn read_exif_blob(
 }
 
 /// Read ICC profile bytes (tag 34675).
-pub fn read_icc_profile(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> Option<Vec<u8>> {
+pub fn read_icc_profile(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> Option<Vec<u8>> {
     decoder
         .get_tag_u8_vec(tiff::tags::Tag::IccProfile)
         .ok()
@@ -156,9 +154,7 @@ pub fn read_icc_profile(
 }
 
 /// Read PlanarConfiguration tag (284). Returns true if planar (chunky = false).
-pub fn read_planar_config(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> bool {
+pub fn read_planar_config(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> bool {
     decoder
         .find_tag_unsigned::<u32>(tiff::tags::Tag::PlanarConfiguration)
         .ok()
@@ -177,9 +173,7 @@ pub fn read_tag_ascii(
 
 /// Read ColorMap tag (320) — 3 × 2^bits u16 entries (R section, G section, B section).
 /// TIFF stores colormap values as u16 in [0..65535]. Returns None if tag absent or malformed.
-pub fn read_color_map(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> Option<Vec<u16>> {
+pub fn read_color_map(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> Option<Vec<u16>> {
     use tiff::decoder::ifd::Value;
     match decoder.find_tag(tiff::tags::Tag::ColorMap).ok()? {
         Some(Value::List(list)) => {
@@ -198,9 +192,7 @@ pub fn read_color_map(
 }
 
 /// Returns true when PhotometricInterpretation == 0 (WhiteIsZero — inverted gray).
-pub fn read_white_is_zero(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> bool {
+pub fn read_white_is_zero(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> bool {
     decoder
         .find_tag_unsigned::<u32>(tiff::tags::Tag::PhotometricInterpretation)
         .ok()
@@ -211,9 +203,7 @@ pub fn read_white_is_zero(
 
 /// Read YCbCrSubSampling tag (530) — horizontal and vertical factors.
 /// Returns (1, 1) when absent (no subsampling).
-pub fn read_ycbcr_subsampling(
-    decoder: &mut tiff::decoder::Decoder<BufReader<File>>,
-) -> (u8, u8) {
+pub fn read_ycbcr_subsampling(decoder: &mut tiff::decoder::Decoder<BufReader<File>>) -> (u8, u8) {
     use tiff::decoder::ifd::Value;
     let val = decoder
         .find_tag(tiff::tags::Tag::Unknown(TAG_YCBCR_SUBSAMPLING))

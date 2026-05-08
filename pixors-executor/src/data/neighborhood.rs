@@ -1,6 +1,6 @@
+use crate::common::pixel::meta::PixelMeta;
 use crate::data::tile::Tile;
 use crate::data::tile::TileCoord;
-use crate::common::pixel::meta::PixelMeta;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NeighborhoodCoord {

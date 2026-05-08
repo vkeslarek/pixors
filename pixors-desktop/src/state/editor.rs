@@ -57,7 +57,9 @@ impl EditorState {
             }
             tracing::info!(
                 "[state] close_tab id={id:?} title=\"{title}\" active {:?}→{:?} tab_count={}",
-                old_active, self.active, self.tabs.len(),
+                old_active,
+                self.active,
+                self.tabs.len(),
             );
         } else {
             tracing::warn!("[state] close_tab id={id:?} not found",);

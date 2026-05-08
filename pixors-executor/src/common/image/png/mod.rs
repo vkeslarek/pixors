@@ -1,20 +1,20 @@
 mod color;
-mod stream;
 pub mod encoder;
+mod stream;
 
 pub use color::detect_color_space;
 pub use encoder::PngEncoder;
-pub use stream::{png_pixel_format, PngPageStream};
+pub use stream::{PngPageStream, png_pixel_format};
 
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use ::png as png;
 use ::exif as exif_crate;
+use ::png;
 
-use crate::error::Error;
 use crate::common::pixel::AlphaPolicy;
+use crate::error::Error;
 
 use super::codec::{ImageDecoder, PageStream};
 use super::*;
@@ -45,19 +45,25 @@ impl ImageDecoder for PngDecoder {
         if animated {
             let mut frame_num = 1u32;
             while let Ok(frame) = reader.next_frame_info() {
-                        let delay = (frame.delay_num as u32 * 1000)
-                            .div_ceil(frame.delay_den.max(1) as u32);
-                        let dispose = match frame.dispose_op {
-                            png::DisposeOp::None => DisposeOp::None,
-                            png::DisposeOp::Background => DisposeOp::Background,
-                            png::DisposeOp::Previous => DisposeOp::Previous,
-                        };
-                        let blend = match frame.blend_op {
-                            png::BlendOp::Source => BlendMode::Source,
-                            png::BlendOp::Over => BlendMode::Over,
-                        };
-                        apng_frames.push((delay, dispose, blend, frame.x_offset, frame.y_offset, frame_num));
-                        frame_num += 1;
+                let delay = (frame.delay_num as u32 * 1000).div_ceil(frame.delay_den.max(1) as u32);
+                let dispose = match frame.dispose_op {
+                    png::DisposeOp::None => DisposeOp::None,
+                    png::DisposeOp::Background => DisposeOp::Background,
+                    png::DisposeOp::Previous => DisposeOp::Previous,
+                };
+                let blend = match frame.blend_op {
+                    png::BlendOp::Source => BlendMode::Source,
+                    png::BlendOp::Over => BlendMode::Over,
+                };
+                apng_frames.push((
+                    delay,
+                    dispose,
+                    blend,
+                    frame.x_offset,
+                    frame.y_offset,
+                    frame_num,
+                ));
+                frame_num += 1;
             }
         }
         let info = reader.info();
@@ -78,7 +84,10 @@ impl ImageDecoder for PngDecoder {
         metadata.push(Metadata::ImageHeight(info.height));
 
         if let Some(dpi_val) = dpi {
-            metadata.push(Metadata::Dpi { x: dpi_val.x, y: dpi_val.y });
+            metadata.push(Metadata::Dpi {
+                x: dpi_val.x,
+                y: dpi_val.y,
+            });
         }
 
         let mut text_pairs: Vec<(&str, String)> = Vec::new();
@@ -169,7 +178,10 @@ impl ImageDecoder for PngDecoder {
                 name: format!("{name} frame {frame_num}"),
                 color_space,
                 alpha_policy: AlphaPolicy::Straight,
-                offset: PixelOffset { x: x_off as i32, y: y_off as i32 },
+                offset: PixelOffset {
+                    x: x_off as i32,
+                    y: y_off as i32,
+                },
                 opacity: 1.0,
                 blend_mode: blend,
                 visible: true,

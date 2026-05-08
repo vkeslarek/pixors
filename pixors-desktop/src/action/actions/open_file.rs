@@ -10,9 +10,7 @@ use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::mip_downsample::MipDownsample;
 use pixors_executor::sink::cache_writer::CacheWriter;
-use pixors_executor::sink::viewport_cache_sink::{
-    install_viewport_cache_sink, ViewportCacheSink,
-};
+use pixors_executor::sink::viewport_cache_sink::{ViewportCacheSink, install_viewport_cache_sink};
 use pixors_executor::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
@@ -51,7 +49,10 @@ impl Action for OpenFile {
 
         tracing::info!(
             "[pixors] image loaded: {}×{} {} format={}",
-            w, h, desc.bit_depth, desc.format
+            w,
+            h,
+            desc.bit_depth,
+            desc.format
         );
         for meta in &desc.metadata {
             tracing::info!("[pixors] exif: {:20} = {}", meta.label(), meta.value_str());
@@ -65,9 +66,10 @@ impl Action for OpenFile {
         {
             let c = vp_cache.clone();
             install_viewport_cache_sink(Box::new(
-                move |mip, tx, ty, px, py, tw, th, bytes| {
+                move |generation, mip, tx, ty, px, py, tw, th, bytes| {
                     if let Ok(mut guard) = c.lock() {
                         guard.insert(
+                            generation,
                             TileGridPos {
                                 mip_level: mip,
                                 tx,
@@ -79,6 +81,7 @@ impl Action for OpenFile {
                                 width: tw,
                                 height: th,
                                 bytes: bytes.to_vec(),
+                                generation,
                             },
                         );
                     }
@@ -109,11 +112,6 @@ impl Action for OpenFile {
                 image_width: w,
                 image_height: h,
                 tile_size: TILE_SIZE,
-            })
-            .op(ColorConvert {
-                target_format: PixelFormat::Rgba8,
-                target_color_space: ColorSpace::SRGB,
-                target_alpha: AlphaPolicy::Straight,
             });
 
         let [pipe_cache, pipe_vp] = pipe.split();
@@ -122,7 +120,15 @@ impl Action for OpenFile {
             cache_dir: cache_dir.clone(),
         });
 
-        let graph = pipe_vp.sink(ViewportCacheSink).compile();
+        // Only the viewport path converts to sRGB; disk stores ACEScg f16
+        let graph = pipe_vp
+            .op(ColorConvert {
+                target_format: PixelFormat::Rgba8,
+                target_color_space: ColorSpace::SRGB,
+                target_alpha: AlphaPolicy::Straight,
+            })
+            .sink(ViewportCacheSink::new(0))
+            .compile();
 
         let tab_id = state.alloc_tab_id();
         let title = self
@@ -158,6 +164,7 @@ impl Action for OpenFile {
                 active_mip: 0,
                 loading: true,
                 progress: 0.0,
+                preview_gen: 0,
             },
         });
 
@@ -172,9 +179,10 @@ impl Action for OpenFile {
 
     fn apply(&self, state: &mut EditorState, status: PipelineStatus) {
         if let Some(tab_id) = *self.pending_tab_id.lock().unwrap()
-            && let Some(tab) = state.tab_mut(tab_id) {
-                tab.view.loading = false;
-            }
+            && let Some(tab) = state.tab_mut(tab_id)
+        {
+            tab.view.loading = false;
+        }
 
         if let PipelineStatus::Error(e) = status {
             tracing::error!("OpenFile failed: {e}");

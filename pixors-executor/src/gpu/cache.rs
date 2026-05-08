@@ -168,8 +168,8 @@ fn build_pipeline(device: &wgpu::Device, sig: &KernelSignature) -> Result<Cached
 
     // Group 1: params uniform
     if has_params {
-        bgls.push(Arc::new(
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        bgls.push(Arc::new(device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
                 label: Some("group1"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -181,8 +181,8 @@ fn build_pipeline(device: &wgpu::Device, sig: &KernelSignature) -> Result<Cached
                     },
                     count: None,
                 }],
-            }),
-        ));
+            },
+        )));
     }
 
     let bgl_refs: Vec<&wgpu::BindGroupLayout> = bgls.iter().map(|b| b.as_ref()).collect();
@@ -200,16 +200,16 @@ fn build_pipeline(device: &wgpu::Device, sig: &KernelSignature) -> Result<Cached
         bind_group_layouts: &bgl_refs,
         push_constant_ranges: &[],
     });
-    let pipeline = Arc::new(device.create_compute_pipeline(
-        &wgpu::ComputePipelineDescriptor {
+    let pipeline = Arc::new(
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some(sig.name),
             layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: sig.entry,
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
-        },
-    ));
+        }),
+    );
 
     Ok(CachedPipeline {
         pipeline,

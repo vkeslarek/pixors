@@ -1,7 +1,8 @@
-use std::sync::Arc;
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
+use crate::common::pixel::PixelFormat;
 use crate::data::buffer::Buffer;
 use crate::data::device::Device;
 use crate::data::neighborhood::Neighborhood;
@@ -14,10 +15,8 @@ use crate::gpu::kernel::{
 };
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::common::pixel::PixelFormat;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
 use crate::debug_stopwatch;
@@ -43,9 +42,15 @@ pub struct Blur {
 }
 
 impl Stage for Blur {
-    fn kind(&self) -> &'static str { "blur" }
-    fn ports(&self) -> &'static PortSpecification { &BLUR_PORTS }
-    fn device(&self) -> Device { Device::Either }
+    fn kind(&self) -> &'static str {
+        "blur"
+    }
+    fn ports(&self) -> &'static PortSpecification {
+        &BLUR_PORTS
+    }
+    fn device(&self) -> Device {
+        Device::Either
+    }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(BlurProcessor::new(self.radius)))
     }
@@ -58,7 +63,9 @@ pub struct BlurProcessor {
 }
 
 impl BlurProcessor {
-    pub fn new(radius: u32) -> Self { Self { radius } }
+    pub fn new(radius: u32) -> Self {
+        Self { radius }
+    }
 }
 
 impl Processor for BlurProcessor {
@@ -78,26 +85,52 @@ impl Processor for BlurProcessor {
 const BLUR_SPV: &[u8] = include_bytes!(concat!(env!("SHADER_OUT_DIR"), "/blur.spv"));
 
 static BLUR_RES_IN: &[ResourceDeclaration] = &[ResourceDeclaration {
-    name: "src", element: BindingElement::PixelRgba8U32, access: BindingAccess::Read,
+    name: "src",
+    element: BindingElement::PixelRgba8U32,
+    access: BindingAccess::Read,
 }];
 static BLUR_RES_OUT: &[ResourceDeclaration] = &[ResourceDeclaration {
-    name: "dst", element: BindingElement::PixelRgba8U32, access: BindingAccess::Write,
+    name: "dst",
+    element: BindingElement::PixelRgba8U32,
+    access: BindingAccess::Write,
 }];
 static BLUR_PARAMS_DECL: &[ParameterDeclaration] = &[
-    ParameterDeclaration { name: "width",  kind: ParameterType::U32 },
-    ParameterDeclaration { name: "height", kind: ParameterType::U32 },
-    ParameterDeclaration { name: "radius", kind: ParameterType::U32 },
-    ParameterDeclaration { name: "_pad",   kind: ParameterType::U32 },
+    ParameterDeclaration {
+        name: "width",
+        kind: ParameterType::U32,
+    },
+    ParameterDeclaration {
+        name: "height",
+        kind: ParameterType::U32,
+    },
+    ParameterDeclaration {
+        name: "radius",
+        kind: ParameterType::U32,
+    },
+    ParameterDeclaration {
+        name: "_pad",
+        kind: ParameterType::U32,
+    },
 ];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct BlurParams { width: u32, height: u32, radius: u32, _pad: u32 }
+struct BlurParams {
+    width: u32,
+    height: u32,
+    radius: u32,
+    _pad: u32,
+}
 
-struct BlurGpuKernel { sig: KernelSignature, params: BlurParams }
+struct BlurGpuKernel {
+    sig: KernelSignature,
+    params: BlurParams,
+}
 
 impl gpu::kernel::GpuKernel for BlurGpuKernel {
-    fn signature(&self) -> &KernelSignature { &self.sig }
+    fn signature(&self) -> &KernelSignature {
+        &self.sig
+    }
     fn write_params(&self, dst: &mut [u8]) {
         let bytes = bytemuck::bytes_of(&self.params);
         let n = bytes.len().min(dst.len());
@@ -107,11 +140,12 @@ impl gpu::kernel::GpuKernel for BlurGpuKernel {
 
 fn blur_entry(fmt: PixelFormat) -> Option<&'static str> {
     match fmt {
-        PixelFormat::Rgba8  | PixelFormat::Rgb8
-        | PixelFormat::Gray8 | PixelFormat::GrayA8   => Some("cs_blur_rgba8"),
-        PixelFormat::Rgba16 | PixelFormat::Rgb16      => Some("cs_blur_rgba16"),
-        PixelFormat::RgbaF16| PixelFormat::RgbF16     => Some("cs_blur_rgbaf16"),
-        PixelFormat::RgbaF32| PixelFormat::RgbF32     => Some("cs_blur_rgbaf32"),
+        PixelFormat::Rgba8 | PixelFormat::Rgb8 | PixelFormat::Gray8 | PixelFormat::GrayA8 => {
+            Some("cs_blur_rgba8")
+        }
+        PixelFormat::Rgba16 | PixelFormat::Rgb16 => Some("cs_blur_rgba16"),
+        PixelFormat::RgbaF16 | PixelFormat::RgbF16 => Some("cs_blur_rgbaf16"),
+        PixelFormat::RgbaF32 | PixelFormat::RgbF32 => Some("cs_blur_rgbaf32"),
         _ => None,
     }
 }
@@ -137,14 +171,20 @@ fn gpu_blur_process(
         // No blur needed — pass centre tile through as GPU buffer if available,
         // or fall back to CPU assembling.
         if let Some(ct) = nbhd.tile_at(nbhd.center.tx, nbhd.center.ty) {
-            let data = ct.data.as_cpu_slice()
+            let data = ct
+                .data
+                .as_cpu_slice()
                 .ok_or_else(|| Error::internal("blur r=0: expected CPU tile for passthrough"))?;
             // Upload to GPU so the rest of the chain stays on GPU
-            let gpu_ctx = gpu::context::try_init()
-                .ok_or_else(|| Error::internal("GPU unavailable"))?;
+            let gpu_ctx =
+                gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
             let scheduler = gpu_ctx.scheduler();
             let gbuf = scheduler.upload_bytes(data);
-            emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, Buffer::Gpu(Arc::new(gbuf)))));
+            emit.emit(Item::Tile(Tile::new(
+                nbhd.center,
+                nbhd.meta,
+                Buffer::Gpu(Arc::new(gbuf)),
+            )));
         }
         return Ok(());
     }
@@ -161,10 +201,18 @@ fn gpu_blur_process(
     let rox = cx.saturating_sub(r);
     let roy = cy.saturating_sub(r);
     let rw_phys = ((cx + cw + r).min(
-        nbhd.tiles.iter().map(|t| t.coord.px + t.coord.width).max().unwrap_or(cx + cw)
+        nbhd.tiles
+            .iter()
+            .map(|t| t.coord.px + t.coord.width)
+            .max()
+            .unwrap_or(cx + cw),
     ) - rox) as usize;
     let rh_phys = ((cy + ch + r).min(
-        nbhd.tiles.iter().map(|t| t.coord.py + t.coord.height).max().unwrap_or(cy + ch)
+        nbhd.tiles
+            .iter()
+            .map(|t| t.coord.py + t.coord.height)
+            .max()
+            .unwrap_or(cy + ch),
     ) - roy) as usize;
 
     let mut src_cpu = vec![0u8; pad_w * pad_h * bpp];
@@ -173,18 +221,20 @@ fn gpu_blur_process(
             Buffer::Cpu(v) => v.as_slice(),
             Buffer::Gpu(_) => {
                 // Tiles from GPU chain — download them first.
-                let gpu_ctx = gpu::context::try_init()
-                    .ok_or_else(|| Error::internal("GPU unavailable"))?;
+                let gpu_ctx =
+                    gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
                 let scheduler = gpu_ctx.scheduler();
                 if let Buffer::Gpu(g) = &tile.data {
-                    let downloaded = scheduler.download_buffer(g)
+                    let downloaded = scheduler
+                        .download_buffer(g)
                         .map_err(|e| Error::internal(format!("blur download: {e}")))?;
                     // We need the data to outlive this branch — collect into a temp vec
                     // and copy from it.
                     let tw = tile.coord.width as usize;
                     let tpx = tile.coord.px;
                     let tpy = tile.coord.py;
-                    let x0 = rox.max(tpx); let y0 = roy.max(tpy);
+                    let x0 = rox.max(tpx);
+                    let y0 = roy.max(tpy);
                     let x1 = (rox + rw_phys as u32).min(tpx + tile.coord.width);
                     let y1 = (roy + rh_phys as u32).min(tpy + tile.coord.height);
                     if x1 > x0 && y1 > y0 {
@@ -196,7 +246,8 @@ fn gpu_blur_process(
                             let d_off = (dy * pad_w + dx) * bpp;
                             let len = copy_w * bpp;
                             if s_off + len <= downloaded.len() && d_off + len <= src_cpu.len() {
-                                src_cpu[d_off..d_off + len].copy_from_slice(&downloaded[s_off..s_off + len]);
+                                src_cpu[d_off..d_off + len]
+                                    .copy_from_slice(&downloaded[s_off..s_off + len]);
                             }
                         }
                     }
@@ -207,11 +258,15 @@ fn gpu_blur_process(
         };
 
         let tw = tile.coord.width as usize;
-        let tpx = tile.coord.px; let tpy = tile.coord.py;
-        let x0 = rox.max(tpx); let y0 = roy.max(tpy);
+        let tpx = tile.coord.px;
+        let tpy = tile.coord.py;
+        let x0 = rox.max(tpx);
+        let y0 = roy.max(tpy);
         let x1 = (rox + rw_phys as u32).min(tpx + tile.coord.width);
         let y1 = (roy + rh_phys as u32).min(tpy + tile.coord.height);
-        if x1 <= x0 || y1 <= y0 { continue; }
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
         let copy_w = (x1 - x0) as usize;
         for abs_y in y0..y1 {
             let s_off = ((abs_y - tpy) as usize * tw + (x0 - tpx) as usize) * bpp;
@@ -226,39 +281,52 @@ fn gpu_blur_process(
     }
 
     // Upload assembled region to GPU, dispatch blur shader, emit output tile.
-    let gpu_ctx = gpu::context::try_init()
-        .ok_or_else(|| Error::internal("GPU unavailable"))?;
+    let gpu_ctx = gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
     let scheduler = gpu_ctx.scheduler();
 
     let src_gbuf = scheduler.upload_bytes(&src_cpu);
     let out_size = cw as u64 * ch as u64 * bpp as u64;
     // width/height in params MUST be pad_w × pad_h so the shader computes
     // center_w = pad_w - 2*r = cw exactly, matching the output buffer size.
-    let params = BlurParams { width: pad_w as u32, height: pad_h as u32, radius: r, _pad: 0 };
+    let params = BlurParams {
+        width: pad_w as u32,
+        height: pad_h as u32,
+        radius: r,
+        _pad: 0,
+    };
 
     let kernel = BlurGpuKernel {
         sig: KernelSignature {
-            name:      entry,
+            name: entry,
             entry,
-            inputs:    BLUR_RES_IN,
-            outputs:   BLUR_RES_OUT,
-            params:    BLUR_PARAMS_DECL,
+            inputs: BLUR_RES_IN,
+            outputs: BLUR_RES_OUT,
+            params: BLUR_PARAMS_DECL,
             workgroup: (8, 8, 1),
-            dispatch:  DispatchShape::PerPixel,
-            class:     KernelClass::Custom,
-            body:      BLUR_SPV,
+            dispatch: DispatchShape::PerPixel,
+            class: KernelClass::Custom,
+            body: BLUR_SPV,
         },
         params,
     };
 
     let src_gbuf_arc = Arc::new(src_gbuf);
     let out_gbuf = scheduler.allocate_buffer(out_size);
-    let out_gbuf = scheduler.dispatch_one(
-        &kernel, &[&src_gbuf_arc], out_gbuf,
-        cw.div_ceil(8), ch.div_ceil(8),
-    ).map_err(|e| Error::internal(format!("GPU blur: {e}")))?;
+    let out_gbuf = scheduler
+        .dispatch_one(
+            &kernel,
+            &[&src_gbuf_arc],
+            out_gbuf,
+            cw.div_ceil(8),
+            ch.div_ceil(8),
+        )
+        .map_err(|e| Error::internal(format!("GPU blur: {e}")))?;
 
-    emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, Buffer::Gpu(Arc::new(out_gbuf)))));
+    emit.emit(Item::Tile(Tile::new(
+        nbhd.center,
+        nbhd.meta,
+        Buffer::Gpu(Arc::new(out_gbuf)),
+    )));
     Ok(())
 }
 
@@ -292,10 +360,18 @@ fn cpu_blur_process(
     let rox = cx.saturating_sub(r);
     let roy = cy.saturating_sub(r);
     let rw = ((cx + cw + r).min(
-        nbhd.tiles.iter().map(|t| t.coord.px + t.coord.width).max().unwrap_or(cx + cw)
+        nbhd.tiles
+            .iter()
+            .map(|t| t.coord.px + t.coord.width)
+            .max()
+            .unwrap_or(cx + cw),
     ) - rox) as usize;
     let rh = ((cy + ch + r).min(
-        nbhd.tiles.iter().map(|t| t.coord.py + t.coord.height).max().unwrap_or(cy + ch)
+        nbhd.tiles
+            .iter()
+            .map(|t| t.coord.py + t.coord.height)
+            .max()
+            .unwrap_or(cy + ch),
     ) - roy) as usize;
 
     let mut src = vec![0u8; rw * rh * bpp];
@@ -305,30 +381,42 @@ fn cpu_blur_process(
             Buffer::Gpu(_) => return Err(Error::internal("blur CPU path received GPU tile")),
         };
         let tw = tile.coord.width as usize;
-        let tpx = tile.coord.px; let tpy = tile.coord.py;
-        let x0 = rox.max(tpx); let y0 = roy.max(tpy);
+        let tpx = tile.coord.px;
+        let tpy = tile.coord.py;
+        let x0 = rox.max(tpx);
+        let y0 = roy.max(tpy);
         let x1 = (rox + rw as u32).min(tpx + tile.coord.width);
         let y1 = (roy + rh as u32).min(tpy + tile.coord.height);
-        if x1 <= x0 || y1 <= y0 { continue; }
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
         let copy_w = (x1 - x0) as usize;
         for abs_y in y0..y1 {
             let src_off = ((abs_y - tpy) as usize * tw + (x0 - tpx) as usize) * bpp;
             let dst_off = ((abs_y - roy) as usize * rw + (x0 - rox) as usize) * bpp;
             let len = copy_w * bpp;
-            if src_off + len > tile_data.len() || dst_off + len > src.len() { continue; }
+            if src_off + len > tile_data.len() || dst_off + len > src.len() {
+                continue;
+            }
             src[dst_off..dst_off + len].copy_from_slice(&tile_data[src_off..src_off + len]);
         }
     }
 
     let blurred = box_blur_format(&src, rw, rh, r as usize, nbhd.meta.format);
-    let cw_u = cw as usize; let ch_u = ch as usize;
-    let off_x = (cx - rox) as usize; let off_y = (cy - roy) as usize;
+    let cw_u = cw as usize;
+    let ch_u = ch as usize;
+    let off_x = (cx - rox) as usize;
+    let off_y = (cy - roy) as usize;
     let mut tile_data = Vec::with_capacity(cw_u * ch_u * bpp);
     for y in 0..ch_u {
         let row_off = ((off_y + y) * rw + off_x) * bpp;
         tile_data.extend_from_slice(&blurred[row_off..row_off + cw_u * bpp]);
     }
-    emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, Buffer::cpu(tile_data))));
+    emit.emit(Item::Tile(Tile::new(
+        nbhd.center,
+        nbhd.meta,
+        Buffer::cpu(tile_data),
+    )));
     Ok(())
 }
 
@@ -342,9 +430,14 @@ fn decode_sample(bytes: &[u8], fmt: PixelFormat) -> f32 {
             let bits = u16::from_le_bytes([bytes[0], bytes[1]]) as u32;
             let s = (bits & 0x8000) << 16;
             let em = bits & 0x7FFF;
-            if em == 0 { return f32::from_bits(s); }
-            let e = em >> 10; let m = em & 0x03FF;
-            if e == 31 { return f32::from_bits(s | 0x7F800000 | (m << 13)); }
+            if em == 0 {
+                return f32::from_bits(s);
+            }
+            let e = em >> 10;
+            let m = em & 0x03FF;
+            if e == 31 {
+                return f32::from_bits(s | 0x7F800000 | (m << 13));
+            }
             f32::from_bits(s | ((e - 15 + 127) << 23) | (m << 13))
         }
         2 => u16::from_le_bytes([bytes[0], bytes[1]]) as f32 / 65535.0,
@@ -360,34 +453,61 @@ fn encode_sample(v: f32, fmt: PixelFormat, out: &mut [u8]) {
         1 => out[0] = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
         2 if fmt.is_float() => {
             let u = v.to_bits();
-            let s = (u >> 16) & 0x8000; let e = (u >> 23) & 0xFF; let m = u & 0x007FFFFF;
-            let h = if e == 0 { s }
-                else if e == 255 { if m == 0 { s | 0x7C00 } else { s | 0x7C00 | (m >> 13) } }
-                else {
-                    let i = e as i32 - 127 + 15;
-                    if i <= 0 { s | ((0x00800000 | m) >> (1 - i) as u32 >> 13) }
-                    else if i >= 31 { s | 0x7C00 }
-                    else { s | ((i as u32) << 10) | (m >> 13) }
-                };
-            let bytes = (h as u16).to_le_bytes(); out[0] = bytes[0]; out[1] = bytes[1];
+            let s = (u >> 16) & 0x8000;
+            let e = (u >> 23) & 0xFF;
+            let m = u & 0x007FFFFF;
+            let h = if e == 0 {
+                s
+            } else if e == 255 {
+                if m == 0 {
+                    s | 0x7C00
+                } else {
+                    s | 0x7C00 | (m >> 13)
+                }
+            } else {
+                let i = e as i32 - 127 + 15;
+                if i <= 0 {
+                    s | ((0x00800000 | m) >> (1 - i) as u32 >> 13)
+                } else if i >= 31 {
+                    s | 0x7C00
+                } else {
+                    s | ((i as u32) << 10) | (m >> 13)
+                }
+            };
+            let bytes = (h as u16).to_le_bytes();
+            out[0] = bytes[0];
+            out[1] = bytes[1];
         }
         2 => {
             let bytes = ((v.clamp(0.0, 1.0) * 65535.0 + 0.5) as u16).to_le_bytes();
-            out[0] = bytes[0]; out[1] = bytes[1];
+            out[0] = bytes[0];
+            out[1] = bytes[1];
         }
         4 if fmt.is_float() => {
             let bytes = v.to_le_bytes();
-            out[0] = bytes[0]; out[1] = bytes[1]; out[2] = bytes[2]; out[3] = bytes[3];
+            out[0] = bytes[0];
+            out[1] = bytes[1];
+            out[2] = bytes[2];
+            out[3] = bytes[3];
         }
-        4 => { let bytes = ((v.clamp(0.0, 1.0) * u32::MAX as f32) as u32).to_le_bytes(); out.copy_from_slice(&bytes); }
+        4 => {
+            let bytes = ((v.clamp(0.0, 1.0) * u32::MAX as f32) as u32).to_le_bytes();
+            out.copy_from_slice(&bytes);
+        }
         _ => out[0] = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
     }
 }
 
 fn box_blur_format(data: &[u8], w: usize, h: usize, r: usize, fmt: PixelFormat) -> Vec<u8> {
-    if w == 0 || h == 0 { return vec![]; }
-    if r == 0 { return data.to_vec(); }
-    let ch = fmt.channel_count(); let sb = fmt.sample_bytes(); let bpp = ch * sb;
+    if w == 0 || h == 0 {
+        return vec![];
+    }
+    if r == 0 {
+        return data.to_vec();
+    }
+    let ch = fmt.channel_count();
+    let sb = fmt.sample_bytes();
+    let bpp = ch * sb;
     let n_pixels = w * h;
     let mut f: Vec<f32> = Vec::with_capacity(n_pixels * ch);
     for p in 0..n_pixels {
@@ -399,14 +519,24 @@ fn box_blur_format(data: &[u8], w: usize, h: usize, r: usize, fmt: PixelFormat) 
     let mut hpass = vec![0f32; n_pixels * ch];
     for y in 0..h {
         for c in 0..ch {
-            let mut sum = 0f32; let mut count = 0u32;
+            let mut sum = 0f32;
+            let mut count = 0u32;
             let end0 = r.min(w - 1);
-            for x in 0..=end0 { sum += f[(y * w + x) * ch + c]; count += 1; }
+            for x in 0..=end0 {
+                sum += f[(y * w + x) * ch + c];
+                count += 1;
+            }
             for x in 0..w {
                 if x > 0 {
                     let nx = x + r;
-                    if nx < w { sum += f[(y * w + nx) * ch + c]; count += 1; }
-                    if x > r { sum -= f[(y * w + x - r - 1) * ch + c]; count -= 1; }
+                    if nx < w {
+                        sum += f[(y * w + nx) * ch + c];
+                        count += 1;
+                    }
+                    if x > r {
+                        sum -= f[(y * w + x - r - 1) * ch + c];
+                        count -= 1;
+                    }
                 }
                 hpass[(y * w + x) * ch + c] = sum / count as f32;
             }
@@ -415,14 +545,24 @@ fn box_blur_format(data: &[u8], w: usize, h: usize, r: usize, fmt: PixelFormat) 
     let mut vpass = vec![0f32; n_pixels * ch];
     for x in 0..w {
         for c in 0..ch {
-            let mut sum = 0f32; let mut count = 0u32;
+            let mut sum = 0f32;
+            let mut count = 0u32;
             let end0 = r.min(h - 1);
-            for y in 0..=end0 { sum += hpass[(y * w + x) * ch + c]; count += 1; }
+            for y in 0..=end0 {
+                sum += hpass[(y * w + x) * ch + c];
+                count += 1;
+            }
             for y in 0..h {
                 if y > 0 {
                     let ny = y + r;
-                    if ny < h { sum += hpass[(ny * w + x) * ch + c]; count += 1; }
-                    if y > r { sum -= hpass[((y - r - 1) * w + x) * ch + c]; count -= 1; }
+                    if ny < h {
+                        sum += hpass[(ny * w + x) * ch + c];
+                        count += 1;
+                    }
+                    if y > r {
+                        sum -= hpass[((y - r - 1) * w + x) * ch + c];
+                        count -= 1;
+                    }
                 }
                 vpass[(y * w + x) * ch + c] = sum / count as f32;
             }

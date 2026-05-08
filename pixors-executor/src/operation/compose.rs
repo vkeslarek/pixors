@@ -2,16 +2,15 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::image::BlendMode;
 use crate::data::buffer::Buffer;
 use crate::data::device::Device;
 use crate::data::tile::{Tile, TileGridPos};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
-use crate::common::image::BlendMode;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
 static COMPOSE_INPUT: PortDeclaration = PortDeclaration {

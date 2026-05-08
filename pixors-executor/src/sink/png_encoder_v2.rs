@@ -4,17 +4,15 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::image::Dpi;
 use crate::common::image::codec::{
     EncoderConfig, EncoderDescriptor, ImageEncoder, PngExportConfig,
 };
-use crate::common::image::Dpi;
 use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
 use crate::error::Error;
 use crate::graph::item::Item;
-use crate::stage::{
-    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
-};
+use crate::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
 
 static PGV2_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",

@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
 
+use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
 use crate::data::device::Device;
 use crate::data::scanline::ScanLine;
 use crate::data::tile::Tile;
 use crate::graph::item::Item;
-use crate::common::pixel::meta::PixelMeta;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor,
-    ProcessorContext, Stage,
+    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 use serde::{Deserialize, Serialize};
 

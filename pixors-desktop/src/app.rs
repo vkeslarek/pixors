@@ -9,8 +9,7 @@ use tokio::sync::broadcast;
 
 use crate::action::{Action, Dispatcher};
 use crate::components::{
-    filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
-    workspace_bar,
+    filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar, workspace_bar,
 };
 use crate::state::EditorState;
 
@@ -98,11 +97,17 @@ impl Default for App {
 
 impl App {
     pub fn loading_active(&self) -> bool {
-        self.state.active_tab().map(|t| t.view.loading).unwrap_or(false)
+        self.state
+            .active_tab()
+            .map(|t| t.view.loading)
+            .unwrap_or(false)
     }
 
     pub fn progress_active(&self) -> f32 {
-        self.state.active_tab().map(|t| t.view.progress).unwrap_or(0.0)
+        self.state
+            .active_tab()
+            .map(|t| t.view.progress)
+            .unwrap_or(0.0)
     }
 
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
@@ -139,23 +144,16 @@ impl App {
         })
     }
 
-
     pub fn view(&self) -> Element<'_, Msg> {
         let active_page = match self.workspace.active {
-            workspace_bar::Workspace::Editor => {
-                crate::pages::editor::view(self)
-            }
+            workspace_bar::Workspace::Editor => crate::pages::editor::view(self),
             workspace_bar::Workspace::Library => crate::pages::library::view(),
             workspace_bar::Workspace::Darkroom => crate::pages::darkroom::view(),
         };
 
         let content = column![
             menu_bar::view().map(Msg::MenuBar),
-            row![
-                self.workspace.view().map(Msg::WorkspaceBar),
-                active_page,
-            ]
-            .height(Length::Fill),
+            row![self.workspace.view().map(Msg::WorkspaceBar), active_page,].height(Length::Fill),
             crate::widgets::loading_bar(self.loading_active(), self.progress_active()),
             self.status.view::<Msg>(),
         ];
@@ -175,17 +173,12 @@ impl App {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(|_| container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        0.0, 0.0, 0.0, 0.6,
-                    ))),
+                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.6))),
                     ..Default::default()
                 });
             layers.push(
-                iced::widget::stack![
-                    backdrop,
-                    self.export_dialog.view().map(Msg::ExportDialog),
-                ]
-                .into(),
+                iced::widget::stack![backdrop, self.export_dialog.view().map(Msg::ExportDialog),]
+                    .into(),
             );
         }
 
@@ -229,17 +222,12 @@ impl App {
             );
         }
 
-        container(
-            column(toasts)
-                .spacing(8)
-                .align_x(iced::Alignment::End),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding([60, 20])
-        .align_x(iced::alignment::Horizontal::Right)
-        .align_y(iced::alignment::Vertical::Top)
-        .into()
+        container(column(toasts).spacing(8).align_x(iced::Alignment::End))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding([60, 20])
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::alignment::Vertical::Top)
+            .into()
     }
 }
-
