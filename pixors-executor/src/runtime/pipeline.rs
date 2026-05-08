@@ -403,13 +403,12 @@ fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
     for (src, dst, ports) in edges {
         let sd = devs[&src];
         let dd = devs[&dst];
-        let is_tile = g[src]
-            .ports()
-            .outputs
-            .kind_at(ports.from_port as usize)
-            .is_some_and(|k| k == crate::stage::DataKind::Tile);
+        let data_kind = g[src].ports().outputs.kind_at(ports.from_port as usize);
 
-        if sd != Device::Gpu && dd == Device::Gpu && is_tile {
+        let is_transferrable = data_kind.is_some_and(|k| k == crate::stage::DataKind::Tile)
+            || data_kind.is_some_and(|k| k == crate::stage::DataKind::Neighborhood);
+
+        if sd != Device::Gpu && dd == Device::Gpu && is_transferrable {
             let mid = g.add_node(StageNode::Operation(OperationNode::Upload(Upload)));
             if let Some(e) = g.find_edge(src, dst) {
                 g.remove_edge(e);
@@ -431,7 +430,7 @@ fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {
                 },
             );
             devs.insert(mid, Device::Cpu);
-        } else if sd == Device::Gpu && dd != Device::Gpu && is_tile {
+        } else if sd == Device::Gpu && dd != Device::Gpu && is_transferrable {
             let mid = g.add_node(StageNode::Operation(OperationNode::Download(Download)));
             if let Some(e) = g.find_edge(src, dst) {
                 g.remove_edge(e);

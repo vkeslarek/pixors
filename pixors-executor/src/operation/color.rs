@@ -512,7 +512,12 @@ fn gpu_dispatch(
 
     let in_gbuf = match &tile.data {
         Buffer::Gpu(g) => g,
-        _ => return Err(Error::internal("gpu_dispatch called with non-GPU buffer")),
+        other => {
+            tracing::error!(
+                "[color_convert gpu] non-GPU buffer: {other:?} fmt={src_fmt:?}→{dst_fmt:?}",
+            );
+            return Err(Error::internal("gpu_dispatch called with non-GPU buffer"));
+        }
     };
 
     let cw = tile.coord.width;
@@ -601,7 +606,10 @@ fn gpu_dispatch_inplace(
     let mut meta = tile.meta;
     let gbuf = match tile.data {
         Buffer::Gpu(g) => g,
-        _ => {
+        other => {
+            tracing::error!(
+                "[color_convert gpu inplace] non-GPU buffer: {other:?} fmt={src_fmt:?}→{dst_fmt:?}",
+            );
             return Err(Error::internal(
                 "gpu_dispatch_inplace called with non-GPU buffer",
             ));

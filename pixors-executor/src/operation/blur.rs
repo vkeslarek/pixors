@@ -166,6 +166,11 @@ fn gpu_blur_process(
     let fmt = nbhd.meta.format;
     let bpp = fmt.bytes_per_pixel();
 
+    tracing::info!(
+        "[blur gpu] r={r} center=({cx},{cy}) {cw}×{ch} fmt={fmt:?} bpp={bpp} data={}",
+        if nbhd.data.is_gpu() { "gpu" } else { "cpu" }
+    );
+
     let entry = blur_entry(fmt)
         .ok_or_else(|| Error::internal(format!("blur: unsupported format {:?}", fmt)))?;
 
@@ -202,8 +207,6 @@ fn gpu_blur_process(
 
     let pad_w = (cw + 2 * r) as usize;
     let pad_h = (ch + 2 * r) as usize;
-
-    // Signed origin of padded buffer in image space. Can be negative for edge tiles.
     let orig_x = cx as i64 - r as i64;
     let orig_y = cy as i64 - r as i64;
 
@@ -275,6 +278,11 @@ fn gpu_blur_process(
             padded
         }
     };
+
+    tracing::info!(
+        "[blur gpu] src buffer: {} bytes, pad={pad_w}×{pad_h}",
+        src_gbuf_arc.requested_size,
+    );
 
     let out_size = cw as u64 * ch as u64 * bpp as u64;
     let params = BlurParams {
