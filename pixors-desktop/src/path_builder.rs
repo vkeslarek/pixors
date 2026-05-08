@@ -47,7 +47,12 @@ impl PathBuilder {
     }
 
     pub fn sink(self, s: impl Into<SinkNode>) -> Self {
-        self.add(StageNode::Sink(s.into()))
+        let next = self.add(StageNode::Sink(s.into()));
+        {
+            let mut inner = next.inner.borrow_mut();
+            inner.outputs.push((next.anchors[0], 0));
+        }
+        next
     }
 
     fn add(self, stage: StageNode) -> Self {
@@ -64,16 +69,6 @@ impl PathBuilder {
             anchors: vec![idx],
             ..self
         }
-    }
-
-    pub fn mark_output(self, port: u16) -> Self {
-        {
-            let mut inner = self.inner.borrow_mut();
-            for &a in &self.anchors {
-                inner.outputs.push((a, port));
-            }
-        }
-        self
     }
 
     pub fn split<const N: usize>(self) -> [Self; N] {

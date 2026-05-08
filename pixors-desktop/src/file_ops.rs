@@ -8,12 +8,10 @@ use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::common::color::space::ColorSpace;
 use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_executor::operation::color::ColorConvert;
-use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::runtime::pipeline::Pipeline;
 use pixors_executor::sink::cache_writer::CacheWriter;
-use pixors_executor::sink::tile_sink::{install_tile_sink, TileSink};
 use pixors_executor::sink::viewport_cache_sink::{
     install_viewport_cache_sink, ViewportCacheSink,
 };
@@ -26,10 +24,6 @@ use crate::path_builder::PathBuilder;
 use crate::viewport::tile_cache::{CachedTile, ViewportCache};
 
 const TILE_SIZE: u32 = 256;
-
-fn ensure_tile_sink_installed() {
-    install_tile_sink(Box::new(|_, _, _, _, _, _| {}));
-}
 
 pub fn open_and_run(
     vp_cache: Option<Arc<Mutex<ViewportCache>>>,
@@ -59,8 +53,6 @@ pub fn open_and_run(
             guard.signal_new_img(w, h);
         }
 
-    ensure_tile_sink_installed();
-
     if let Some(ref cache) = vp_cache {
         let c = cache.clone();
         install_viewport_cache_sink(Box::new(
@@ -86,18 +78,13 @@ pub fn open_and_run(
         .op(MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE })
         .op(ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB, target_alpha: AlphaPolicy::Straight });
 
-    let [pipe_cache, pipe_vp, pipe_graph] = pipe.split();
+    let [pipe_cache, pipe_vp] = pipe.split();
 
     pipe_cache
         .sink(CacheWriter { cache_dir: cache_dir.clone() });
 
-    pipe_vp
-        .sink(ViewportCacheSink);
-
-    let graph = pipe_graph
-        .op(MipFilter { mip_level: 0 })
-        .sink(TileSink)
-        .mark_output(0)
+    let graph = pipe_vp
+        .sink(ViewportCacheSink)
         .compile();
 
     let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
@@ -136,7 +123,6 @@ pub fn fetch_mip(
             tile_range: Some(range),
         })
         .sink(ViewportCacheSink)
-        .mark_output(0)
         .compile();
 
     thread::spawn(move || {
@@ -185,7 +171,6 @@ pub fn export_file(path: &Path, config: EncoderConfig) -> Result<(), String> {
         .data_xform(ScanLineToTile { tile_size: TILE_SIZE, image_width: w, image_height: h })
         .op(ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB, target_alpha: AlphaPolicy::Straight })
         .sink(encoder_sink)
-        .mark_output(0)
         .compile();
 
     let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);

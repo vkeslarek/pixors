@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,14 +11,14 @@ use crate::stage::{
 
 pub type CacheCommitFn = Box<dyn Fn(u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
-static CACHE_SINK: OnceLock<Arc<CacheCommitFn>> = OnceLock::new();
+static CACHE_SINK: RwLock<Option<Arc<CacheCommitFn>>> = RwLock::new(None);
 
 pub fn install_viewport_cache_sink(f: CacheCommitFn) {
-    let _ = CACHE_SINK.set(Arc::new(f));
+    *CACHE_SINK.write().unwrap() = Some(Arc::new(f));
 }
 
 pub fn viewport_cache_sink() -> Option<Arc<CacheCommitFn>> {
-    CACHE_SINK.get().cloned()
+    CACHE_SINK.read().unwrap().clone()
 }
 
 static VCS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
@@ -44,7 +44,7 @@ impl Stage for ViewportCacheSink {
     }
 
     fn consumer(&self) -> Option<Box<dyn Consumer>> {
-        let cb = CACHE_SINK.get().cloned()?;
+        let cb = CACHE_SINK.read().unwrap().clone()?;
         Some(Box::new(ViewportCacheSinkConsumer { cb }))
     }
 }

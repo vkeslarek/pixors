@@ -10,6 +10,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let canvas_h = active.map(|t| t.desc.height).unwrap_or(0);
     let active_cache = active.map(|t| t.viewport_cache.clone());
     let tab_id = app.state.active_id();
+    let viewport_state = active.map(|t| t.viewport_state.clone());
 
     row![
         app.tools.view().map(Msg::Toolbar),
@@ -21,6 +22,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             app.tile_generation,
             app.mip_fetch_signal.clone(),
             tab_id,
+            viewport_state,
         ),
         crate::components::sidebar_grid::view(
             &app.panes,

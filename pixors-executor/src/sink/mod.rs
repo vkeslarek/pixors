@@ -2,7 +2,6 @@ pub mod cache_writer;
 pub mod png_encoder;
 pub mod png_encoder_v2;
 pub mod tiff_encoder;
-pub mod tile_sink;
 pub mod viewport;
 pub mod viewport_cache_sink;
 
@@ -13,14 +12,12 @@ use crate::sink::cache_writer::CacheWriter;
 use crate::sink::png_encoder::PngEncoder;
 use crate::sink::png_encoder_v2::PngEncoderV2;
 use crate::sink::tiff_encoder::TiffEncoderStage;
-use crate::sink::tile_sink::TileSink;
 use crate::sink::viewport::ViewportSink;
 use crate::sink::viewport_cache_sink::ViewportCacheSink;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SinkNode {
     Viewport(ViewportSink),
-    TileSink(TileSink),
     PngEncoder(PngEncoder),
     PngEncoderV2(PngEncoderV2),
     TiffEncoder(TiffEncoderStage),
@@ -31,7 +28,6 @@ pub enum SinkNode {
 delegate_stage!(
     SinkNode,
     Viewport,
-    TileSink,
     PngEncoder,
     PngEncoderV2,
     TiffEncoder,
@@ -41,10 +37,6 @@ delegate_stage!(
 
 impl From<ViewportSink> for SinkNode {
     fn from(v: ViewportSink) -> Self { Self::Viewport(v) }
-}
-
-impl From<TileSink> for SinkNode {
-    fn from(v: TileSink) -> Self { Self::TileSink(v) }
 }
 
 impl From<PngEncoder> for SinkNode {

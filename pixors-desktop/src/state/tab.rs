@@ -1,8 +1,11 @@
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use pixors_executor::common::image::ImageDescriptor;
 
+use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::ViewportCache;
 
 use super::history::History;
@@ -20,6 +23,7 @@ pub struct Tab {
     pub desc: ImageDescriptor,
     pub cache_dir: PathBuf,
     pub viewport_cache: Arc<Mutex<ViewportCache>>,
+    pub viewport_state: Rc<RefCell<ViewportState>>,
     pub layers: Vec<Layer>,
     pub active_layer: Option<LayerId>,
     pub chain: EditChain,

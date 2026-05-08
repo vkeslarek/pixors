@@ -184,6 +184,15 @@ impl App {
                     desc,
                     cache_dir: path.with_extension("pixors_cache"),
                     viewport_cache: vp_cache,
+                    viewport_state: {
+                        use std::cell::RefCell;
+                        use std::rc::Rc;
+                        use crate::viewport::state::ViewportState;
+                        let mut vs = ViewportState::default();
+                        vs.camera.img_w = w as f32;
+                        vs.camera.img_h = h as f32;
+                        Rc::new(RefCell::new(vs))
+                    },
                     layers: vec![],
                     active_layer: None,
                     chain: Default::default(),

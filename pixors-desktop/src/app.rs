@@ -109,6 +109,15 @@ impl Default for App {
                     },
                     cache_dir: std::path::PathBuf::new(),
                     viewport_cache: ViewportCache::new(),
+                    viewport_state: {
+                        use std::cell::RefCell;
+                        use std::rc::Rc;
+                        use crate::viewport::state::ViewportState;
+                        let mut vs = ViewportState::default();
+                        vs.camera.img_w = 1024.0;
+                        vs.camera.img_h = 1024.0;
+                        Rc::new(RefCell::new(vs))
+                    },
                     layers: vec![],
                     active_layer: None,
                     chain: Default::default(),

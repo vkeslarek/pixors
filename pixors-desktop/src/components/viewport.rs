@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use iced::widget::{column, container, shader as shader_widget, stack};
@@ -7,6 +9,7 @@ use pixors_executor::source::cache_reader::TileRange;
 
 use crate::state::TabId;
 use crate::viewport::program::ViewportProgram;
+use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::ViewportCache;
 use crate::widgets::pill;
 
@@ -18,12 +21,14 @@ pub fn view<'a, Msg: 'a>(
     tile_generation: u64,
     mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     tab_id: Option<TabId>,
+    viewport_state: Option<Rc<RefCell<ViewportState>>>,
 ) -> Element<'a, Msg> {
     let program = ViewportProgram {
         cache: active_cache,
         tile_generation,
         mip_fetch_signal,
         tab_id,
+        viewport_state,
     };
 
     // By alternating the width of a sibling space widget slightly, we force

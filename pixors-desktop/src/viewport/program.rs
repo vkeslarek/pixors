@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use iced::widget::shader;
@@ -8,6 +10,7 @@ use pixors_executor::source::cache_reader::TileRange;
 use crate::state::TabId;
 use crate::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
+use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::ViewportCache;
 
 pub const TILE_SIZE: u32 = 256;
@@ -17,19 +20,27 @@ pub struct ViewportProgram {
     pub tile_generation: u64,
     pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     pub tab_id: Option<TabId>,
+    pub viewport_state: Option<Rc<RefCell<ViewportState>>>,
 }
 
 impl<Msg> shader::Program<Msg> for ViewportProgram {
-    type State = std::cell::RefCell<ViewportState>;
+    type State = ();
     type Primitive = ViewportPrimitive;
 
     fn draw(
         &self,
-        state: &Self::State,
+        _state: &Self::State,
         _cursor: mouse::Cursor,
         bounds: Rectangle,
     ) -> Self::Primitive {
-        let mut state = state.borrow_mut();
+        let Some(ref vp_state) = self.viewport_state else {
+            return ViewportPrimitive {
+                camera: Camera::new(1.0, 1.0).to_uniform(0),
+                cache: None,
+                visible_range: TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 },
+            };
+        };
+        let mut state = vp_state.borrow_mut();
 
         let old_mip = state.current_mip;
 
@@ -55,8 +66,6 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
         let mut target_mip = state.camera.visible_mip_level();
 
-        // Fallback to lower MIPs (higher resolution) if the target MIP hasn't generated enough tiles yet.
-        // This allows progressively showing the image during initial load.
         if let Some(ref cache) = self.cache
             && let Ok(guard) = cache.lock() {
                 let base_mip = state.camera.floor_mip();
@@ -65,7 +74,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                     target_mip = base_mip;
                 }
             }
-        
+
         if state.current_mip != target_mip {
             tracing::info!("[pixors] viewport: draw() setting current_mip to {}", target_mip);
         }
@@ -74,6 +83,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let mut reqs = Vec::new();
         if let Some(tab_id) = self.tab_id {
             reqs.push((tab_id, state.current_mip, state.camera.padded_tile_range(state.current_mip, TILE_SIZE, 3)));
+
             let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
             if state.current_mip < max_mip {
                 reqs.push((tab_id, state.current_mip + 1, state.camera.padded_tile_range(state.current_mip + 1, TILE_SIZE, 2)));
@@ -107,20 +117,21 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
     fn update(
         &self,
-        state_cell: &mut Self::State,
+        _state_cell: &mut Self::State,
         event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<shader::Action<Msg>> {
-        let state = state_cell.get_mut();
+        let Some(ref vp_state) = self.viewport_state else {
+            return None;
+        };
+        let mut state = vp_state.borrow_mut();
 
         if self.tile_generation != state.last_generation.get() {
             tracing::info!("[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw", state.last_generation.get(), self.tile_generation);
             state.last_generation.set(self.tile_generation);
             return Some(shader::Action::request_redraw());
         }
-
-        
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
@@ -171,41 +182,18 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
     fn mouse_interaction(
         &self,
-        state_cell: &Self::State,
+        _state_cell: &Self::State,
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        let state = state_cell.borrow();
+        let Some(ref vp_state) = self.viewport_state else {
+            return mouse::Interaction::default();
+        };
+        let state = vp_state.borrow();
         if state.dragging {
             mouse::Interaction::Grabbing
         } else {
             mouse::Interaction::default()
-        }
-    }
-}
-
-pub struct ViewportState {
-    pub(super) camera: Camera,
-    pub(super) current_mip: u32,
-    pub(super) last_generation: std::cell::Cell<u64>,
-    dragging: bool,
-    fitted: bool,
-    last_pos: Option<Point>,
-    last_bounds: Option<Size>,
-    last_reqs: Option<Vec<(TabId, u32, TileRange)>>,
-}
-
-impl Default for ViewportState {
-    fn default() -> Self {
-        Self {
-            camera: Camera::new(1.0, 1.0),
-            current_mip: 0,
-            last_generation: std::cell::Cell::new(0),
-            dragging: false,
-            fitted: false,
-            last_pos: None,
-            last_bounds: None,
-            last_reqs: None,
         }
     }
 }
