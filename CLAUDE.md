@@ -13,10 +13,10 @@ Pixors is an open-source image editor — Rust engine + React frontend, shipped 
 ├── CONTRIBUTING.md        # Coding guidelines
 ├── scripts/               # build-linux.sh, build-windows.sh, build-macos.sh
 ├── .github/workflows/     # CI (main) + Release (release/*)
-├── pixors-engine/         # Rust library + CLI
-│   └── src/              # color, image, pixel, convert, io, stream, server, storage, composite
+├── pixors-executor/         # Rust library + CLI
+│   └── src/              # color, image, pixel, data, data_transform, operation, gpu, sink, source, stage, runtime
 ├── pixors-desktop/        # Native desktop app (tao + wry)
-│   └── src/              # main.rs, embedded_ui.rs, bridge.js
+│   └── src/              # main.rs, app.rs, controller.rs, state/, action/, viewport/, components/, pages/
 └── pixors-ui/             # React + TypeScript + Vite frontend
 ```
 
@@ -60,19 +60,22 @@ cd pixors-ui && npm run dev
 
 ## Pipeline Invariants
 
-- **Processors never move tiles between devices.** No `download_buffer`, no `upload_bytes` in a `Processor` impl. CPU/GPU transitions are the runtime's job — `pipeline.rs` calls `insert_transfers` which injects `Upload`/`Download` stages automatically at device boundaries.
+- **Processors never move tiles between devices.** No `download_buffer`, no `upload_bytes`, no `read_from_buffer` in a `Processor` impl. CPU/GPU transitions at the `Tile` level are the runtime's job — `pipeline.rs` calls `insert_transfers` which injects `Upload`/`Download` stages automatically at device boundaries. Transitions inside neighborhood assembly (e.g., GPU padded-buffer construction) go through `Scheduler` methods like `copy_tiles_into_padded`, not raw wgpu.
+- **Processors never reference `wgpu` directly.** All GPU interaction (buffer allocation, copies, dispatches, staging reads) goes through `Scheduler`. A Processor that calls `wgpu::Device`, `wgpu::Queue`, or `wgpu::CommandEncoder` directly is a layering violation. The `Scheduler` owns the encoder rotation, command batching, buffer pool, and pipeline cache — Processors use its high-level API only.
 - **`context.device` is authoritative.** The pipeline compiler (`assign_devices`) sets it; processors only read it. A processor receiving a `Buffer::Gpu` tile when `context.device == Cpu` is a runtime bug, not something the processor should paper over.
-- **`TileToNeighborhood` is always `Device::Cpu`.** It does pure in-memory accumulation — no GPU kernels. This guarantees every `Neighborhood` leaving it carries `Buffer::Cpu` tiles, so downstream blur (CPU or GPU) can assemble the padded buffer without any device transfer.
-- **`Scheduler::download_buffer` does not exist.** Batch GPU→CPU download is done exclusively by `DownloadProcessor` via staging buffers. No other code downloads GPU buffers.
+- **`assign_devices` uses a heuristic to minimise transfers.** `StageHints { device, preference }` on every stage. Fixed `Cpu`/`Gpu` nodes are assigned first. `Either` nodes are assigned iteratively: preference match → all‑same‑adjacent → GPU default. This groups stages into maximal same‑device chains before `insert_transfers` adds `Upload`/`Download` bridges.
+- **`NeighborhoodData` is dual‑device.** `Cpu { tiles: Vec<Tile> }` stores pointer‑accumulated tiles for CPU blur (assemble padded buffer on CPU, one upload). `Gpu { consolidated: Arc<GpuBuffer>, tile_infos: Vec<TileGpuInfo> }` stores a single contiguous GPU buffer built by `TileToNeighborhood`'s GPU path via `copy_buffer_to_buffer`, so blur can assemble its padded buffer entirely on the device.
+- **`Scheduler::download_buffer` does not exist.** Batch GPU→CPU download is done exclusively by `DownloadProcessor` via staging buffers. Individual GPU‑buffer reads (e.g. for debugging or r=0 passthrough) use `Scheduler::read_from_buffer`, which allocates staging, copies, maps, and returns `Vec<u8>` in a single call.
 
 ## Architecture
 
-### Engine (pixors-engine)
-- **Working space**: ACEScg linear, premultiplied alpha, `f16` storage
+### Engine (pixors-executor)
+- **Working space**: ACEScg linear, `f16` storage (configurable via `EditorState.working_format`/`working_color_space`)
+- **Display space**: sRGB `Rgba8` (configurable via `EditorState.display_format`/`display_color_space`)
 - **Color management**: Hardcoded color spaces (sRGB, Rec.709, Rec.2020, ACEScg, etc.)
-- **Server**: axum WebSocket on `127.0.0.1:8399` (configurable via `Config { port }`)
-- **Config**: `Config { port: u16 }` with `#[derive(Parser)]` + `Default` — no YAML
-- **start_server(cfg)** / **start_server_bg(cfg)** — blocking and background variants
+- **Pipeline**: DAG of stages (Source → DataTransform → Operation → Sink), compiled by `Pipeline::compile()`, executed via `ChainRunner` threads
+- **GPU**: wgpu compute, SPIR‑V shaders via slang, `Scheduler` owns encoder rotation + buffer pool + pipeline cache
+- **Cancellation**: `Pipeline::run()` returns `PipelineHandle` with `.cancel()` (sets `AtomicBool` on `ChainRunner`, checked between tiles)
 
 ### Desktop (pixors-desktop)
 - **Framework**: tao 0.35 + wry 0.55
@@ -80,6 +83,8 @@ cd pixors-ui && npm run dev
 - **Dev mode**: `PIXORS_DEV=1` switches to `http://localhost:5173` (Vite)
 - **Engine integration**: calls `start_server_bg(Config::default())` on startup
 - **Window**: no decorations (custom titlebar), 5px hit-test for native resize
+- **State**: `EditorState` owns tabs, pipeline lock, working/display format+color space
+- **Actions**: `prepare → apply → undo` pattern, `Dispatcher` with per‑tab routing
 
 ### Frontend (pixors-ui)
 - **Framework**: React + TypeScript + Vite
@@ -115,10 +120,14 @@ cd pixors-ui && npm run dev
 | `pixors-executor/src/operation/color.rs` | ColorConvert pipeline stage (CPU + GPU) |
 | `pixors-executor/shaders/color.slang` | GPU color convert entry points |
 | `pixors-executor/shaders/lib/color.slang` | Shader library: transfer, codecs, color_convert |
-| `pixors-executor/src/gpu/scheduler.rs` | Lock-free GPU scheduler (rotating encoder) |
-| `pixors-executor/src/runtime/pipeline.rs` | Pipeline compilation + chain runner |
-| `pixors-executor/src/stage/` | Producer, Processor, Consumer, Stage traits |
-| `pixors-desktop/src/file_ops.rs` | Pipeline graph construction |
+| `pixors-executor/src/gpu/scheduler.rs` | Lock-free GPU scheduler (rotating encoder, buffer pool, copy/dispatch API) |
+| `pixors-executor/src/runtime/pipeline.rs` | Pipeline compilation + chain runner + `assign_devices` heuristic |
+| `pixors-executor/src/stage/` | Producer, Processor, Consumer, Stage, StageHints traits |
+| `pixors-executor/src/data/neighborhood.rs` | Neighborhood + dual‑device NeighborhoodData (Cpu/Gpu) |
+| `pixors-executor/src/data_transform/to_neighborhood.rs` | TileToNeighborhood stage (CPU pointer accumulation + GPU buffer consolidation) |
+| `pixors-executor/src/operation/blur.rs` | Box blur stage (CPU + GPU paths, zero‑download GPU assembly) |
+| `pixors-desktop/src/state/` | EditorState, Tab, History multi‑tab editor model |
+| `pixors-desktop/src/action/` | Action trait + Dispatcher + per‑action pipeline orchestration |
 | `pixors-desktop/src/main.rs` | App entry point, tracing config |
 
 ## How to add a new PixelFormat
