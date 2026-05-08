@@ -3,15 +3,17 @@ use std::sync::{Arc, Mutex};
 
 use pixors_executor::data::tile::TileGridPos;
 
+#[derive(Debug)]
 pub struct CachedTile {
     pub px: u32,
     pub py: u32,
     pub width: u32,
     pub height: u32,
-    pub bytes: Vec<u8>,
+    pub bytes: Arc<Vec<u8>>,
     pub generation: u64,
 }
 
+#[derive(Debug)]
 pub struct ViewportCache {
     entries: HashMap<TileGridPos, CachedTile>,
     pending: HashSet<TileGridPos>,
@@ -136,8 +138,15 @@ impl ViewportCache {
     /// Remove all tiles belonging to a specific generation.
     pub fn clear_generation(&mut self, generation: u64) {
         self.entries.retain(|_, t| t.generation != generation);
-        // Pending doesn't track gen, but entries with that gen are gone
-        // so they won't be uploaded. Keep pending list clean enough.
+    }
+
+    /// Return all tiles at a mip level (latest generation per position).
+    pub fn all_tiles_at_mip(&self, mip: u32) -> Vec<(TileGridPos, &CachedTile)> {
+        self.entries
+            .iter()
+            .filter(|(k, _)| k.mip_level == mip)
+            .map(|(k, v)| (*k, v))
+            .collect()
     }
 
     pub fn signal_new_img(&mut self, w: u32, h: u32) {

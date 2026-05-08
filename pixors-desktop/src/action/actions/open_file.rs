@@ -83,7 +83,7 @@ impl Action for OpenFile {
                                 py,
                                 width: tw,
                                 height: th,
-                                bytes: bytes.to_vec(),
+                                bytes: Arc::new(bytes.to_vec()),
                                 generation,
                             },
                         );

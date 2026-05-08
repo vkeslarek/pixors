@@ -1,9 +1,10 @@
 use crate::state::TabId;
+use std::sync::Arc;
+
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::source::cache_reader::TileRange;
-use std::sync::Arc;
 
 use crate::app::{App, Msg, PaneKind};
 use crate::components::toolbar::Tool;
@@ -344,24 +345,14 @@ impl App {
         tab.view.preview_gen += 1;
         let generation = tab.view.preview_gen;
 
-        let (mip, range) = {
-            let vp = tab.viewport_state.borrow();
-            let mip = vp.current_mip;
-            let range = vp
-                .camera
-                .padded_tile_range(mip, crate::viewport::program::TILE_SIZE, 2);
-            (mip, range)
-        };
+        let mip = tab.viewport_state.borrow().current_mip;
 
         let action = crate::action::actions::blur_preview::BlurPreview {
             tab: tab.id,
             radius,
             generation,
-            cache_dir: tab.cache_dir.clone(),
-            img_w: tab.desc.width,
-            img_h: tab.desc.height,
             mip,
-            range,
+            cache: tab.viewport_cache.clone(),
         };
 
         let _ = self.dispatcher.dispatch(Arc::new(action), &mut self.state);

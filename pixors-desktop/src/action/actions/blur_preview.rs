@@ -1,16 +1,22 @@
-use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use pixors_executor::common::color::space::ColorSpace;
 use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_executor::data::buffer::Buffer;
+use pixors_executor::data::tile::{Tile, TileCoord};
 use pixors_executor::data_transform::to_neighborhood::TileToNeighborhood;
+use pixors_executor::graph::item::Item;
 use pixors_executor::operation::blur::Blur;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::sink::viewport_cache_sink::ViewportCacheSink;
-use pixors_executor::source::cache_reader::CacheReader;
+use pixors_executor::source::viewport_cache_source::{
+    install_viewport_cache_reader, ViewportCacheSource,
+};
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
 use crate::state::{EditorState, TabId};
+use crate::viewport::tile_cache::ViewportCache;
 
 const TILE_SIZE: u32 = 256;
 
@@ -19,11 +25,8 @@ pub struct BlurPreview {
     pub tab: TabId,
     pub radius: u32,
     pub generation: u64,
-    pub cache_dir: PathBuf,
-    pub img_w: u32,
-    pub img_h: u32,
     pub mip: u32,
-    pub range: pixors_executor::source::cache_reader::TileRange,
+    pub cache: Arc<Mutex<ViewportCache>>,
 }
 
 impl Action for BlurPreview {
@@ -32,19 +35,56 @@ impl Action for BlurPreview {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        // CacheReader reads ACEScg f16 tiles from disk (stored by CacheWriter during open).
-        // TileToNeighborhood accumulates neighbour tiles for context-aware blur.
-        // Blur works in ACEScg; convert to sRGB only for the viewport sink.
+        // Install callback that reads from this tab's ViewportCache (gen=0 for originals).
+        // The cache keeps only the latest generation per tile position.
+        let cache = self.cache.clone();
+        let image_width = {
+            let guard = cache.lock().unwrap();
+            guard.active_dims.0
+        };
+        let image_height = {
+            let guard = cache.lock().unwrap();
+            guard.active_dims.1
+        };
+
+        install_viewport_cache_reader(Box::new(
+            move |_key, _gen, mip, _range| {
+                let guard = cache.lock().unwrap();
+                guard
+                    .all_tiles_at_mip(mip)
+                    .into_iter()
+                    .map(|(pos, ct)| {
+                        Item::Tile(Tile::new(
+                            TileCoord {
+                                mip_level: pos.mip_level,
+                                tx: pos.tx,
+                                ty: pos.ty,
+                                px: ct.px,
+                                py: ct.py,
+                                width: ct.width,
+                                height: ct.height,
+                                tile_size: TILE_SIZE,
+                                image_width,
+                                image_height,
+                            },
+                            pixors_executor::common::pixel::meta::PixelMeta::new(
+                                PixelFormat::RgbaF16,
+                                ColorSpace::ACES_CG,
+                                AlphaPolicy::Straight,
+                            ),
+                            Buffer::cpu(ct.bytes.as_ref().clone()),
+                        ))
+                    })
+                    .collect()
+            },
+        ));
+
         let graph = PathBuilder::new()
-            .src(CacheReader {
-                cache_dir: self.cache_dir.clone(),
+            .src(ViewportCacheSource {
+                routing_key: self.tab.0,
                 mip_level: self.mip,
-                tile_size: TILE_SIZE,
-                image_width: self.img_w,
-                image_height: self.img_h,
-                tile_range: Some(self.range.clone()),
-                pixel_format: PixelFormat::RgbaF16,
-                color_space: ColorSpace::ACES_CG,
+                generation: 0,
+                tile_range: None,
             })
             .data_xform(TileToNeighborhood {
                 radius: self.radius,
