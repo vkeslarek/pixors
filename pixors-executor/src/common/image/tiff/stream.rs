@@ -276,7 +276,7 @@ fn row_bytes_u8(data: &[u8], row: u32, w: usize, _h: usize, spp: usize, planar: 
             let end = (start + w).min(data.len());
             out.extend_from_slice(data.get(start..end).unwrap_or(&[]));
             let avail = end.saturating_sub(start);
-            for _ in avail..w { out.push(0); }
+            out.extend(std::iter::repeat_n(0u8, w.saturating_sub(avail)));
         }
     } else {
         let start = row as usize * w * spp;

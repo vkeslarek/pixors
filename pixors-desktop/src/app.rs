@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use iced::keyboard::{self};
 use iced::widget::pane_grid::{self, Configuration};
-use iced::widget::{column, container, row};
-use iced::{Background, Element, Length, Subscription};
+use iced::widget::{column, container, row, text};
+use iced::{Background, Color, Element, Length, Subscription};
 use pixors_executor::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 use pixors_executor::source::cache_reader::TileRange;
@@ -38,6 +38,7 @@ pub enum Msg {
     Tick,
     Frames,
     PipelineEvent(PipelineEvent),
+    ExportDialog(crate::dialog::export::Msg),
 }
 
 pub struct App {
@@ -58,6 +59,9 @@ pub struct App {
     pub mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
     pub cache_dir: Option<PathBuf>,
     pub image_dims: Option<(u32, u32)>,
+    pub image_path: Option<PathBuf>,
+    pub show_export_dialog: bool,
+    pub export_dialog: crate::dialog::export::ExportDialog,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
@@ -94,6 +98,9 @@ impl Default for App {
             mip_fetch_signal: Arc::new(Mutex::new(Vec::new())),
             cache_dir: None,
             image_dims: None,
+            image_path: None,
+            show_export_dialog: false,
+            export_dialog: crate::dialog::export::ExportDialog::default(),
         }
     }
 }
@@ -155,11 +162,38 @@ impl App {
             self.status.view::<Msg>(),
         ];
 
-        let overlays = self.toasts_view();
+        let overlays = self.overlays_view();
 
         // Always return a stack at the root to avoid destroying the entire widget tree state
         // (including ViewportState) when toasts appear or disappear.
         iced::widget::stack![content, overlays].into()
+    }
+
+    fn overlays_view(&self) -> Element<'_, Msg> {
+        let mut layers: Vec<Element<Msg>> = Vec::new();
+
+        if self.show_export_dialog {
+            let backdrop = container(text(""))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        0.0, 0.0, 0.0, 0.6,
+                    ))),
+                    ..Default::default()
+                });
+            layers.push(
+                iced::widget::stack![
+                    backdrop,
+                    self.export_dialog.view().map(Msg::ExportDialog),
+                ]
+                .into(),
+            );
+        }
+
+        layers.push(self.toasts_view());
+
+        iced::widget::stack(layers).into()
     }
 
     fn toasts_view(&self) -> Element<'_, Msg> {

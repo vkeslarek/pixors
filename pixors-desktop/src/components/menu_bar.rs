@@ -14,6 +14,7 @@ use crate::theme::{
 #[derive(Debug, Clone)]
 pub enum Msg {
     OpenFile,
+    Export,
     Exit,
     ZoomIn,
     ZoomOut,
@@ -33,6 +34,7 @@ pub fn view() -> Element<'static, Msg> {
     let mb = menu_bar!(
         (trigger("File"), mtpl(menu_items!(
             (item("Open\u{2026}", "Ctrl+O", Msg::OpenFile)),
+            (item("Export\u{2026}", "Ctrl+E", Msg::Export)),
             (separator()),
             (item("Exit", "Alt+F4", Msg::Exit)),
         )).width(200.0)),

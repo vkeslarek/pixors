@@ -1,9 +1,11 @@
 mod app;
 mod controller;
 mod components;
+mod dialog;
 mod file_ops;
 mod icons;
 mod pages;
+mod path_builder;
 mod theme;
 mod widgets;
 mod viewport;

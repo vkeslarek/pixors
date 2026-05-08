@@ -1,7 +1,9 @@
 mod color;
 mod stream;
+pub mod encoder;
 
 pub use color::detect_color_space;
+pub use encoder::PngEncoder;
 pub use stream::{png_pixel_format, PngPageStream};
 
 use std::fs::File;

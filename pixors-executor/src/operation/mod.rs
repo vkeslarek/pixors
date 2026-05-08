@@ -37,3 +37,31 @@ delegate_stage!(
     Upload,
     Download
 );
+
+impl From<Blur> for OperationNode {
+    fn from(v: Blur) -> Self { Self::Blur(v) }
+}
+
+impl From<ColorConvert> for OperationNode {
+    fn from(v: ColorConvert) -> Self { Self::ColorConvert(v) }
+}
+
+impl From<Compose> for OperationNode {
+    fn from(v: Compose) -> Self { Self::Compose(v) }
+}
+
+impl From<MipDownsample> for OperationNode {
+    fn from(v: MipDownsample) -> Self { Self::MipDownsample(v) }
+}
+
+impl From<MipFilter> for OperationNode {
+    fn from(v: MipFilter) -> Self { Self::MipFilter(v) }
+}
+
+impl From<Upload> for OperationNode {
+    fn from(v: Upload) -> Self { Self::Upload(v) }
+}
+
+impl From<Download> for OperationNode {
+    fn from(v: Download) -> Self { Self::Download(v) }
+}

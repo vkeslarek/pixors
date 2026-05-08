@@ -4,15 +4,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use pixors_executor::data::tile::TileGridPos;
 use pixors_executor::common::image::Image;
-use pixors_executor::graph::graph::{EdgePorts, ExecGraph};
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
-use pixors_executor::data_transform::DataTransformNode;
 use pixors_executor::common::color::space::ColorSpace;
 use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::mip_filter::MipFilter;
 use pixors_executor::operation::mip_downsample::MipDownsample;
-use pixors_executor::operation::OperationNode;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::runtime::pipeline::Pipeline;
 use pixors_executor::sink::cache_writer::CacheWriter;
@@ -23,9 +20,9 @@ use pixors_executor::sink::viewport_cache_sink::{
 use pixors_executor::sink::SinkNode;
 use pixors_executor::source::cache_reader::{CacheReader, TileRange};
 use pixors_executor::source::image_stream::ImageStreamSource;
-use pixors_executor::source::SourceNode;
-use pixors_executor::stage::StageNode;
+use pixors_executor::common::image::codec::EncoderConfig;
 
+use crate::path_builder::PathBuilder;
 use crate::viewport::tile_cache::{CachedTile, ViewportCache};
 
 const TILE_SIZE: u32 = 256;
@@ -38,7 +35,7 @@ pub fn open_and_run(
     vp_cache: Option<Arc<Mutex<ViewportCache>>>,
 ) -> Result<(u32, u32, PathBuf), String> {
     let path = rfd::FileDialog::new()
-        .add_filter("Images", &["png", "jpg", "jpeg", "tiff", "tif"])
+        .add_filter("Images", &["png", "tiff", "tif"])
         .pick_file()
         .ok_or_else(|| "cancelled".to_string())?;
 
@@ -46,7 +43,6 @@ pub fn open_and_run(
     let w = img.desc.width;
     let h = img.desc.height;
 
-    // ── Exif / metadata dump ──────────────────────────────────────────
     tracing::info!("[pixors] image loaded: {}×{} {} format={}",
         w, h, img.desc.bit_depth, img.desc.format);
     tracing::info!("[pixors] color_space={:?} dpi={:?} pages={}",
@@ -79,48 +75,30 @@ pub fn open_and_run(
         ));
     }
 
-    let mut graph = ExecGraph::new();
+    let stream = Arc::new(Mutex::new(Some(
+        img.open_page(0).map_err(|e| e.to_string())?
+    )));
 
-    let src = graph.add_stage(StageNode::Source(SourceNode::ImageStream(
-        ImageStreamSource {
-            stream: Arc::new(Mutex::new(Some(
-                img.open_page(0).map_err(|e| e.to_string())?
-            ))),
-            image_height: img.desc.height,
-        },
-    )));
-    let acc = graph.add_stage(StageNode::DataTransform(DataTransformNode::ScanLineToTile(
-        ScanLineToTile { tile_size: TILE_SIZE, image_width: w, image_height: h },
-    )));
-    let cc_to_working = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
-        ColorConvert { target_format: PixelFormat::RgbaF16, target_color_space: ColorSpace::ACES_CG, target_alpha: AlphaPolicy::Straight },
-    )));
-    let mip = graph.add_stage(StageNode::Operation(OperationNode::MipDownsample(
-        MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE },
-    )));
-    let cc_to_srgb = graph.add_stage(StageNode::Operation(OperationNode::ColorConvert(
-        ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB, target_alpha: AlphaPolicy::Straight },
-    )));
-    let cache = graph.add_stage(StageNode::Sink(SinkNode::CacheWriter(
-        CacheWriter { cache_dir },
-    )));
-    let vp_sink = graph.add_stage(StageNode::Sink(SinkNode::ViewportCacheSink(
-        ViewportCacheSink,
-    )));
-    let filter = graph.add_stage(StageNode::Operation(OperationNode::MipFilter(
-        MipFilter { mip_level: 0 },
-    )));
-    let sink = graph.add_stage(StageNode::Sink(SinkNode::TileSink(TileSink)));
+    let pipe = PathBuilder::new()
+        .src(ImageStreamSource { stream, image_height: img.desc.height })
+        .data_xform(ScanLineToTile { tile_size: TILE_SIZE, image_width: w, image_height: h })
+        .op(ColorConvert { target_format: PixelFormat::RgbaF16, target_color_space: ColorSpace::ACES_CG, target_alpha: AlphaPolicy::Straight })
+        .op(MipDownsample { image_width: w, image_height: h, tile_size: TILE_SIZE })
+        .op(ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB, target_alpha: AlphaPolicy::Straight });
 
-    graph.add_edge(src,           acc,            EdgePorts::default());
-    graph.add_edge(acc,           cc_to_working,  EdgePorts::default());
-    graph.add_edge(cc_to_working, mip,            EdgePorts::default());
-    graph.add_edge(mip,           cc_to_srgb,     EdgePorts::default());
-    graph.add_edge(cc_to_srgb,    cache,          EdgePorts::default());
-    graph.add_edge(cc_to_srgb,    vp_sink,        EdgePorts::default());
-    graph.add_edge(cc_to_srgb,    filter,         EdgePorts::default());
-    graph.add_edge(filter,        sink,           EdgePorts::default());
-    graph.outputs.push((sink, 0));
+    let [pipe_cache, pipe_vp, pipe_graph] = pipe.split();
+
+    pipe_cache
+        .sink(CacheWriter { cache_dir: cache_dir.clone() });
+
+    pipe_vp
+        .sink(ViewportCacheSink);
+
+    let graph = pipe_graph
+        .op(MipFilter { mip_level: 0 })
+        .sink(TileSink)
+        .mark_output(0)
+        .compile();
 
     let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
     let pipeline = Pipeline::compile(&graph, Some(event_tx.clone())).map_err(|e| e.to_string())?;
@@ -146,24 +124,20 @@ pub fn fetch_mip(
     range: TileRange,
     img_w: u32,
     img_h: u32,
-    vp_cache: Arc<Mutex<ViewportCache>>,
+    _vp_cache: Arc<Mutex<ViewportCache>>,
 ) {
-    let _ = vp_cache;
-
-    let reader = CacheReader {
-        cache_dir: cache_dir.to_owned(),
-        mip_level: mip,
-        tile_size: TILE_SIZE,
-        image_width: img_w,
-        image_height: img_h,
-        tile_range: Some(range),
-    };
-
-    let mut graph = ExecGraph::new();
-    let src = graph.add_stage(StageNode::Source(SourceNode::CacheReader(reader)));
-    let vp = graph.add_stage(StageNode::Sink(SinkNode::ViewportCacheSink(ViewportCacheSink)));
-    graph.add_edge(src, vp, EdgePorts::default());
-    graph.outputs.push((vp, 0));
+    let graph = PathBuilder::new()
+        .src(CacheReader {
+            cache_dir: cache_dir.to_owned(),
+            mip_level: mip,
+            tile_size: TILE_SIZE,
+            image_width: img_w,
+            image_height: img_h,
+            tile_range: Some(range),
+        })
+        .sink(ViewportCacheSink)
+        .mark_output(0)
+        .compile();
 
     thread::spawn(move || {
         let Ok(pipeline) = Pipeline::compile(&graph, None) else {
@@ -174,4 +148,67 @@ pub fn fetch_mip(
             tracing::error!("[pixors] fetch_mip {mip} error: {e}");
         }
     });
+}
+
+pub fn export_file(path: &Path, config: EncoderConfig) -> Result<(), String> {
+    let img = Image::open(path).map_err(|e| e.to_string())?;
+    let w = img.desc.width;
+    let h = img.desc.height;
+
+    tracing::info!("[pixors] export: {}×{} to {}", w, h, path.display());
+
+    let stream = Arc::new(Mutex::new(Some(
+        img.open_page(0).map_err(|e| e.to_string())?
+    )));
+
+    let encoder_sink = match &config {
+        EncoderConfig::Png(png_cfg) => SinkNode::PngEncoderV2(
+            pixors_executor::sink::png_encoder_v2::PngEncoderV2 {
+                path: path.to_path_buf(),
+                config: png_cfg.clone(),
+                dpi: img.desc.dpi,
+                icc_profile: img.desc.icc_profile.clone(),
+            },
+        ),
+        EncoderConfig::Tiff(tiff_cfg) => SinkNode::TiffEncoder(
+            pixors_executor::sink::tiff_encoder::TiffEncoderStage {
+                path: path.to_path_buf(),
+                config: tiff_cfg.clone(),
+                dpi: img.desc.dpi,
+                icc_profile: img.desc.icc_profile.clone(),
+            },
+        ),
+    };
+
+    let graph = PathBuilder::new()
+        .src(ImageStreamSource { stream, image_height: img.desc.height })
+        .data_xform(ScanLineToTile { tile_size: TILE_SIZE, image_width: w, image_height: h })
+        .op(ColorConvert { target_format: PixelFormat::Rgba8, target_color_space: ColorSpace::SRGB, target_alpha: AlphaPolicy::Straight })
+        .sink(encoder_sink)
+        .mark_output(0)
+        .compile();
+
+    let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
+    let pipeline = Pipeline::compile(&graph, Some(event_tx.clone())).map_err(|e| e.to_string())?;
+    let join_handle = thread::spawn(move || {
+        if let Err(e) = pipeline.run(None) {
+            tracing::error!("[pixors] export pipeline error: {e}");
+            let _ = event_tx.send(PipelineEvent::Error(e.to_string()));
+        }
+    });
+
+    while let Ok(event) = event_rx.recv() {
+        match event {
+            PipelineEvent::Done => break,
+            PipelineEvent::Error(e) => {
+                let _ = join_handle.join();
+                return Err(e);
+            }
+            _ => {}
+        }
+    }
+
+    let _ = join_handle.join();
+    tracing::info!("[pixors] export complete: {}", path.display());
+    Ok(())
 }

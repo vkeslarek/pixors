@@ -1,6 +1,8 @@
 mod tags;
 mod stream;
+pub mod encoder;
 
+pub use encoder::TiffEncoder;
 pub use stream::{tiff_pixel_format, tiff_row_bytes, TiffPageStream};
 pub use tags::{
     count_tiff_pages, detect_tiff_color_space, read_color_map, read_exif_blob,

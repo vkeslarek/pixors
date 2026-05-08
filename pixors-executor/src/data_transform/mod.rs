@@ -26,3 +26,19 @@ delegate_stage!(
     TileToScanline,
     TileToTileBlock
 );
+
+impl From<TileToNeighborhood> for DataTransformNode {
+    fn from(v: TileToNeighborhood) -> Self { Self::TileToNeighborhood(v) }
+}
+
+impl From<ScanLineToTile> for DataTransformNode {
+    fn from(v: ScanLineToTile) -> Self { Self::ScanLineToTile(v) }
+}
+
+impl From<TileToScanline> for DataTransformNode {
+    fn from(v: TileToScanline) -> Self { Self::TileToScanline(v) }
+}
+
+impl From<TileToTileBlock> for DataTransformNode {
+    fn from(v: TileToTileBlock) -> Self { Self::TileToTileBlock(v) }
+}

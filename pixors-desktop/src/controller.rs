@@ -62,6 +62,7 @@ impl App {
                     self.loading = false;
                 }
             },
+            Msg::ExportDialog(m) => self.handle_export_dialog(m),
             Msg::MenuBar(m) => self.handle_menu_msg(m),
             Msg::WorkspaceBar(m) => self.workspace.update(m),
             Msg::Toolbar(m) => {
@@ -85,8 +86,14 @@ impl App {
     pub(crate) fn handle_keyboard(&mut self, event: keyboard::Event) {
         if let keyboard::Event::KeyPressed { key, modifiers, .. } = event {
             if modifiers.contains(keyboard::Modifiers::CTRL) {
-                if let Key::Character("o") = key.as_ref() {
-                    self.open_file_dialog();
+                match key.as_ref() {
+                    Key::Character("o") => self.open_file_dialog(),
+                    Key::Character("e") => {
+                        if self.image_path.is_some() {
+                            self.show_export_dialog = true;
+                        }
+                    }
+                    _ => {}
                 }
             } else {
                 match key.as_ref() {
@@ -117,6 +124,7 @@ impl App {
         tracing::info!("[pixors] open_file_dialog: reset progress to 0.0");
         match crate::file_ops::open_and_run(self.cache.clone()) {
             Ok((w, h, path)) => {
+                self.image_path = Some(path.clone());
                 self.status.canvas_w = w;
                 self.status.canvas_h = h;
                 self.cache_dir = Some(path.with_extension("pixors_cache"));
@@ -160,7 +168,56 @@ impl App {
                 self.panes = Self::default().panes;
             }
             menu_bar::Msg::OpenFile => self.open_file_dialog(),
+            menu_bar::Msg::Export => {
+                if self.image_path.is_some() {
+                    self.show_export_dialog = true;
+                }
+            }
             _ => {}
+        }
+    }
+
+    pub(crate) fn handle_export_dialog(&mut self, m: crate::dialog::export::Msg) {
+        match m {
+            crate::dialog::export::Msg::Export => {
+                let config = self.export_dialog.encoder_config();
+                let ext = self.export_dialog.file_extension();
+                self.show_export_dialog = false;
+
+                if let Some(ref path) = self.image_path {
+                    let suggested = path.with_extension(ext);
+                    if let Some(save_path) = rfd::FileDialog::new()
+                        .add_filter(ext.to_uppercase().as_str(), &[ext])
+                        .set_file_name(
+                            suggested
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("export"),
+                        )
+                        .save_file()
+                    {
+                        self.loading = true;
+                        self.progress = 0.0;
+                        let save = save_path.clone();
+                        let c = config.clone();
+                        let tx = crate::app::pipeline_event_tx();
+                        std::thread::spawn(move || {
+                            match crate::file_ops::export_file(&save, c) {
+                                Ok(()) => {
+                                    let _ = tx.send(PipelineEvent::Done);
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(PipelineEvent::Error(e));
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            crate::dialog::export::Msg::Cancel => {
+                self.show_export_dialog = false;
+            }
+            other => self.export_dialog.update(other),
         }
     }
 
