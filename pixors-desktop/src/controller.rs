@@ -355,6 +355,10 @@ impl App {
             image_width: tab.desc.width,
             image_height: tab.desc.height,
             cache: tab.viewport_cache.clone(),
+            display_format: self.state.display_format,
+            display_color_space: self.state.display_color_space,
+            working_format: self.state.working_format,
+            working_color_space: self.state.working_color_space,
         };
 
         let _ = self.dispatcher.dispatch(Arc::new(action), &mut self.state);

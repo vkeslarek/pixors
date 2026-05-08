@@ -11,6 +11,7 @@ impl Action for CloseTab {
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
         pixors_executor::sink::viewport_cache_sink::unregister_tab_cache(self.0.0);
+        pixors_executor::source::viewport_cache_source::uninstall_viewport_cache_reader(self.0.0);
         state.close(self.0);
         Ok(PreparedAction::StateOnly)
     }

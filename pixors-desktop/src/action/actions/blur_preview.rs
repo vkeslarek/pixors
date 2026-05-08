@@ -1,16 +1,18 @@
 use std::sync::{Arc, Mutex};
 
 use pixors_executor::common::color::space::ColorSpace;
+use pixors_executor::common::pixel::meta::PixelMeta;
 use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_executor::data::buffer::Buffer;
-use pixors_executor::data::tile::{Tile, TileCoord};
+use pixors_executor::data::tile::Tile;
+use pixors_executor::data::tile::TileCoord;
 use pixors_executor::data_transform::to_neighborhood::TileToNeighborhood;
 use pixors_executor::graph::item::Item;
 use pixors_executor::operation::blur::Blur;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::sink::viewport_cache_sink::ViewportCacheSink;
 use pixors_executor::source::viewport_cache_source::{
-    install_viewport_cache_reader, ViewportCacheSource,
+    ViewportCacheSource, install_viewport_cache_reader,
 };
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
@@ -29,6 +31,12 @@ pub struct BlurPreview {
     pub image_width: u32,
     pub image_height: u32,
     pub cache: Arc<Mutex<ViewportCache>>,
+    /// Format/colorspace of tiles stored in the RAM cache (display space, e.g. sRGB Rgba8).
+    pub display_format: PixelFormat,
+    pub display_color_space: ColorSpace,
+    /// Working format/colorspace for blur (linear, e.g. ACEScg RgbaF16).
+    pub working_format: PixelFormat,
+    pub working_color_space: ColorSpace,
 }
 
 impl Action for BlurPreview {
@@ -40,9 +48,14 @@ impl Action for BlurPreview {
         let cache = self.cache.clone();
         let image_width = self.image_width;
         let image_height = self.image_height;
+        let display_format = self.display_format;
+        let display_color_space = self.display_color_space;
 
-        install_viewport_cache_reader(Box::new(
-            move |_key, generation, mip, _range| {
+        // Register the RAM-cache reader for this tab. Tiles are in display space
+        // (e.g. sRGB Rgba8) — label them honestly so downstream ColorConvert is correct.
+        install_viewport_cache_reader(
+            self.tab.0,
+            Box::new(move |_key, generation, mip, _range| {
                 let guard = cache.lock().unwrap();
                 guard
                     .tiles_at_mip(mip, generation)
@@ -61,24 +74,30 @@ impl Action for BlurPreview {
                                 image_width,
                                 image_height,
                             },
-                            pixors_executor::common::pixel::meta::PixelMeta::new(
-                                PixelFormat::RgbaF16,
-                                ColorSpace::ACES_CG,
+                            PixelMeta::new(
+                                display_format,
+                                display_color_space,
                                 AlphaPolicy::Straight,
                             ),
                             Buffer::cpu(ct.bytes.as_ref().clone()),
                         ))
                     })
                     .collect()
-            },
-        ));
+            }),
+        );
 
+        // Pipeline: decode display→working, blur in linear space, re-encode to display.
         let graph = PathBuilder::new()
             .src(ViewportCacheSource {
                 routing_key: self.tab.0,
                 mip_level: self.mip,
                 generation: 0,
                 tile_range: None,
+            })
+            .op(ColorConvert {
+                target_format: self.working_format,
+                target_color_space: self.working_color_space,
+                target_alpha: AlphaPolicy::Straight,
             })
             .data_xform(TileToNeighborhood {
                 radius: self.radius,
@@ -87,8 +106,8 @@ impl Action for BlurPreview {
                 radius: self.radius,
             })
             .op(ColorConvert {
-                target_format: PixelFormat::Rgba8,
-                target_color_space: ColorSpace::SRGB,
+                target_format: self.display_format,
+                target_color_space: self.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
             })
             .sink(ViewportCacheSink::new(self.tab.0, self.generation))

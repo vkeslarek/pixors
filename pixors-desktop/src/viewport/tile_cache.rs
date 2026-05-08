@@ -13,9 +13,22 @@ pub struct CachedTile {
     pub generation: u64,
 }
 
+/// Two-tier tile cache.
+///
+/// `base` holds gen=0 tiles written by OpenFile / MipFetch — these are the
+/// source-of-truth pixels and are **never** evicted by preview pipelines.
+///
+/// `overlay` holds gen>0 tiles written by preview pipelines (e.g. blur
+/// preview). The viewport renders the overlay tile if one exists for a
+/// position, falling back to base. `clear_generation` removes overlay tiles;
+/// it never touches base.
+///
+/// This invariant ensures the blur-preview source always finds its gen=0
+/// input tiles regardless of how many preview cycles have run.
 #[derive(Debug)]
 pub struct ViewportCache {
-    entries: HashMap<TileGridPos, CachedTile>,
+    base: HashMap<TileGridPos, CachedTile>,
+    overlay: HashMap<TileGridPos, CachedTile>,
     pending: HashSet<TileGridPos>,
     new_img: Option<(u32, u32)>,
     pub active_dims: (u32, u32),
@@ -25,7 +38,8 @@ pub struct ViewportCache {
 impl ViewportCache {
     pub fn new() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
-            entries: HashMap::new(),
+            base: HashMap::new(),
+            overlay: HashMap::new(),
             pending: HashSet::new(),
             new_img: None,
             active_dims: (1, 1),
@@ -33,21 +47,30 @@ impl ViewportCache {
         }))
     }
 
-    /// Insert a tile for a given generation. If a tile at the same position
-    /// already exists with a HIGHER generation, this insert is silently ignored.
-    /// Lower-generation tiles are replaced. This ensures parallel pipelines
-    /// writing different generations don't conflict.
+    /// Insert a tile.
+    ///
+    /// gen=0 → written to `base` (always; old base tiles are freely replaced
+    /// by fresher fetches of the same position).
+    ///
+    /// gen>0 → written to `overlay`. Silently dropped if an overlay tile with
+    /// a HIGHER generation already exists at that position (prevents a stale
+    /// pipeline from rolling back a newer preview).
     pub fn insert(&mut self, generation: u64, key: TileGridPos, tile: CachedTile) {
-        if let Some(existing) = self.entries.get(&key)
-            && existing.generation > generation
-        {
-            return;
+        if generation == 0 {
+            self.base.insert(key, tile);
+            self.pending.insert(key);
+        } else {
+            if let Some(existing) = self.overlay.get(&key)
+                && existing.generation > generation
+            {
+                return;
+            }
+            self.overlay.insert(key, tile);
+            self.pending.insert(key);
         }
-        self.entries.insert(key, tile);
-        self.pending.insert(key);
     }
 
-    /// Drains pending keys for a MIP level (marks them as uploaded).
+    /// Drains pending keys for a MIP level (marks them as uploaded to GPU texture).
     pub fn take_pending_keys_for_mip(&mut self, mip: u32) -> Vec<TileGridPos> {
         let keys: Vec<TileGridPos> = self
             .pending
@@ -59,18 +82,9 @@ impl ViewportCache {
         keys
     }
 
+    /// Lookup a tile for display: overlay wins over base.
     pub fn get(&self, key: &TileGridPos) -> Option<&CachedTile> {
-        self.entries.get(key)
-    }
-
-    /// All stored tiles for a MIP level — used on full re-upload (MIP switch or resize).
-    #[allow(dead_code)]
-    pub fn all_for_mip(&self, mip: u32) -> Vec<(TileGridPos, &CachedTile)> {
-        self.entries
-            .iter()
-            .filter(|(k, _)| k.mip_level == mip)
-            .map(|(k, v)| (*k, v))
-            .collect()
+        self.overlay.get(key).or_else(|| self.base.get(key))
     }
 
     pub fn tiles_in_range(
@@ -86,7 +100,7 @@ impl ViewportCache {
                     tx,
                     ty,
                 };
-                if let Some(tile) = self.entries.get(&pos) {
+                if let Some(tile) = self.get(&pos) {
                     res.push((pos, tile));
                 }
             }
@@ -95,7 +109,8 @@ impl ViewportCache {
     }
 
     pub fn has_mip(&self, mip: u32) -> bool {
-        self.entries.keys().any(|k| k.mip_level == mip)
+        self.base.keys().any(|k| k.mip_level == mip)
+            || self.overlay.keys().any(|k| k.mip_level == mip)
     }
 
     pub fn has_all_tiles(
@@ -110,7 +125,7 @@ impl ViewportCache {
                     tx,
                     ty,
                 };
-                if !self.entries.contains_key(&pos) {
+                if !self.base.contains_key(&pos) && !self.overlay.contains_key(&pos) {
                     return false;
                 }
             }
@@ -119,7 +134,7 @@ impl ViewportCache {
     }
 
     pub fn has_pending(&self) -> bool {
-        self.pending.iter().any(|k| k.mip_level == self.active_mip)
+        !self.pending.is_empty()
     }
 
     pub fn set_active_mip(&mut self, mip: u32) {
@@ -128,22 +143,30 @@ impl ViewportCache {
 
     /// Clear everything — call before loading a new image.
     pub fn clear_all(&mut self) {
-        self.entries.clear();
+        self.base.clear();
+        self.overlay.clear();
         self.pending.clear();
         self.new_img = None;
         self.active_dims = (1, 1);
         self.active_mip = 0;
     }
 
-    /// Remove all tiles belonging to a specific generation.
+    /// Remove all overlay tiles for a preview generation. Never touches base.
     pub fn clear_generation(&mut self, generation: u64) {
-        self.entries.retain(|_, t| t.generation != generation);
+        if generation > 0 {
+            self.overlay.retain(|_, t| t.generation != generation);
+        }
     }
 
-    /// Return all tiles at a mip level, filtered by generation.
+    /// Return all base (gen=0) tiles at a mip level, used by the blur-preview
+    /// source to read the unmodified image pixels.
     pub fn tiles_at_mip(&self, mip: u32, generation: u64) -> Vec<(TileGridPos, &CachedTile)> {
-        self.entries
-            .iter()
+        let map = if generation == 0 {
+            &self.base
+        } else {
+            &self.overlay
+        };
+        map.iter()
             .filter(|(k, v)| k.mip_level == mip && v.generation == generation)
             .map(|(k, v)| (*k, v))
             .collect()
