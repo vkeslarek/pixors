@@ -3,7 +3,7 @@ use iced::keyboard::{self, Key};
 use iced::widget::pane_grid;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::source::cache_reader::TileRange;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::app::{App, Msg, PaneKind};
 use crate::components::{filters_panel, layers_panel, menu_bar, tab_bar};
@@ -130,7 +130,7 @@ impl App {
                 match key.as_ref() {
                     Key::Character("o") => self.open_file_dialog(),
                     Key::Character("e") => {
-                        if self.image_path.is_some() {
+                        if self.active_file_path().is_some() {
                             self.show_export_dialog = true;
                         }
                     }
@@ -160,88 +160,26 @@ impl App {
     }
 
     pub(crate) fn open_file_dialog(&mut self) {
-        tracing::info!("[pixors] open_file_dialog: starting");
+        let path = rfd::FileDialog::new()
+            .add_filter("Images", &["png", "tiff", "tif"])
+            .pick_file();
 
-        let vp_cache = crate::viewport::tile_cache::ViewportCache::new();
-        match crate::file_ops::open_and_run(Some(vp_cache.clone())) {
-            Ok((w, h, path)) => {
-                // --- backward compat: old flat fields (remove in Phase B) ---
-                self.image_path = Some(path.clone());
-
-                // --- new: create Tab in EditorState ---
-                let tab_id = self.state.alloc_tab_id();
-                let title = path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("untitled")
-                    .to_string();
-
-                // Re-open metadata for the descriptor (cheap, sync)
-                let desc = match pixors_executor::common::image::Image::open(&path) {
-                    Ok(img) => img.desc,
-                    Err(_) => pixors_executor::common::image::ImageDescriptor {
-                        format: String::new(),
-                        width: w,
-                        height: h,
-                        bit_depth: 8,
-                        color_space: pixors_executor::common::color::space::ColorSpace::SRGB,
-                        dpi: None,
-                        metadata: vec![],
-                        icc_profile: None,
-                        pages: vec![],
-                    },
-                };
-
-                self.state.push_tab(crate::state::Tab {
-                    id: tab_id,
-                    title,
-                    source: crate::state::TabSource::File {
-                        path: path.clone(),
-                    },
-                    desc,
-                    cache_dir: path.with_extension("pixors_cache"),
-                    viewport_cache: vp_cache,
-                    viewport_state: {
-                        use std::cell::RefCell;
-                        use std::rc::Rc;
-                        use crate::viewport::state::ViewportState;
-                        let mut vs = ViewportState::default();
-                        vs.camera.img_w = w as f32;
-                        vs.camera.img_h = h as f32;
-                        Rc::new(RefCell::new(vs))
-                    },
-                    mip_fetch_signal: Arc::new(Mutex::new(Vec::<(TabId, u32, TileRange)>::new())),
-                    tile_generation: 0,
-                    layers: vec![],
-                    active_layer: None,
-                    chain: Default::default(),
-                    history: Default::default(),
-                    view: crate::state::TabView {
-                        zoom: 1.0,
-                        pan: (0.0, 0.0),
-                        active_mip: 0,
-                        loading: true,
-                        progress: 0.0,
-                    },
-                });
+        if let Some(path) = path {
+            if let Err(e) = self.dispatcher.dispatch(
+                Arc::new(crate::action::actions::open_file::OpenFile::new(path)),
+                &mut self.state,
+            ) {
+                self.push_error(e);
+            } else {
                 self.update_status_from_active_tab();
-
-                self.push_error(format!(
-                    "OK {}×{} — {}",
-                    w,
-                    h,
-                    path.file_name().unwrap_or_default().to_string_lossy()
-                ));
             }
-            Err(e) if e == "cancelled" => {}
-            Err(e) => self.push_error(e),
         }
     }
 
     pub(crate) fn handle_tick(&mut self) {
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        let mut mip_requests: Vec<(TabId, u32, TileRange)> = Vec::new();
+        let mut mip_requests: Vec<(TabId, u32, TileRange, std::path::PathBuf, u32, u32)> = Vec::new();
 
         for tab in &mut self.state.tabs {
             if tab.viewport_cache.lock().is_ok_and(|g| g.has_pending()) {
@@ -250,12 +188,34 @@ impl App {
 
             let mut sigs = tab.mip_fetch_signal.lock().unwrap();
             if !sigs.is_empty() {
-                mip_requests.extend(sigs.drain(..));
+                for (tab_id, mip, range) in sigs.drain(..) {
+                    let cache_dir = tab.cache_dir.clone();
+                    let (img_w, img_h) = (tab.desc.width, tab.desc.height);
+                    mip_requests.push((tab_id, mip, range, cache_dir, img_w, img_h));
+                }
             }
         }
 
-        for (tab_id, mip, range) in mip_requests {
-            self.fetch_mip_from_cache(tab_id, mip, range);
+        for (tab_id, mip, range, cache_dir, img_w, img_h) in mip_requests {
+            // Skip if all tiles already in cache
+            if let Some(tab) = self.state.tab(tab_id) {
+                if let Ok(guard) = tab.viewport_cache.lock()
+                    && guard.has_all_tiles(mip, &range) {
+                        continue;
+                    }
+            }
+
+            let _ = self.dispatcher.dispatch(
+                Arc::new(crate::action::actions::mip_fetch::RequestMipFetch {
+                    tab: tab_id,
+                    mip,
+                    range,
+                    cache_dir,
+                    img_w,
+                    img_h,
+                }),
+                &mut self.state,
+            );
         }
     }
 
@@ -269,7 +229,7 @@ impl App {
             }
             menu_bar::Msg::OpenFile => self.open_file_dialog(),
             menu_bar::Msg::Export => {
-                if self.image_path.is_some() {
+                if self.active_file_path().is_some() {
                     self.show_export_dialog = true;
                 }
             }
@@ -284,7 +244,7 @@ impl App {
                 let ext = self.export_dialog.file_extension();
                 self.show_export_dialog = false;
 
-                if let Some(ref path) = self.image_path {
+                if let Some(ref path) = self.active_file_path().map(|p| p.to_path_buf()) {
                     let suggested = path.with_extension(ext);
                     if let Some(save_path) = rfd::FileDialog::new()
                         .add_filter(ext.to_uppercase().as_str(), &[ext])
@@ -296,23 +256,24 @@ impl App {
                         )
                         .save_file()
                     {
-                        if let Some(tab) = self.state.active_tab_mut() {
-                            tab.view.loading = true;
-                            tab.view.progress = 0.0;
-                        }
-                        let save = save_path.clone();
-                        let c = config.clone();
-                        let tx = crate::app::pipeline_event_tx();
-                        std::thread::spawn(move || {
-                            match crate::file_ops::export_file(&save, c) {
-                                Ok(()) => {
-                                    let _ = tx.send(PipelineEvent::Done);
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(PipelineEvent::Error(e));
-                                }
-                            }
+                        let Some(tab) = self.state.active_tab_mut() else { return; };
+                        let tab_id = tab.id;
+                        tab.view.loading = true;
+                        tab.view.progress = 0.0;
+
+                        let action = Arc::new(crate::action::actions::export::Export {
+                            tab: tab_id,
+                            source_path: path.clone(),
+                            save_path: save_path.clone(),
+                            config: config.clone(),
+                            dpi: tab.desc.dpi,
+                            icc_profile: tab.desc.icc_profile.clone(),
+                            image_height: tab.desc.height,
                         });
+
+                        if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
+                            self.push_error(e);
+                        }
                     }
                 }
             }
@@ -340,25 +301,6 @@ impl App {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             _ => self.filters.update(m),
         }
-    }
-
-    pub(crate) fn fetch_mip_from_cache(&self, tab_id: TabId, mip: u32, range: TileRange) {
-        let Some(tab) = self.state.tab(tab_id) else { return; };
-        let (img_w, img_h) = (tab.desc.width, tab.desc.height);
-
-        if let Ok(guard) = tab.viewport_cache.lock()
-            && guard.has_all_tiles(mip, &range) {
-                return;
-            }
-
-        crate::file_ops::fetch_mip(
-            &tab.cache_dir,
-            mip,
-            range,
-            img_w,
-            img_h,
-            tab.viewport_cache.clone(),
-        );
     }
 
     pub(crate) fn push_error(&mut self, msg: String) {

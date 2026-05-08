@@ -1,9 +1,11 @@
 pub mod actions;
 
 use std::collections::HashMap;
+use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::thread;
 
+use pixors_executor::graph::graph::ExecGraph;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::runtime::pipeline::Pipeline;
 use tokio::sync::broadcast;
@@ -28,7 +30,7 @@ pub enum PreparedAction {
     StateOnly,
     Pipeline {
         mode: PipelineMode,
-        pipeline: Pipeline,
+        graph: ExecGraph,
         snapshot: Option<SnapshotId>,
     },
 }
@@ -106,7 +108,7 @@ impl Dispatcher {
                 }
                 Ok(())
             }
-            PreparedAction::Pipeline { mode, pipeline, .. } => {
+            PreparedAction::Pipeline { mode, graph, .. } => {
                 if mode == PipelineMode::Apply {
                     if let Some(tid) = tab_id {
                         self.tab_disp(tid).locked = true;
@@ -118,13 +120,21 @@ impl Dispatcher {
                 }
                 self.active_pipeline_tab = tab_id;
 
-                let event_tx = self.event_tx.clone();
+                let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
+                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()))
+                    .map_err(|e| e.to_string())?;
+
+                let broadcast_tx = self.event_tx.clone();
                 thread::spawn(move || {
-                    let result = pipeline.run(None);
-                    let _ = event_tx.send(match result {
-                        Ok(_) => PipelineEvent::Done,
-                        Err(e) => PipelineEvent::Error(e.to_string()),
-                    });
+                    if let Err(e) = pipeline.run(None) {
+                        tracing::error!("[pixors] pipeline error: {e}");
+                    }
+                    let _ = event_tx.send(PipelineEvent::Done);
+                });
+                thread::spawn(move || {
+                    while let Ok(event) = event_rx.recv() {
+                        let _ = broadcast_tx.send(event);
+                    }
                 });
 
                 Ok(())

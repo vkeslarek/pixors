@@ -108,6 +108,13 @@ impl App {
         self.state.active_tab().map(|t| t.view.progress).unwrap_or(0.0)
     }
 
+    pub fn active_file_path(&self) -> Option<&std::path::Path> {
+        self.state.active_tab().and_then(|t| match &t.source {
+            crate::state::TabSource::File { path } => Some(path.as_path()),
+            crate::state::TabSource::NewBlank { .. } => None,
+        })
+    }
+
     pub fn subscription(&self) -> Subscription<Msg> {
         let mut subs = vec![
             keyboard::listen().map(Msg::KeyPressed),
