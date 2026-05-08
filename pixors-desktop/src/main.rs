@@ -6,6 +6,7 @@ mod file_ops;
 mod icons;
 mod pages;
 mod path_builder;
+mod state;
 mod theme;
 mod widgets;
 mod viewport;

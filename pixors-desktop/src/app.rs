@@ -13,6 +13,7 @@ use crate::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
     workspace_bar,
 };
+use crate::state::EditorState;
 use crate::viewport::tile_cache::ViewportCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub enum Msg {
 }
 
 pub struct App {
+    pub state: EditorState,
     pub panes: pane_grid::State<PaneKind>,
     pub workspace: workspace_bar::State,
     pub tools: toolbar::State,
@@ -53,10 +55,11 @@ pub struct App {
     pub progress: f32,
     #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
+    #[allow(dead_code)]
     pub cache: Option<Arc<Mutex<ViewportCache>>>,
     pub tile_generation: u64,
     /// Written by ViewportProgram when MIP changes; read here to trigger disk fetch.
-    pub mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
+    pub mip_fetch_signal: Arc<Mutex<Vec<(crate::state::TabId, u32, TileRange)>>>,
     pub cache_dir: Option<PathBuf>,
     pub image_dims: Option<(u32, u32)>,
     pub image_path: Option<PathBuf>,
@@ -82,7 +85,42 @@ impl Default for App {
         };
         let panes = pane_grid::State::with_configuration(cfg);
 
-        Self {
+        let state = {
+            use pixors_executor::common::color::space::ColorSpace;
+            use crate::state::{Tab, TabSource, TabView};
+
+            let mut es = EditorState::new();
+            for i in 0..2 {
+                let id = es.alloc_tab_id();
+                es.push_tab(Tab {
+                    id,
+                    title: format!("Untitled {}", i + 1),
+                    source: TabSource::NewBlank { width: 1024, height: 1024 },
+                    desc: pixors_executor::common::image::ImageDescriptor {
+                        format: "RGBA8".into(),
+                        width: 1024,
+                        height: 1024,
+                        bit_depth: 8,
+                        color_space: ColorSpace::SRGB,
+                        dpi: None,
+                        metadata: vec![],
+                        icc_profile: None,
+                        pages: vec![],
+                    },
+                    cache_dir: std::path::PathBuf::new(),
+                    viewport_cache: ViewportCache::new(),
+                    layers: vec![],
+                    active_layer: None,
+                    chain: Default::default(),
+                    history: Default::default(),
+                    view: TabView { zoom: 1.0, pan: (0.0, 0.0), active_mip: 0 },
+                });
+            }
+            es
+        };
+
+        let mut app = Self {
+            state,
             panes,
             workspace: workspace_bar::State::default(),
             tools: toolbar::State::default(),
@@ -101,7 +139,9 @@ impl Default for App {
             image_path: None,
             show_export_dialog: false,
             export_dialog: crate::dialog::export::ExportDialog::default(),
-        }
+        };
+        app.update_status_from_active_tab();
+        app
     }
 }
 
@@ -112,8 +152,10 @@ impl App {
             iced::time::every(std::time::Duration::from_millis(33)).map(|_| Msg::Tick),
         ];
 
-        let has_pending = self.cache.as_ref()
-            .and_then(|c| c.lock().ok())
+        let has_pending = self
+            .state
+            .active_tab()
+            .and_then(|t| t.viewport_cache.lock().ok())
             .map(|g| g.has_pending())
             .unwrap_or(false);
 

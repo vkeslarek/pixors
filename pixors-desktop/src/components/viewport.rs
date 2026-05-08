@@ -5,6 +5,7 @@ use iced::{Background, Color, Element, Length};
 
 use pixors_executor::source::cache_reader::TileRange;
 
+use crate::state::TabId;
 use crate::viewport::program::ViewportProgram;
 use crate::viewport::tile_cache::ViewportCache;
 use crate::widgets::pill;
@@ -13,11 +14,17 @@ pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,
     canvas_w: u32,
     canvas_h: u32,
-    cache: Option<Arc<Mutex<ViewportCache>>>,
+    active_cache: Option<Arc<Mutex<ViewportCache>>>,
     tile_generation: u64,
-    mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
+    mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    tab_id: Option<TabId>,
 ) -> Element<'a, Msg> {
-    let program = ViewportProgram { cache, tile_generation, mip_fetch_signal };
+    let program = ViewportProgram {
+        cache: active_cache,
+        tile_generation,
+        mip_fetch_signal,
+        tab_id,
+    };
 
     // By alternating the width of a sibling space widget slightly, we force
     // iced to invalidate the shader widget's bounds cache and call draw(),

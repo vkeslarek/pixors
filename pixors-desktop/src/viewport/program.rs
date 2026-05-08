@@ -5,6 +5,7 @@ use iced::{Event, Point, Rectangle, Size};
 use iced::mouse;
 use pixors_executor::source::cache_reader::TileRange;
 
+use crate::state::TabId;
 use crate::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
 use crate::viewport::tile_cache::ViewportCache;
@@ -14,9 +15,8 @@ pub const TILE_SIZE: u32 = 256;
 pub struct ViewportProgram {
     pub cache: Option<Arc<Mutex<ViewportCache>>>,
     pub tile_generation: u64,
-    /// Set by update() when MIP changes: (mip_level, visible_tile_range).
-    /// App polls this on each tick to trigger a disk fetch if needed.
-    pub mip_fetch_signal: Arc<Mutex<Vec<(u32, TileRange)>>>,
+    pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    pub tab_id: Option<TabId>,
 }
 
 impl<Msg> shader::Program<Msg> for ViewportProgram {
@@ -72,17 +72,15 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         state.current_mip = target_mip;
 
         let mut reqs = Vec::new();
-        // Fetch the primary mip level with aggressive padding (3 tiles) for panning
-        reqs.push((state.current_mip, state.camera.padded_tile_range(state.current_mip, TILE_SIZE, 3)));
-        
-        // Preemptively fetch lower resolution (zoomed out, MIP + 1), padding 2
-        let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
-        if state.current_mip < max_mip {
-            reqs.push((state.current_mip + 1, state.camera.padded_tile_range(state.current_mip + 1, TILE_SIZE, 2)));
-        }
-        // Preemptively fetch higher resolution (zoomed in, MIP - 1), padding 2
-        if state.current_mip > 0 {
-            reqs.push((state.current_mip - 1, state.camera.padded_tile_range(state.current_mip - 1, TILE_SIZE, 2)));
+        if let Some(tab_id) = self.tab_id {
+            reqs.push((tab_id, state.current_mip, state.camera.padded_tile_range(state.current_mip, TILE_SIZE, 3)));
+            let max_mip = crate::viewport::camera::compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
+            if state.current_mip < max_mip {
+                reqs.push((tab_id, state.current_mip + 1, state.camera.padded_tile_range(state.current_mip + 1, TILE_SIZE, 2)));
+            }
+            if state.current_mip > 0 {
+                reqs.push((tab_id, state.current_mip - 1, state.camera.padded_tile_range(state.current_mip - 1, TILE_SIZE, 2)));
+            }
         }
 
         if Some(reqs.clone()) != state.last_reqs {
@@ -194,7 +192,7 @@ pub struct ViewportState {
     fitted: bool,
     last_pos: Option<Point>,
     last_bounds: Option<Size>,
-    last_reqs: Option<Vec<(u32, TileRange)>>,
+    last_reqs: Option<Vec<(TabId, u32, TileRange)>>,
 }
 
 impl Default for ViewportState {

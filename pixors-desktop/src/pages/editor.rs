@@ -5,15 +5,22 @@ use crate::app::{App, Msg, PaneKind};
 use crate::theme::BG_SURFACE;
 
 pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
+    let active = app.state.active_tab();
+    let canvas_w = active.map(|t| t.desc.width).unwrap_or(0);
+    let canvas_h = active.map(|t| t.desc.height).unwrap_or(0);
+    let active_cache = active.map(|t| t.viewport_cache.clone());
+    let tab_id = app.state.active_id();
+
     row![
         app.tools.view().map(Msg::Toolbar),
         crate::components::viewport::view(
-            app.tabs.view().map(Msg::TabBar),
-            app.status.canvas_w,
-            app.status.canvas_h,
-            app.cache.clone(),
+            app.tabs.view(&app.state).map(Msg::TabBar),
+            canvas_w,
+            canvas_h,
+            active_cache,
             app.tile_generation,
             app.mip_fetch_signal.clone(),
+            tab_id,
         ),
         crate::components::sidebar_grid::view(
             &app.panes,

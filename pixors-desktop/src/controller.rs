@@ -1,10 +1,11 @@
+use crate::state::TabId;
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::source::cache_reader::TileRange;
 
 use crate::app::{App, Msg, PaneKind};
-use crate::components::{filters_panel, layers_panel, menu_bar};
+use crate::components::{filters_panel, layers_panel, menu_bar, tab_bar};
 use crate::components::toolbar::Tool;
 
 impl App {
@@ -69,7 +70,26 @@ impl App {
                 self.tools.update(m);
                 self.status.active_tool = self.tools.active_tool;
             }
-            Msg::TabBar(m) => self.tabs.update(m),
+            Msg::TabBar(m) => match m {
+                tab_bar::Msg::Select(id) => {
+                    self.state.switch(id);
+                    self.update_status_from_active_tab();
+                }
+                tab_bar::Msg::Close(id) => {
+                    self.state.close(id);
+                    self.update_status_from_active_tab();
+                }
+                tab_bar::Msg::DragDrop => {
+                    if let (Some(from), Some(to)) = (self.tabs.drag_from, self.tabs.drag_over) {
+                        if from != to {
+                            self.state.swap_tabs(from, to);
+                        }
+                    }
+                    self.tabs.drag_from = None;
+                    self.tabs.drag_over = None;
+                }
+                _ => self.tabs.update(m, self.state.tabs().len()),
+            },
             Msg::LayersPanel(m) => self.handle_layers_msg(m),
             Msg::FiltersPanel(m) => self.handle_filters_msg(m),
             Msg::PaneResized(e) => self.panes.resize(e.split, e.ratio),
@@ -122,13 +142,60 @@ impl App {
         self.loading = true;
         self.progress = 0.0;
         tracing::info!("[pixors] open_file_dialog: reset progress to 0.0");
-        match crate::file_ops::open_and_run(self.cache.clone()) {
+
+        let vp_cache = crate::viewport::tile_cache::ViewportCache::new();
+        match crate::file_ops::open_and_run(Some(vp_cache.clone())) {
             Ok((w, h, path)) => {
+                // --- backward compat: old flat fields (remove in Phase B) ---
                 self.image_path = Some(path.clone());
-                self.status.canvas_w = w;
-                self.status.canvas_h = h;
                 self.cache_dir = Some(path.with_extension("pixors_cache"));
                 self.image_dims = Some((w, h));
+
+                // --- new: create Tab in EditorState ---
+                let tab_id = self.state.alloc_tab_id();
+                let title = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("untitled")
+                    .to_string();
+
+                // Re-open metadata for the descriptor (cheap, sync)
+                let desc = match pixors_executor::common::image::Image::open(&path) {
+                    Ok(img) => img.desc,
+                    Err(_) => pixors_executor::common::image::ImageDescriptor {
+                        format: String::new(),
+                        width: w,
+                        height: h,
+                        bit_depth: 8,
+                        color_space: pixors_executor::common::color::space::ColorSpace::SRGB,
+                        dpi: None,
+                        metadata: vec![],
+                        icc_profile: None,
+                        pages: vec![],
+                    },
+                };
+
+                self.state.push_tab(crate::state::Tab {
+                    id: tab_id,
+                    title,
+                    source: crate::state::TabSource::File {
+                        path: path.clone(),
+                    },
+                    desc,
+                    cache_dir: path.with_extension("pixors_cache"),
+                    viewport_cache: vp_cache,
+                    layers: vec![],
+                    active_layer: None,
+                    chain: Default::default(),
+                    history: Default::default(),
+                    view: crate::state::TabView {
+                        zoom: 1.0,
+                        pan: (0.0, 0.0),
+                        active_mip: 0,
+                    },
+                });
+                self.update_status_from_active_tab();
+
                 self.push_error(format!(
                     "OK {}×{} — {}",
                     w,
@@ -144,7 +211,8 @@ impl App {
     pub(crate) fn handle_tick(&mut self) {
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        if let Some(ref cache) = self.cache
+        if let Some(ref cache) = self.state.active_tab()
+            .map(|t| &t.viewport_cache)
             && cache.lock().is_ok_and(|g| g.has_pending()) {
                 self.tile_generation = self.tile_generation.wrapping_add(1);
                 tracing::info!("[pixors] handle_tick: tile_generation is now {}", self.tile_generation);
@@ -153,8 +221,8 @@ impl App {
         let mut sigs = self.mip_fetch_signal.lock().unwrap();
         if !sigs.is_empty() {
             let reqs: Vec<_> = sigs.drain(..).collect();
-            for (mip, range) in reqs {
-                self.fetch_mip_from_cache(mip, range);
+            for (tab_id, mip, range) in reqs {
+                self.fetch_mip_from_cache(tab_id, mip, range);
             }
         }
     }
@@ -240,28 +308,38 @@ impl App {
         }
     }
 
-    pub(crate) fn fetch_mip_from_cache(&self, mip: u32, range: TileRange) {
-        let Some(ref cache_dir) = self.cache_dir else { return; };
-        let Some((img_w, img_h)) = self.image_dims else { return; };
-        let Some(ref vp_cache) = self.cache else { return; };
+    pub(crate) fn fetch_mip_from_cache(&self, tab_id: TabId, mip: u32, range: TileRange) {
+        let Some(tab) = self.state.tab(tab_id) else { return; };
+        let (img_w, img_h) = (tab.desc.width, tab.desc.height);
 
-        // Skip fetch if all visible tiles are already in RAM.
-        if let Ok(guard) = vp_cache.lock()
+        if let Ok(guard) = tab.viewport_cache.lock()
             && guard.has_all_tiles(mip, &range) {
                 return;
             }
 
         crate::file_ops::fetch_mip(
-            cache_dir,
+            &tab.cache_dir,
             mip,
             range,
             img_w,
             img_h,
-            vp_cache.clone(),
+            tab.viewport_cache.clone(),
         );
     }
 
     pub(crate) fn push_error(&mut self, msg: String) {
         self.errors.push((msg, std::time::Instant::now()));
+    }
+
+    pub(crate) fn update_status_from_active_tab(&mut self) {
+        if let Some(tab) = self.state.active_tab() {
+            self.status.canvas_w = tab.desc.width;
+            self.status.canvas_h = tab.desc.height;
+            self.status.layers = tab.layers.len();
+        } else {
+            self.status.canvas_w = 0;
+            self.status.canvas_h = 0;
+            self.status.layers = 0;
+        }
     }
 }

@@ -2,17 +2,15 @@ use iced::border::Radius;
 use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
+use crate::state::{EditorState, TabId};
 use crate::theme::{
-    ACCENT, BG_BASE, BORDER_SUBTLE,
-    TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    ACCENT, BG_BASE, BORDER_SUBTLE, TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Msg {
-    Select(usize),
-    Add,
-    Close(usize),
+    Select(TabId),
+    Close(TabId),
     DragStart(usize),
     DragHover(usize),
     DragDrop,
@@ -20,8 +18,6 @@ pub enum Msg {
 
 #[derive(Debug, Clone)]
 pub struct State {
-    pub tabs: Vec<String>,
-    pub active: usize,
     pub drag_from: Option<usize>,
     pub drag_over: Option<usize>,
 }
@@ -29,8 +25,6 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
-            tabs: vec!["Untitled 1".into(), "Untitled 2".into(), "Untitled 3".into()],
-            active: 0,
             drag_from: None,
             drag_over: None,
         }
@@ -38,67 +32,38 @@ impl Default for State {
 }
 
 impl State {
-    pub fn update(&mut self, msg: Msg) {
+    pub fn update(&mut self, msg: Msg, tab_count: usize) {
         match msg {
-            Msg::Select(i) => self.active = i,
-            Msg::Add => {
-                self.tabs.push(format!("Untitled {}", self.tabs.len() + 1));
-                self.active = self.tabs.len() - 1;
-            }
-            Msg::Close(i) => {
-                if self.tabs.len() > 1 {
-                    self.tabs.remove(i);
-                    if self.active >= self.tabs.len() {
-                        self.active = self.tabs.len() - 1;
-                    }
-                }
-            }
-            Msg::DragStart(i) => {
-                self.active = i;
+            Msg::Select(_) | Msg::Close(_) => {}
+            Msg::DragStart(i) if i < tab_count => {
                 self.drag_from = Some(i);
                 self.drag_over = Some(i);
             }
-            Msg::DragHover(i) => {
-                if self.drag_from.is_some() {
-                    self.drag_over = Some(i);
-                }
+            Msg::DragHover(i) if self.drag_from.is_some() && i < tab_count => {
+                self.drag_over = Some(i);
             }
             Msg::DragDrop => {
-                if let (Some(from), Some(to)) = (self.drag_from, self.drag_over)
-                    && from != to
-                {
-                    self.tabs.swap(from, to);
-                    if self.active == from {
-                        self.active = to;
-                    } else if self.active == to {
-                        self.active = from;
-                    }
-                }
                 self.drag_from = None;
                 self.drag_over = None;
             }
+            _ => {}
         }
     }
 
-    pub fn view(&self) -> Element<'_, Msg> {
-        let colors = [
-            Color::from_rgb(1.0, 0.30, 0.30),
-            Color::from_rgb(0.30, 1.0, 0.30),
-            Color::from_rgb(0.30, 0.30, 1.0),
-            Color::from_rgb(1.0, 1.0, 0.30),
-            Color::from_rgb(1.0, 0.30, 1.0),
-            Color::from_rgb(0.40, 1.0, 1.0),
-        ];
+    pub fn view<'a>(&'a self, editor: &'a EditorState) -> Element<'a, Msg> {
+        let active_id = editor.active_id();
+        let tabs = editor.tabs();
 
         let mut all: Vec<Element<Msg>> = Vec::new();
-        for (i, name) in self.tabs.iter().enumerate() {
+        for (i, tab) in tabs.iter().enumerate() {
+            let is_active = active_id == Some(tab.id);
             all.push(tab_view(
                 i,
-                name,
-                i == self.active,
+                &tab.title,
+                is_active,
+                tab.id,
                 self.drag_from,
                 self.drag_over,
-                colors[i % colors.len()],
             ));
         }
 
@@ -107,22 +72,20 @@ impl State {
             .padding([0, 8])
             .align_y(iced::Alignment::End);
 
-        container(
-            mouse_area(row).on_release(Msg::DragDrop),
-        )
-        .width(Length::Fill)
-        .height(TABBAR_H)
-        .align_y(iced::alignment::Vertical::Bottom)
-        .style(|_| container::Style {
-            background: Some(Background::Color(BG_BASE)),
-            border: Border {
-                width: 0.0,
-                color: BORDER_SUBTLE,
-                radius: 0.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
+        container(mouse_area(row).on_release(Msg::DragDrop))
+            .width(Length::Fill)
+            .height(TABBAR_H)
+            .align_y(iced::alignment::Vertical::Bottom)
+            .style(|_| container::Style {
+                background: Some(Background::Color(BG_BASE)),
+                border: Border {
+                    width: 0.0,
+                    color: BORDER_SUBTLE,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
     }
 }
 
@@ -130,9 +93,9 @@ fn tab_view<'a>(
     i: usize,
     name: &'a str,
     is_active: bool,
+    id: TabId,
     drag_from: Option<usize>,
     drag_over: Option<usize>,
-    _dot_color: Color,
 ) -> Element<'a, Msg> {
     let is_dragged = drag_from == Some(i);
     let is_hover_target = drag_over == Some(i) && drag_from.is_some_and(|f| f != i);
@@ -148,7 +111,7 @@ fn tab_view<'a>(
             .color(TEXT_SECONDARY)
             .center(),
     )
-    .on_press(Msg::Close(i))
+    .on_press(Msg::Close(id))
     .padding(0)
     .width(16)
     .height(16)
@@ -176,6 +139,7 @@ fn tab_view<'a>(
     let btn = button(inner)
         .padding(0)
         .width(Length::Shrink)
+        .on_press(Msg::Select(id))
         .style(move |_, status| {
             let is_hovered = matches!(status, button::Status::Hovered);
 
@@ -199,7 +163,8 @@ fn tab_view<'a>(
                 Color::TRANSPARENT
             };
 
-            let current_border_width = if is_hover_target { 2.0 } else if is_active { 1.0 } else { 0.0 };
+            let current_border_width =
+                if is_hover_target { 2.0 } else if is_active { 1.0 } else { 0.0 };
 
             button::Style {
                 background: Some(Background::Color(bg)),
