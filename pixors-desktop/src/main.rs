@@ -18,6 +18,8 @@ const SPACE_MONO_400: &[u8] = include_bytes!("../assets/space-mono-400-latin.ttf
 const SPACE_MONO_700: &[u8] = include_bytes!("../assets/space-mono-700-latin.ttf");
 
 fn main() -> iced::Result {
+    pixors_executor::sink::viewport_cache_sink::install_router();
+
     tracing_subscriber::fmt::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()

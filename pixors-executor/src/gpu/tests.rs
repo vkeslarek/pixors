@@ -37,7 +37,6 @@ mod tests {
         let meta = PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight);
         let coord = TileCoord::new(0, 0, 0, w, w, h);
 
-        // CPU reference.
         let cpu_tile = Tile::new(coord, meta, Buffer::cpu(data.clone()));
         let cpu_nbhd = Neighborhood::new(
             r,

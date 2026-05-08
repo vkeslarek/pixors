@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::data::device::Device;
 use crate::data::tile::{Tile, TileGridPos};
 use crate::data::tile_block::{TileBlock, TileBlockCoord};
 use crate::graph::item::Item;
@@ -44,8 +43,8 @@ impl Stage for TileToTileBlock {
         &PORTS
     }
 
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::either()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
@@ -7,21 +8,36 @@ use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
 
-pub type CacheCommitFn = Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
-//               gen, mip,  tx,  ty,  px,  py,   w,   h, bytes
+pub type CacheCommitFn =
+    Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+//       gen, mip,  tx,  ty,  px,  py,   w,   h, bytes
 
-static CACHE_SINK: RwLock<Option<Arc<CacheCommitFn>>> = RwLock::new(None);
+static CACHE_ROUTER: RwLock<Option<HashMap<u64, Arc<CacheCommitFn>>>> = RwLock::new(None);
 
-pub fn install_viewport_cache_sink(f: CacheCommitFn) {
-    *CACHE_SINK.write().unwrap() = Some(Arc::new(f));
+pub fn install_router() {
+    let mut w = CACHE_ROUTER.write().unwrap();
+    if w.is_none() {
+        *w = Some(HashMap::new());
+    }
 }
 
-pub fn uninstall_viewport_cache_sink() {
-    *CACHE_SINK.write().unwrap() = None;
+pub fn register_tab_cache(key: u64, f: CacheCommitFn) {
+    let mut w = CACHE_ROUTER.write().unwrap();
+    w.get_or_insert_with(HashMap::new).insert(key, Arc::new(f));
 }
 
-pub fn viewport_cache_sink() -> Option<Arc<CacheCommitFn>> {
-    CACHE_SINK.read().unwrap().clone()
+pub fn unregister_tab_cache(key: u64) {
+    if let Some(ref mut map) = *CACHE_ROUTER.write().unwrap() {
+        map.remove(&key);
+    }
+}
+
+fn lookup_cb(key: u64) -> Option<Arc<CacheCommitFn>> {
+    CACHE_ROUTER
+        .read()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.get(&key).cloned())
 }
 
 static VCS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
@@ -36,12 +52,16 @@ static VCS_PORTS: PortSpecification = PortSpecification {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewportCacheSink {
+    pub routing_key: u64,
     pub generation: u64,
 }
 
 impl ViewportCacheSink {
-    pub fn new(generation: u64) -> Self {
-        Self { generation }
+    pub fn new(routing_key: u64, generation: u64) -> Self {
+        Self {
+            routing_key,
+            generation,
+        }
     }
 }
 
@@ -55,7 +75,7 @@ impl Stage for ViewportCacheSink {
     }
 
     fn consumer(&self) -> Option<Box<dyn Consumer>> {
-        let cb = CACHE_SINK.read().unwrap().clone()?;
+        let cb = lookup_cb(self.routing_key)?;
         Some(Box::new(ViewportCacheSinkConsumer {
             cb,
             generation: self.generation,

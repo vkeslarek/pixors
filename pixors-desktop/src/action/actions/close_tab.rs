@@ -10,8 +10,7 @@ impl Action for CloseTab {
     }
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
-        // Release global sink so the closed tab's ViewportCache is freed
-        pixors_executor::sink::viewport_cache_sink::uninstall_viewport_cache_sink();
+        pixors_executor::sink::viewport_cache_sink::unregister_tab_cache(self.0.0);
         state.close(self.0);
         Ok(PreparedAction::StateOnly)
     }

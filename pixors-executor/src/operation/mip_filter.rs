@@ -1,4 +1,3 @@
-use crate::data::device::Device;
 use crate::graph::item::Item;
 use crate::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
@@ -34,8 +33,8 @@ impl Stage for MipFilter {
     fn ports(&self) -> &'static PortSpecification {
         &PORTS
     }
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::either()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {

@@ -10,7 +10,6 @@ use crate::stage::{
 use crate::error::Error;
 
 use crate::data::buffer::Buffer;
-use crate::data::device::Device;
 use crate::data::tile::{Tile, TileCoord};
 use crate::debug_stopwatch;
 
@@ -45,8 +44,8 @@ impl Stage for ScanLineToTile {
         &SA_PORTS
     }
 
-    fn device(&self) -> Device {
-        Device::Cpu
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_gpu()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {

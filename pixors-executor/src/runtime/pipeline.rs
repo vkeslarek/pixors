@@ -168,13 +168,18 @@ impl Pipeline {
             let h = thread::spawn(move || {
                 let result = runner.run(merged, outputs);
                 if let Err(ref e) = result
-                    && let Some(ref tx) = events_clone {
-                        let _ = tx.send(PipelineEvent::Error(e.to_string()));
-                    }
+                    && let Some(ref tx) = events_clone
+                {
+                    let _ = tx.send(PipelineEvent::Error {
+                        tag: 0,
+                        message: e.to_string(),
+                    });
+                }
                 if cancelled_clone.load(Ordering::Relaxed)
-                    && let Some(ref tx) = events_clone {
-                        let _ = tx.send(PipelineEvent::Cancelled);
-                    }
+                    && let Some(ref tx) = events_clone
+                {
+                    let _ = tx.send(PipelineEvent::Cancelled { tag: 0 });
+                }
                 result
             });
             handles.push(h);
@@ -292,22 +297,87 @@ fn inport_count(g: &Graph, id: StageId, group: &PortGroup) -> usize {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
-    g.node_indices()
-        .map(|id| {
-            let d = match g[id].device() {
-                Device::Gpu if !gpu_ok => Device::Cpu,
-                Device::Either => {
-                    if gpu_ok {
-                        Device::Gpu
-                    } else {
-                        Device::Cpu
-                    }
+    use petgraph::visit::EdgeRef;
+    let mut devs: HashMap<StageId, Device> = HashMap::new();
+
+    // Pass 1: fixed devices (Cpu, Gpu). Downgrade Gpu→Cpu if unavailable.
+    for id in g.node_indices() {
+        let h = g[id].hints();
+        match h.device {
+            Device::Cpu => {
+                devs.insert(id, Device::Cpu);
+            }
+            Device::Gpu => {
+                devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu });
+            }
+            Device::Either => {
+                // Left unassigned — resolved in pass 2
+            }
+        }
+    }
+
+    // Pass 2: iterative assignment for Either stages. Minimize CPU↔GPU transfers.
+    loop {
+        let mut assigned_any = false;
+
+        for id in g.node_indices() {
+            if devs.contains_key(&id) {
+                continue;
+            }
+            let hints = g[id].hints();
+
+            // Collect assigned neighbours
+            let mut adj_devs: Vec<Device> = Vec::new();
+            for edge in g.edges(id) {
+                let other = if edge.source() == id {
+                    edge.target()
+                } else {
+                    edge.source()
+                };
+                if let Some(&d) = devs.get(&other) {
+                    adj_devs.push(d);
                 }
-                other => other,
-            };
-            (id, d)
-        })
-        .collect()
+            }
+
+            if adj_devs.is_empty() {
+                // No neighbours assigned yet — defer to next iteration
+                continue;
+            }
+
+            let first = adj_devs[0];
+            let all_same = adj_devs.iter().all(|&d| d == first);
+
+            // Rule 2a: preference matches an adjacent device
+            if let Some(pref) = hints.preference
+                && adj_devs.contains(&pref) {
+                    devs.insert(id, pref);
+                    assigned_any = true;
+                    continue;
+                }
+
+            // Rule 2c: all adjacents on same device → assign to that device
+            if all_same {
+                devs.insert(id, first);
+                assigned_any = true;
+                continue;
+            }
+
+            // Rule 2d: conflicting adjacents → default to GPU
+            devs.insert(id, Device::Gpu);
+            assigned_any = true;
+        }
+
+        if !assigned_any {
+            break;
+        }
+    }
+
+    // Pass 3: any remaining unassigned → GPU if available
+    for id in g.node_indices() {
+        devs.entry(id).or_insert_with(|| if gpu_ok { Device::Gpu } else { Device::Cpu });
+    }
+
+    devs
 }
 
 fn insert_transfers(g: &mut Graph, devs: &mut HashMap<StageId, Device>) {

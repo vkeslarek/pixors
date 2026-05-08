@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::data::device::Device;
 use crate::data::neighborhood::{EdgeCondition, Neighborhood};
 use crate::data::tile::{Tile, TileGridPos};
 use crate::graph::emitter::Emitter;
@@ -32,8 +31,6 @@ static NA_PORTS: PortSpecification = PortSpecification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileToNeighborhood {
     pub radius: u32,
-    pub image_width: Option<u32>,
-    pub image_height: Option<u32>,
 }
 
 impl Stage for TileToNeighborhood {
@@ -45,12 +42,12 @@ impl Stage for TileToNeighborhood {
         &NA_PORTS
     }
 
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_cpu()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(TileToNeighborhoodProcessor::new(self.radius, self.image_width, self.image_height)))
+        Some(Box::new(TileToNeighborhoodProcessor::new(self.radius)))
     }
 }
 
@@ -58,26 +55,22 @@ pub struct TileToNeighborhoodProcessor {
     pixel_radius: u32,
     tile_cache: HashMap<TileGridPos, Tile>,
     emitted: HashSet<TileGridPos>,
-    fixed_width: Option<u32>,
-    fixed_height: Option<u32>,
-    discovered_width: u32,
-    discovered_height: u32,
     tile_size: u32,
+    image_width: u32,
+    image_height: u32,
     meta: Option<crate::common::pixel::meta::PixelMeta>,
     initialized: bool,
 }
 
 impl TileToNeighborhoodProcessor {
-    pub fn new(pixel_radius: u32, fixed_width: Option<u32>, fixed_height: Option<u32>) -> Self {
+    pub fn new(pixel_radius: u32) -> Self {
         Self {
             pixel_radius,
             tile_cache: HashMap::new(),
             emitted: HashSet::new(),
-            fixed_width,
-            fixed_height,
-            discovered_width: 0,
-            discovered_height: 0,
             tile_size: 0,
+            image_width: 0,
+            image_height: 0,
             meta: None,
             initialized: false,
         }
@@ -95,23 +88,10 @@ impl TileToNeighborhoodProcessor {
             return;
         }
         self.meta = Some(tile.meta);
-        self.tile_size = tile.coord.width.max(tile.coord.height);
+        self.tile_size = tile.coord.tile_size;
+        self.image_width = tile.coord.image_width;
+        self.image_height = tile.coord.image_height;
         self.initialized = true;
-    }
-
-    fn update_bounds(&mut self, tile: &Tile) {
-        let right = tile.coord.px + tile.coord.width;
-        let bottom = tile.coord.py + tile.coord.height;
-        self.discovered_width = self.discovered_width.max(right);
-        self.discovered_height = self.discovered_height.max(bottom);
-    }
-
-    fn active_width(&self) -> u32 {
-        self.fixed_width.unwrap_or(self.discovered_width)
-    }
-
-    fn active_height(&self) -> u32 {
-        self.fixed_height.unwrap_or(self.discovered_height)
     }
 
     fn try_emit(&mut self, mip: u32, tx: u32, ty: u32, emit: &mut Emitter<Item>) {
@@ -124,8 +104,8 @@ impl TileToNeighborhoodProcessor {
             return;
         }
         let r = self.tile_radius() as i32;
-        let tiles_x = self.active_width().div_ceil(self.tile_size) as i32;
-        let tiles_y = self.active_height().div_ceil(self.tile_size) as i32;
+        let tiles_x = self.image_width.div_ceil(self.tile_size) as i32;
+        let tiles_y = self.image_height.div_ceil(self.tile_size) as i32;
 
         let mut nbhd_tiles = Vec::new();
         let mut center_coord = None;
@@ -166,8 +146,8 @@ impl TileToNeighborhoodProcessor {
             nbhd_tiles,
             EdgeCondition::Clamp,
             self.meta.unwrap(),
-            self.active_width(),
-            self.active_height(),
+            self.image_width,
+            self.image_height,
             self.tile_size,
         );
         self.emitted.insert(key);
@@ -180,7 +160,6 @@ impl Processor for TileToNeighborhoodProcessor {
         let _sw = debug_stopwatch!("neighborhood_agg");
         let tile = ProcessorContext::take_tile(item)?;
         self.discover_bounds(&tile);
-        self.update_bounds(&tile);
 
         let cur_ty = tile.coord.ty;
         let pos = TileGridPos {
@@ -190,12 +169,8 @@ impl Processor for TileToNeighborhoodProcessor {
         };
         self.tile_cache.insert(pos, tile);
 
-        // Tiles whose ty <= cur_ty - tile_radius have all of their south
-        // neighbours already in the cache (we've now seen at least one tile
-        // per band up to `cur_ty`). Tiles closer to the leading edge stay
-        // pending — emitting them now would use a stale `image_height` and
-        // miss the bands that haven't streamed in yet, producing visible
-        // discontinuities along band boundaries.
+        // Tiles whose ty <= cur_ty - tile_radius have all of their south neighbours
+        // already in the cache. Emit those now; closer-to-edge tiles stay pending.
         let r = self.tile_radius();
         if cur_ty < r {
             return Ok(());

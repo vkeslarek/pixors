@@ -19,6 +19,12 @@ pub struct TileCoord {
     pub py: u32,
     pub width: u32,
     pub height: u32,
+    /// Nominal tile size (e.g. 256). Edge tiles are smaller but this is always the full size.
+    pub tile_size: u32,
+    /// Image width at this mip level.
+    pub image_width: u32,
+    /// Image height at this mip level.
+    pub image_height: u32,
 }
 
 impl TileCoord {
@@ -50,6 +56,9 @@ impl TileCoord {
             py,
             width,
             height,
+            tile_size,
+            image_width,
+            image_height,
         }
     }
 

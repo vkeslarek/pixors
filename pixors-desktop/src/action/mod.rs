@@ -35,6 +35,9 @@ pub enum PreparedAction {
         mode: PipelineMode,
         graph: ExecGraph,
         snapshot: Option<SnapshotId>,
+        /// Overrides `action.target_tab()` for event routing; set by actions that
+        /// allocate their TabId inside `prepare()` (e.g. OpenFile).
+        routed_tab: Option<TabId>,
     },
 }
 
@@ -56,23 +59,19 @@ pub trait Action: std::fmt::Debug + Send + Sync + 'static {
 }
 
 pub struct TabDispatcher {
-    pub pending_action: Option<Arc<dyn Action>>,
     pub locked: bool,
 }
 
 impl TabDispatcher {
     fn new() -> Self {
-        Self {
-            pending_action: None,
-            locked: false,
-        }
+        Self { locked: false }
     }
 }
 
 pub struct Dispatcher {
     pub event_tx: broadcast::Sender<PipelineEvent>,
     pub tabs: HashMap<TabId, TabDispatcher>,
-    active_pipeline_tab: Option<TabId>,
+    active_apply_actions: HashMap<TabId, Arc<dyn Action>>,
     background_tasks: HashMap<TabId, PipelineHandle>,
 }
 
@@ -81,7 +80,7 @@ impl Dispatcher {
         Self {
             event_tx,
             tabs: HashMap::new(),
-            active_pipeline_tab: None,
+            active_apply_actions: HashMap::new(),
             background_tasks: HashMap::new(),
         }
     }
@@ -112,54 +111,70 @@ impl Dispatcher {
                 }
                 Ok(())
             }
-            PreparedAction::Pipeline { mode, graph, .. } => {
+            PreparedAction::Pipeline {
+                mode,
+                graph,
+                routed_tab,
+                ..
+            } => {
                 let is_apply = mode == PipelineMode::Apply;
+                let effective_tab = routed_tab.or(tab_id);
+                let tag = effective_tab.map(|t| t.0).unwrap_or(0);
 
-                if is_apply && let Some(tid) = tab_id {
+                if is_apply && let Some(tid) = effective_tab {
                     self.tab_disp(tid).locked = true;
-                    self.tab_disp(tid).pending_action = Some(Arc::clone(&action));
-                    self.active_pipeline_tab = Some(tid);
+                    self.active_apply_actions.insert(tid, Arc::clone(&action));
                 }
 
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone())
-                    .map_err(|e| e.to_string())?;
+                let pipeline =
+                    Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone())
+                        .map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
                 thread::spawn(move || {
                     while let Ok(event) = event_rx.recv() {
-                        let _ = broadcast_tx.send(event);
+                        // Replace tag=0 placeholders with the real routing tag
+                        let tagged = match event {
+                            PipelineEvent::Error { message, .. } => {
+                                PipelineEvent::Error { tag, message }
+                            }
+                            PipelineEvent::Cancelled { .. } => PipelineEvent::Cancelled { tag },
+                            other => other,
+                        };
+                        let _ = broadcast_tx.send(tagged);
                     }
+                    // All event_tx senders dropped → pipeline is done
+                    let _ = broadcast_tx.send(PipelineEvent::Done { tag });
                 });
 
                 let handle = pipeline.run(Some(event_tx));
 
-                if !is_apply
-                    && let Some(tid) = tab_id {
-                        self.background_tasks.insert(tid, handle);
-                    }
+                if !is_apply && let Some(tid) = effective_tab {
+                    self.background_tasks.insert(tid, handle);
+                }
 
                 Ok(())
             }
         }
     }
 
-    pub fn on_pipeline_done(&mut self, state: &mut EditorState) {
-        if let Some(tid) = self.active_pipeline_tab.take() {
-            if let Some(action) = self.tab_disp(tid).pending_action.take() {
-                action.apply(state, PipelineStatus::Done);
-            }
-            self.tab_disp(tid).locked = false;
+    pub fn on_pipeline_done(&mut self, state: &mut EditorState, tab_id: TabId) {
+        if let Some(action) = self.active_apply_actions.remove(&tab_id) {
+            action.apply(state, PipelineStatus::Done);
+        }
+        if let Some(td) = self.tabs.get_mut(&tab_id) {
+            td.locked = false;
         }
     }
 
-    pub fn on_pipeline_error(&mut self, state: &mut EditorState, error: String) {
-        if let Some(tid) = self.active_pipeline_tab.take() {
-            if let Some(action) = self.tab_disp(tid).pending_action.take() {
-                action.apply(state, PipelineStatus::Error(error));
-            }
-            self.tab_disp(tid).locked = false;
+    pub fn on_pipeline_error(&mut self, state: &mut EditorState, tab_id: TabId, error: String) {
+        if let Some(action) = self.active_apply_actions.remove(&tab_id) {
+            action.apply(state, PipelineStatus::Error(error));
+        }
+        if let Some(td) = self.tabs.get_mut(&tab_id) {
+            td.locked = false;
         }
     }
 
@@ -167,6 +182,7 @@ impl Dispatcher {
     pub fn cleanup_tab(&mut self, id: TabId) {
         self.tabs.remove(&id);
         self.background_tasks.remove(&id);
+        self.active_apply_actions.remove(&id);
     }
 
     pub fn cancel_background(&mut self, id: TabId) {

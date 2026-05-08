@@ -17,6 +17,7 @@ use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    StageHints,
 };
 
 use crate::debug_stopwatch;
@@ -48,8 +49,8 @@ impl Stage for Blur {
     fn ports(&self) -> &'static PortSpecification {
         &BLUR_PORTS
     }
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_gpu()
     }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(BlurProcessor::new(self.radius)))
@@ -168,8 +169,6 @@ fn gpu_blur_process(
         .ok_or_else(|| Error::internal(format!("blur: unsupported format {:?}", fmt)))?;
 
     if r == 0 {
-        // No blur needed — pass centre tile through.
-        // Already on GPU → just pass through. CPU → upload to keep chain on GPU.
         if let Some(ct) = nbhd.tile_at(nbhd.center.tx, nbhd.center.ty) {
             let buf = match &ct.data {
                 Buffer::Gpu(g) => Buffer::Gpu(Arc::clone(g)),
@@ -185,105 +184,54 @@ fn gpu_blur_process(
         return Ok(());
     }
 
-    // Assemble padded region from neighbourhood tiles (CPU).
-    // The shader always expects a buffer of exactly (cw + 2r) × (ch + 2r) pixels,
-    // with BlurParams.width = cw+2r and height = ch+2r.  On image borders the actual
-    // tile data may not reach the full padding — those bytes stay zero (acts as
-    // transparent/black border clamp, which is acceptable for a box blur).
     let pad_w = (cw + 2 * r) as usize;
     let pad_h = (ch + 2 * r) as usize;
 
-    // Physical region we can actually source from (clamped to image extent).
-    let rox = cx.saturating_sub(r);
-    let roy = cy.saturating_sub(r);
-    let rw_phys = ((cx + cw + r).min(
-        nbhd.tiles
-            .iter()
-            .map(|t| t.coord.px + t.coord.width)
-            .max()
-            .unwrap_or(cx + cw),
-    ) - rox) as usize;
-    let rh_phys = ((cy + ch + r).min(
-        nbhd.tiles
-            .iter()
-            .map(|t| t.coord.py + t.coord.height)
-            .max()
-            .unwrap_or(cy + ch),
-    ) - roy) as usize;
+    // Signed origin of padded buffer in image space. Can be negative for edge tiles.
+    let orig_x = cx as i64 - r as i64;
+    let orig_y = cy as i64 - r as i64;
 
     let mut src_cpu = vec![0u8; pad_w * pad_h * bpp];
-    for tile in &nbhd.tiles {
-        let tile_data: &[u8] = match &tile.data {
-            Buffer::Cpu(v) => v.as_slice(),
-            Buffer::Gpu(_) => {
-                // Tiles from GPU chain — download them first.
-                let gpu_ctx =
-                    gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
-                let scheduler = gpu_ctx.scheduler();
-                if let Buffer::Gpu(g) = &tile.data {
-                    let downloaded = scheduler
-                        .download_buffer(g)
-                        .map_err(|e| Error::internal(format!("blur download: {e}")))?;
-                    // We need the data to outlive this branch — collect into a temp vec
-                    // and copy from it.
-                    let tw = tile.coord.width as usize;
-                    let tpx = tile.coord.px;
-                    let tpy = tile.coord.py;
-                    let x0 = rox.max(tpx);
-                    let y0 = roy.max(tpy);
-                    let x1 = (rox + rw_phys as u32).min(tpx + tile.coord.width);
-                    let y1 = (roy + rh_phys as u32).min(tpy + tile.coord.height);
-                    if x1 > x0 && y1 > y0 {
-                        let copy_w = (x1 - x0) as usize;
-                        for abs_y in y0..y1 {
-                            let s_off = ((abs_y - tpy) as usize * tw + (x0 - tpx) as usize) * bpp;
-                            let dy = (abs_y - roy) as usize;
-                            let dx = (x0 - rox) as usize;
-                            let d_off = (dy * pad_w + dx) * bpp;
-                            let len = copy_w * bpp;
-                            if s_off + len <= downloaded.len() && d_off + len <= src_cpu.len() {
-                                src_cpu[d_off..d_off + len]
-                                    .copy_from_slice(&downloaded[s_off..s_off + len]);
-                            }
-                        }
-                    }
-                    continue;
-                }
+
+    let copy_tile_into = |src_cpu: &mut Vec<u8>, tile_data: &[u8], tpx: u32, tpy: u32, tw: usize, th: usize| {
+        for dy in 0..th {
+            let buf_y = tpy as i64 + dy as i64 - orig_y;
+            if buf_y < 0 || buf_y as usize >= pad_h {
                 continue;
             }
-        };
-
-        let tw = tile.coord.width as usize;
-        let tpx = tile.coord.px;
-        let tpy = tile.coord.py;
-        let x0 = rox.max(tpx);
-        let y0 = roy.max(tpy);
-        let x1 = (rox + rw_phys as u32).min(tpx + tile.coord.width);
-        let y1 = (roy + rh_phys as u32).min(tpy + tile.coord.height);
-        if x1 <= x0 || y1 <= y0 {
-            continue;
-        }
-        let copy_w = (x1 - x0) as usize;
-        for abs_y in y0..y1 {
-            let s_off = ((abs_y - tpy) as usize * tw + (x0 - tpx) as usize) * bpp;
-            let dy = (abs_y - roy) as usize;
-            let dx = (x0 - rox) as usize;
-            let d_off = (dy * pad_w + dx) * bpp;
+            let buf_x_base = tpx as i64 - orig_x;
+            let src_start = if buf_x_base < 0 { (-buf_x_base) as usize } else { 0 };
+            let dst_start = buf_x_base.max(0) as usize;
+            let copy_w = tw.saturating_sub(src_start).min(pad_w.saturating_sub(dst_start));
+            if copy_w == 0 {
+                continue;
+            }
+            let s_off = (dy * tw + src_start) * bpp;
+            let d_off = (buf_y as usize * pad_w + dst_start) * bpp;
             let len = copy_w * bpp;
             if s_off + len <= tile_data.len() && d_off + len <= src_cpu.len() {
                 src_cpu[d_off..d_off + len].copy_from_slice(&tile_data[s_off..s_off + len]);
             }
         }
+    };
+
+    for tile in &nbhd.tiles {
+        let tpx = tile.coord.px;
+        let tpy = tile.coord.py;
+        let tw = tile.coord.width as usize;
+        let th = tile.coord.height as usize;
+        let data = tile
+            .data
+            .as_cpu_slice()
+            .ok_or_else(|| Error::internal("blur GPU path received GPU tile — runtime must insert nbhd download"))?;
+        copy_tile_into(&mut src_cpu, data, tpx, tpy, tw, th);
     }
 
-    // Upload assembled region to GPU, dispatch blur shader, emit output tile.
     let gpu_ctx = gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
     let scheduler = gpu_ctx.scheduler();
 
     let src_gbuf = scheduler.upload_bytes(&src_cpu);
     let out_size = cw as u64 * ch as u64 * bpp as u64;
-    // width/height in params MUST be pad_w × pad_h so the shader computes
-    // center_w = pad_w - 2*r = cw exactly, matching the output buffer size.
     let params = BlurParams {
         width: pad_w as u32,
         height: pad_h as u32,

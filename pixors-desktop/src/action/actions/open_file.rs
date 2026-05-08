@@ -9,12 +9,13 @@ use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::operation::color::ColorConvert;
 use pixors_executor::operation::mip_downsample::MipDownsample;
 use pixors_executor::sink::cache_writer::CacheWriter;
-use pixors_executor::sink::viewport_cache_sink::{ViewportCacheSink, install_viewport_cache_sink};
+use pixors_executor::sink::viewport_cache_sink::{ViewportCacheSink, register_tab_cache};
 use pixors_executor::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
 use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
+use crate::state::tab::{BlendMode, Layer, LayerSource};
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::{CachedTile, ViewportCache};
 
@@ -62,10 +63,13 @@ impl Action for OpenFile {
         vp_cache.lock().unwrap().clear_all();
         vp_cache.lock().unwrap().signal_new_img(w, h);
 
+        let tab_id = state.alloc_tab_id();
+
         {
             let c = vp_cache.clone();
-            install_viewport_cache_sink(Box::new(
-                move |generation, mip, tx, ty, px, py, tw, th, bytes| {
+            register_tab_cache(
+                tab_id.0,
+                Box::new(move |generation, mip, tx, ty, px, py, tw, th, bytes| {
                     if let Ok(mut guard) = c.lock() {
                         guard.insert(
                             generation,
@@ -84,8 +88,8 @@ impl Action for OpenFile {
                             },
                         );
                     }
-                },
-            ));
+                }),
+            );
         }
 
         let stream = Arc::new(Mutex::new(Some(
@@ -126,10 +130,8 @@ impl Action for OpenFile {
                 target_color_space: state.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
             })
-            .sink(ViewportCacheSink::new(0))
+            .sink(ViewportCacheSink::new(tab_id.0, 0))
             .compile();
-
-        let tab_id = state.alloc_tab_id();
         let title = self
             .path
             .file_name()
@@ -141,6 +143,7 @@ impl Action for OpenFile {
         vs.camera.img_w = w as f32;
         vs.camera.img_h = h as f32;
 
+        let base_layer_id = state.alloc_layer_id();
         state.push_tab(Tab {
             id: tab_id,
             title,
@@ -153,8 +156,15 @@ impl Action for OpenFile {
             viewport_state: Rc::new(RefCell::new(vs)),
             mip_fetch_signal: Arc::new(Mutex::new(Vec::new())),
             tile_generation: 0,
-            layers: vec![],
-            active_layer: None,
+            layers: vec![Layer {
+                id: base_layer_id,
+                name: "Background".to_string(),
+                visible: true,
+                opacity: 1.0,
+                blend: BlendMode::Normal,
+                source: LayerSource::FilePage { page: 0 },
+            }],
+            active_layer: Some(base_layer_id),
             chain: Default::default(),
             history: Default::default(),
             view: TabView {
@@ -173,16 +183,11 @@ impl Action for OpenFile {
             mode: PipelineMode::Background,
             graph,
             snapshot: None,
+            routed_tab: Some(tab_id),
         })
     }
 
-    fn apply(&self, state: &mut EditorState, status: PipelineStatus) {
-        if let Some(tab_id) = *self.pending_tab_id.lock().unwrap()
-            && let Some(tab) = state.tab_mut(tab_id)
-        {
-            tab.view.loading = false;
-        }
-
+    fn apply(&self, _state: &mut EditorState, status: PipelineStatus) {
         if let PipelineStatus::Error(e) = status {
             tracing::error!("OpenFile failed: {e}");
         }

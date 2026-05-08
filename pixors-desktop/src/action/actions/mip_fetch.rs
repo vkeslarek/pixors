@@ -43,13 +43,14 @@ impl Action for RequestMipFetch {
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
             })
-            .sink(ViewportCacheSink::new(0))
+            .sink(ViewportCacheSink::new(self.tab.0, 0))
             .compile();
 
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Background,
             graph,
             snapshot: None,
+            routed_tab: None,
         })
     }
 

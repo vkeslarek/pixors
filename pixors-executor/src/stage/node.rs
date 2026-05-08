@@ -8,13 +8,67 @@ use serde::{Deserialize, Serialize};
 use super::actors::{Consumer, Processor, Producer};
 use super::kinds::PortSpecification;
 
+// ── StageHints ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy)]
+pub struct StageHints {
+    pub device: Device,
+    pub preference: Option<Device>,
+}
+
+impl Default for StageHints {
+    fn default() -> Self {
+        Self {
+            device: Device::Cpu,
+            preference: None,
+        }
+    }
+}
+
+impl StageHints {
+    pub const fn cpu() -> Self {
+        Self {
+            device: Device::Cpu,
+            preference: None,
+        }
+    }
+
+    pub const fn gpu() -> Self {
+        Self {
+            device: Device::Gpu,
+            preference: None,
+        }
+    }
+
+    pub const fn either() -> Self {
+        Self {
+            device: Device::Either,
+            preference: None,
+        }
+    }
+
+    pub const fn prefer_cpu() -> Self {
+        Self {
+            device: Device::Either,
+            preference: Some(Device::Cpu),
+        }
+    }
+
+    pub const fn prefer_gpu() -> Self {
+        Self {
+            device: Device::Either,
+            preference: Some(Device::Gpu),
+        }
+    }
+}
+
 // ── Stage trait ────────────────────────────────────────────────────────────────
 
 pub trait Stage {
     fn kind(&self) -> &'static str;
     fn ports(&self) -> &'static PortSpecification;
-    fn device(&self) -> Device {
-        Device::Cpu
+    fn hints(&self) -> StageHints {
+        StageHints::cpu()
     }
     fn producer(&self) -> Option<Box<dyn Producer>> {
         None
@@ -47,8 +101,8 @@ macro_rules! delegate_stage {
             fn ports(&self) -> &'static $crate::stage::PortSpecification {
                 match self { $(Self::$variant(n) => n.ports()),+ }
             }
-            fn device(&self) -> $crate::data::device::Device {
-                match self { $(Self::$variant(n) => n.device()),+ }
+            fn hints(&self) -> $crate::stage::StageHints {
+                match self { $(Self::$variant(n) => n.hints()),+ }
             }
             fn producer(&self) -> Option<Box<dyn $crate::stage::Producer>> {
                 match self { $(Self::$variant(n) => n.producer()),+ }

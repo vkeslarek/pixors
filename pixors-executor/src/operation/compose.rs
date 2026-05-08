@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::image::BlendMode;
 use crate::data::buffer::Buffer;
-use crate::data::device::Device;
 use crate::data::tile::{Tile, TileGridPos};
 use crate::error::Error;
 use crate::graph::emitter::Emitter;
@@ -41,8 +40,8 @@ impl Stage for Compose {
         &COMPOSE_PORTS
     }
 
-    fn device(&self) -> Device {
-        Device::Cpu
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_gpu()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {

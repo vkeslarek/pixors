@@ -192,38 +192,6 @@ impl Scheduler {
         buf
     }
 
-    /// Download a GPU buffer to CPU bytes (blocking).
-    pub(crate) fn download_buffer(&self, gbuf: &GpuBuffer) -> Result<Vec<u8>, Error> {
-        let alloc_size = gbuf.allocated_size;
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("sched-download"),
-            size: alloc_size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut enc = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("sched-download"),
-            });
-        enc.copy_buffer_to_buffer(gbuf.buffer(), 0, &staging, 0, alloc_size);
-        self.queue.submit(std::iter::once(enc.finish()));
-
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(), wgpu::BufferAsyncError>>();
-        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        self.device.poll(wgpu::Maintain::Wait);
-        rx.recv()
-            .map_err(|_| Error::internal("download recv"))?
-            .map_err(|e| Error::internal(format!("download map: {e:?}")))?;
-
-        let mut data = staging.slice(..).get_mapped_range().to_vec();
-        data.truncate(gbuf.requested_size as usize);
-        staging.unmap();
-        Ok(data)
-    }
-
     // ── Public pipeline accessors ─────────────────────────────────────────
 
     pub fn compute_pipeline(

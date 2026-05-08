@@ -58,6 +58,13 @@ PIXORS_DEV=1 cargo run -p pixors-desktop
 cd pixors-ui && npm run dev
 ```
 
+## Pipeline Invariants
+
+- **Processors never move tiles between devices.** No `download_buffer`, no `upload_bytes` in a `Processor` impl. CPU/GPU transitions are the runtime's job — `pipeline.rs` calls `insert_transfers` which injects `Upload`/`Download` stages automatically at device boundaries.
+- **`context.device` is authoritative.** The pipeline compiler (`assign_devices`) sets it; processors only read it. A processor receiving a `Buffer::Gpu` tile when `context.device == Cpu` is a runtime bug, not something the processor should paper over.
+- **`TileToNeighborhood` is always `Device::Cpu`.** It does pure in-memory accumulation — no GPU kernels. This guarantees every `Neighborhood` leaving it carries `Buffer::Cpu` tiles, so downstream blur (CPU or GPU) can assemble the padded buffer without any device transfer.
+- **`Scheduler::download_buffer` does not exist.** Batch GPU→CPU download is done exclusively by `DownloadProcessor` via staging buffers. No other code downloads GPU buffers.
+
 ## Architecture
 
 ### Engine (pixors-engine)

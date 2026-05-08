@@ -45,8 +45,8 @@ impl Stage for ColorConvert {
     fn ports(&self) -> &'static PortSpecification {
         &CC_PORTS
     }
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_gpu()
     }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(ColorConvertProcessor {

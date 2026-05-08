@@ -33,7 +33,8 @@ impl Action for BlurPreview {
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
         // CacheReader reads ACEScg f16 tiles from disk (stored by CacheWriter during open).
-        // Blur works directly in ACEScg. Convert to sRGB only for the viewport sink.
+        // TileToNeighborhood accumulates neighbour tiles for context-aware blur.
+        // Blur works in ACEScg; convert to sRGB only for the viewport sink.
         let graph = PathBuilder::new()
             .src(CacheReader {
                 cache_dir: self.cache_dir.clone(),
@@ -47,8 +48,6 @@ impl Action for BlurPreview {
             })
             .data_xform(TileToNeighborhood {
                 radius: self.radius,
-                image_width: Some(self.img_w),
-                image_height: Some(self.img_h),
             })
             .op(Blur {
                 radius: self.radius,
@@ -58,13 +57,14 @@ impl Action for BlurPreview {
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
             })
-            .sink(ViewportCacheSink::new(self.generation))
+            .sink(ViewportCacheSink::new(self.tab.0, self.generation))
             .compile();
 
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Background,
             graph,
             snapshot: None,
+            routed_tab: None,
         })
     }
 

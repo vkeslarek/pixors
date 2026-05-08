@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::data::buffer::{Buffer, GpuBuffer};
-use crate::data::device::Device;
 use crate::data::tile::{Tile, TileCoord, TileGridPos};
 use crate::data::tile_block::{TileBlock, TileBlockCoord};
 use crate::debug_stopwatch;
@@ -62,8 +61,8 @@ impl Stage for MipDownsample {
     fn ports(&self) -> &'static PortSpecification {
         &PORTS
     }
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_gpu()
     }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(MipDownsampleProcessor::new(

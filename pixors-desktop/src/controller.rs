@@ -61,22 +61,26 @@ impl App {
                         }
                     }
                 }
-                PipelineEvent::Done => {
-                    self.dispatcher.on_pipeline_done(&mut self.state);
-                    for tab in &mut self.state.tabs {
+                PipelineEvent::Done { tag } => {
+                    let tab_id = TabId(tag);
+                    self.dispatcher.on_pipeline_done(&mut self.state, tab_id);
+                    if let Some(tab) = self.state.tab_mut(tab_id) {
                         tab.view.loading = false;
                         tab.view.progress = 1.0;
                     }
                 }
-                PipelineEvent::Error(s) => {
-                    self.dispatcher.on_pipeline_error(&mut self.state, s.clone());
-                    for tab in &mut self.state.tabs {
+                PipelineEvent::Error { tag, message } => {
+                    let tab_id = TabId(tag);
+                    self.dispatcher
+                        .on_pipeline_error(&mut self.state, tab_id, message.clone());
+                    if let Some(tab) = self.state.tab_mut(tab_id) {
                         tab.view.loading = false;
                     }
-                    self.push_error(s);
+                    self.push_error(message);
                 }
-                PipelineEvent::Cancelled => {
-                    for tab in &mut self.state.tabs {
+                PipelineEvent::Cancelled { tag } => {
+                    let tab_id = TabId(tag);
+                    if let Some(tab) = self.state.tab_mut(tab_id) {
                         tab.view.loading = false;
                     }
                 }

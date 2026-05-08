@@ -6,7 +6,6 @@ use crate::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
-use crate::data::device::Device;
 
 use crate::error::Error;
 use crate::graph::item::Item;
@@ -54,8 +53,8 @@ impl Stage for ViewportSink {
     fn ports(&self) -> &'static PortSpecification {
         &VS_PORTS
     }
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_gpu()
     }
     fn processor(&self) -> Option<Box<dyn Processor>> {
         Some(Box::new(ViewportSinkProcessor {

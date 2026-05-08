@@ -81,6 +81,7 @@ impl Action for Export {
             mode: PipelineMode::Apply,
             graph,
             snapshot: None,
+            routed_tab: None,
         })
     }
 

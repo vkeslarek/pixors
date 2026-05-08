@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
-use crate::data::device::Device;
 use crate::data::scanline::ScanLine;
 use crate::data::tile::Tile;
 use crate::graph::item::Item;
@@ -42,8 +41,8 @@ impl Stage for TileToScanline {
         &TS_PORTS
     }
 
-    fn device(&self) -> Device {
-        Device::Either
+    fn hints(&self) -> crate::stage::StageHints {
+        crate::stage::StageHints::prefer_cpu()
     }
 
     fn processor(&self) -> Option<Box<dyn Processor>> {
