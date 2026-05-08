@@ -9,6 +9,7 @@ use crate::data::neighborhood::{Neighborhood, NeighborhoodData};
 use crate::data::tile::Tile;
 use crate::error::Error;
 use crate::gpu;
+use crate::gpu::context::GpuContext;
 use crate::gpu::kernel::{
     BindingAccess, BindingElement, DispatchShape, KernelClass, KernelSignature,
     ParameterDeclaration, ParameterType, ResourceDeclaration,
@@ -75,7 +76,11 @@ impl Processor for BlurProcessor {
         let _sw = debug_stopwatch!("blur");
         let nbhd = ProcessorContext::take_neighborhood(item)?;
         if ctx.device == Device::Gpu {
-            gpu_blur_process(&nbhd, self.radius, ctx.emit)
+            let gpu = ctx
+                .gpu
+                .as_ref()
+                .ok_or_else(|| Error::internal("blur: GPU context missing"))?;
+            gpu_blur_process(gpu, &nbhd, self.radius, ctx.emit)
         } else {
             cpu_blur_process(&nbhd, self.radius, ctx.emit)
         }
@@ -153,6 +158,7 @@ fn blur_entry(fmt: PixelFormat) -> Option<&'static str> {
 }
 
 fn gpu_blur_process(
+    gpu_ctx: &Arc<GpuContext>,
     nbhd: &Neighborhood,
     radius: u32,
     emit: &mut Emitter<Item>,
@@ -165,6 +171,7 @@ fn gpu_blur_process(
     let ch = nbhd.center.height;
     let fmt = nbhd.meta.format;
     let bpp = fmt.bytes_per_pixel();
+    let scheduler = gpu_ctx.scheduler();
 
     tracing::debug!(
         "[blur gpu] r={r} center=({cx},{cy}) {cw}×{ch} fmt={fmt:?} bpp={bpp} data={}",
@@ -174,8 +181,8 @@ fn gpu_blur_process(
     let entry = blur_entry(fmt)
         .ok_or_else(|| Error::internal(format!("blur: unsupported format {:?}", fmt)))?;
 
+    // r=0 passthrough: extract center tile via GPU copy, no CPU round-trip.
     if r == 0 {
-        let gpu_ctx_init = gpu::context::try_init();
         let maybe_center = match &nbhd.data {
             NeighborhoodData::Cpu { tiles } => tiles
                 .iter()
@@ -187,17 +194,16 @@ fn gpu_blur_process(
             } => tile_infos
                 .iter()
                 .find(|i| i.px == nbhd.center.px && i.py == nbhd.center.py)
-                .and_then(|info| {
-                    let gpu_ctx = gpu_ctx_init.as_ref()?;
-                    let scheduler = gpu_ctx.scheduler();
-                    scheduler.flush();
-                    let data = scheduler.read_from_buffer(
+                .map(|info| {
+                    let out = scheduler.allocate_buffer(info.tile_size_bytes);
+                    scheduler.copy_slice(
                         consolidated.buffer(),
                         info.data_offset,
+                        out.buffer(),
+                        0,
                         info.tile_size_bytes,
                     );
-                    let gbuf = scheduler.upload_bytes(&data);
-                    Some((Buffer::Gpu(Arc::new(gbuf)), nbhd.meta))
+                    (Buffer::Gpu(Arc::new(out)), nbhd.meta)
                 }),
         };
         if let Some((buf, meta)) = maybe_center {
@@ -211,63 +217,21 @@ fn gpu_blur_process(
     let orig_x = cx as i64 - r as i64;
     let orig_y = cy as i64 - r as i64;
 
-    let mut src_cpu = vec![0u8; pad_w * pad_h * bpp];
-
-    let copy_tile_into =
-        |src_cpu: &mut Vec<u8>, tile_data: &[u8], tpx: u32, tpy: u32, tw: usize, th: usize| {
-            for dy in 0..th {
-                let buf_y = tpy as i64 + dy as i64 - orig_y;
-                if buf_y < 0 || buf_y as usize >= pad_h {
-                    continue;
-                }
-                let buf_x_base = tpx as i64 - orig_x;
-                let src_start = if buf_x_base < 0 {
-                    (-buf_x_base) as usize
-                } else {
-                    0
-                };
-                let dst_start = buf_x_base.max(0) as usize;
-                let copy_w = tw
-                    .saturating_sub(src_start)
-                    .min(pad_w.saturating_sub(dst_start));
-                if copy_w == 0 {
-                    continue;
-                }
-                let s_off = (dy * tw + src_start) * bpp;
-                let d_off = (buf_y as usize * pad_w + dst_start) * bpp;
-                let len = copy_w * bpp;
-                if s_off + len <= tile_data.len() && d_off + len <= src_cpu.len() {
-                    src_cpu[d_off..d_off + len].copy_from_slice(&tile_data[s_off..s_off + len]);
-                }
-            }
-        };
-
-    let gpu_ctx = gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
-    let scheduler = gpu_ctx.scheduler();
-
+    // GPU-Neighborhood arrives here because insert_transfers puts Upload between
+    // CPU TileToNeighborhood and GPU Blur. CPU data at this point is a bug.
     let src_gbuf_arc: Arc<GpuBuffer> = match &nbhd.data {
-        NeighborhoodData::Cpu { tiles } => {
-            for tile in tiles {
-                let tpx = tile.coord.px;
-                let tpy = tile.coord.py;
-                let tw = tile.coord.width as usize;
-                let th = tile.coord.height as usize;
-                let data = tile
-                    .data
-                    .as_cpu_slice()
-                    .ok_or_else(|| Error::internal("blur GPU path received GPU tile"))?;
-                copy_tile_into(&mut src_cpu, data, tpx, tpy, tw, th);
-            }
-            Arc::new(scheduler.upload_bytes(&src_cpu))
+        NeighborhoodData::Cpu { .. } => {
+            return Err(Error::internal(
+                "blur GPU path received CPU neighborhood — invariant violation",
+            ));
         }
         NeighborhoodData::Gpu {
             consolidated,
             tile_infos,
         } => {
-            let padded_size = (pad_w * pad_h * bpp) as u64;
-            // allocate_buffer returns uninitialized memory; zero-initialize
-            // so edge pixels outside the image are black, not garbage.
-            let padded = Arc::new(scheduler.upload_bytes(&vec![0u8; padded_size as usize]));
+            let padded_size = pad_w as u64 * pad_h as u64 * bpp as u64;
+            // alloc_zeroed_buffer fills via GPU clear — no CPU round-trip.
+            let padded = Arc::new(scheduler.alloc_zeroed_buffer(padded_size));
             scheduler.copy_tiles_into_padded(
                 consolidated.buffer(),
                 tile_infos,

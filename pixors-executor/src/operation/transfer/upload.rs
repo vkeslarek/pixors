@@ -72,10 +72,9 @@ impl Processor for UploadProcessor {
             }
             Item::Neighborhood(nbhd) => match nbhd.data {
                 NeighborhoodData::Cpu { tiles } => {
-                    let gpu = ctx
-                        .gpu
-                        .as_ref()
-                        .ok_or_else(|| Error::internal("GPU unavailable for neighborhood upload"))?;
+                    let gpu = ctx.gpu.as_ref().ok_or_else(|| {
+                        Error::internal("GPU unavailable for neighborhood upload")
+                    })?;
                     let scheduler = gpu.scheduler();
 
                     tracing::debug!(

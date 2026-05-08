@@ -30,6 +30,7 @@ pub struct Pipeline {
         Vec<ItemReceiver>,
         Vec<(ItemSender, u16, u16)>,
     )>,
+    cancelled: Arc<AtomicBool>,
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
@@ -119,7 +120,10 @@ impl Pipeline {
             "[pixors] compile: {} chains built, total_work={total_work}",
             compiled.len()
         );
-        Ok(Pipeline { chains: compiled })
+        Ok(Pipeline {
+            chains: compiled,
+            cancelled,
+        })
     }
 }
 
@@ -158,7 +162,7 @@ impl PipelineHandle {
 
 impl Pipeline {
     pub fn run(self, events: Option<SyncSender<PipelineEvent>>) -> PipelineHandle {
-        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled = self.cancelled;
         let mut handles = Vec::new();
 
         for (runner, inputs, outputs) in self.chains {
@@ -345,15 +349,14 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
             let first = adj_devs[0];
             let all_same = adj_devs.iter().all(|&d| d == first);
 
-            // Rule 2a: preference matches an adjacent device
+            // Rule 2a/2b: honour stage preference, downgrade GPU→CPU if unavailable
             if let Some(pref) = hints.preference {
-                if adj_devs.contains(&pref) {
-                    devs.insert(id, pref);
-                    assigned_any = true;
-                    continue;
-                }
-                // Rule 2b: preference set but no adjacent match — strong hint wins
-                devs.insert(id, pref);
+                let effective = if pref == Device::Gpu && !gpu_ok {
+                    Device::Cpu
+                } else {
+                    pref
+                };
+                devs.insert(id, effective);
                 assigned_any = true;
                 continue;
             }
@@ -365,15 +368,8 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
                 continue;
             }
 
-            // Rule 2c: all adjacents on same device → assign to that device
-            if all_same {
-                devs.insert(id, first);
-                assigned_any = true;
-                continue;
-            }
-
-            // Rule 2d: conflicting adjacents → default to GPU
-            devs.insert(id, Device::Gpu);
+            // Rule 2d: conflicting adjacents → default to GPU (or CPU if unavailable)
+            devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu });
             assigned_any = true;
         }
 

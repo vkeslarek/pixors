@@ -181,7 +181,6 @@ impl Scheduler {
         let aligned_len = (original_len + 3) & !3; // round to COPY_BUFFER_ALIGNMENT (4)
         let mut buf = self.allocate_buffer(aligned_len);
         buf.requested_size = original_len; // download truncates back to original
-        self.flush();
         if aligned_len as usize == data.len() {
             self.queue.write_buffer(buf.buffer(), 0, data);
         } else {
@@ -189,6 +188,18 @@ impl Scheduler {
             padded.resize(aligned_len as usize, 0);
             self.queue.write_buffer(buf.buffer(), 0, &padded);
         }
+        buf
+    }
+
+    /// Allocate a GPU buffer and zero-fill it via a GPU clear command (no CPU round-trip).
+    pub fn alloc_zeroed_buffer(&self, size: u64) -> GpuBuffer {
+        let aligned = (size + 3) & !3;
+        let buf = self.allocate_buffer(aligned);
+        let idx = self.slot_index();
+        let slot = &self.slots[idx];
+        let mut state = slot.lock();
+        let encoder = state.encoder(&self.device);
+        encoder.clear_buffer(buf.buffer(), 0, None);
         buf
     }
 
@@ -262,7 +273,8 @@ impl Scheduler {
         }
         tracing::debug!(
             "[copy_padded] {} tiles, {} total pixel-cols copied, pad={pad_w}×{pad_h} orig=({orig_x},{orig_y})",
-            tile_infos.len(), total_copied,
+            tile_infos.len(),
+            total_copied,
         );
         self.queue.submit(std::iter::once(enc.finish()));
     }
