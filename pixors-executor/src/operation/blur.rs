@@ -264,7 +264,9 @@ fn gpu_blur_process(
             tile_infos,
         } => {
             let padded_size = (pad_w * pad_h * bpp) as u64;
-            let padded = Arc::new(scheduler.allocate_buffer(padded_size));
+            // allocate_buffer returns uninitialized memory; zero-initialize
+            // so edge pixels outside the image are black, not garbage.
+            let padded = Arc::new(scheduler.upload_bytes(&vec![0u8; padded_size as usize]));
             scheduler.copy_tiles_into_padded(
                 consolidated.buffer(),
                 tile_infos,
