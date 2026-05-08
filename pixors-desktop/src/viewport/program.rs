@@ -77,7 +77,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         {
             let base_mip = state.camera.floor_mip();
             if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
-                tracing::info!(
+                tracing::debug!(
                     "[pixors] viewport: fallback from target {} to mip {}",
                     target_mip,
                     base_mip
@@ -87,7 +87,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         }
 
         if state.current_mip != target_mip {
-            tracing::info!(
+            tracing::debug!(
                 "[pixors] viewport: draw() setting current_mip to {}",
                 target_mip
             );
@@ -130,7 +130,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
         if Some(reqs.clone()) != state.last_reqs {
             if state.current_mip != old_mip {
-                tracing::info!(
+                tracing::debug!(
                     "[pixors] viewport: MIP changed {} → {}",
                     old_mip,
                     state.current_mip,
@@ -163,7 +163,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let mut state = vp_state.borrow_mut();
 
         if self.tile_generation != state.last_generation.get() {
-            tracing::info!(
+            tracing::debug!(
                 "[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw",
                 state.last_generation.get(),
                 self.tile_generation

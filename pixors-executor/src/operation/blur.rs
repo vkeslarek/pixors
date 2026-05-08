@@ -166,7 +166,7 @@ fn gpu_blur_process(
     let fmt = nbhd.meta.format;
     let bpp = fmt.bytes_per_pixel();
 
-    tracing::info!(
+    tracing::debug!(
         "[blur gpu] r={r} center=({cx},{cy}) {cw}×{ch} fmt={fmt:?} bpp={bpp} data={}",
         if nbhd.data.is_gpu() { "gpu" } else { "cpu" }
     );
@@ -282,7 +282,7 @@ fn gpu_blur_process(
         }
     };
 
-    tracing::info!(
+    tracing::debug!(
         "[blur gpu] src buffer: {} bytes, pad={pad_w}×{pad_h}",
         src_gbuf_arc.requested_size,
     );
