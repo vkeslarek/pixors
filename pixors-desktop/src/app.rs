@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use iced::keyboard::{self};
 use iced::widget::pane_grid::{self, Configuration};
@@ -8,6 +8,7 @@ use iced::{Background, Color, Element, Length, Subscription};
 use pixors_executor::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 
+use crate::action::{Action, Dispatcher};
 use crate::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
     workspace_bar,
@@ -23,6 +24,7 @@ pub enum PaneKind {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Msg {
+    Action(Arc<dyn Action>),
     MenuBar(menu_bar::Msg),
     WorkspaceBar(workspace_bar::Msg),
     Toolbar(toolbar::Msg),
@@ -41,6 +43,7 @@ pub enum Msg {
 }
 
 pub struct App {
+    pub dispatcher: Dispatcher,
     pub state: EditorState,
     pub panes: pane_grid::State<PaneKind>,
     pub workspace: workspace_bar::State,
@@ -77,6 +80,7 @@ impl Default for App {
         let state = EditorState::new();
 
         let mut app = Self {
+            dispatcher: Dispatcher::new(pipeline_event_tx()),
             state,
             panes,
             workspace: workspace_bar::State::default(),

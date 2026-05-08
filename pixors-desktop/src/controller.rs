@@ -41,6 +41,11 @@ impl App {
 
     pub fn update(&mut self, msg: Msg) {
         match msg {
+            Msg::Action(action) => {
+                if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
+                    self.push_error(e);
+                }
+            }
             Msg::KeyPressed(event) => self.handle_keyboard(event),
             Msg::OpenFile => self.open_file_dialog(),
             Msg::Tick => self.handle_tick(),
@@ -53,16 +58,16 @@ impl App {
                             tab.view.progress = p;
                         }
                     }
-                    tracing::info!("[pixors] UI progress updated: {}/{}", done, total);
                 }
                 PipelineEvent::Done => {
+                    self.dispatcher.on_pipeline_done(&mut self.state);
                     for tab in &mut self.state.tabs {
                         tab.view.loading = false;
                         tab.view.progress = 1.0;
                     }
-                    tracing::info!("[pixors] UI progress Done!");
                 }
                 PipelineEvent::Error(s) => {
+                    self.dispatcher.on_pipeline_error(&mut self.state, s.clone());
                     for tab in &mut self.state.tabs {
                         tab.view.loading = false;
                     }
@@ -78,11 +83,21 @@ impl App {
             }
             Msg::TabBar(m) => match m {
                 tab_bar::Msg::Select(id) => {
-                    self.state.switch(id);
+                    if let Err(e) = self.dispatcher.dispatch(
+                        Arc::new(crate::action::actions::switch_tab::SwitchTab(id)),
+                        &mut self.state,
+                    ) {
+                        self.push_error(e);
+                    }
                     self.update_status_from_active_tab();
                 }
                 tab_bar::Msg::Close(id) => {
-                    self.state.close(id);
+                    if let Err(e) = self.dispatcher.dispatch(
+                        Arc::new(crate::action::actions::close_tab::CloseTab(id)),
+                        &mut self.state,
+                    ) {
+                        self.push_error(e);
+                    }
                     self.update_status_from_active_tab();
                 }
                 tab_bar::Msg::DragDrop => {
