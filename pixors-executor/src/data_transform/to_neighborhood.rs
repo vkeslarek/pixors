@@ -120,8 +120,11 @@ impl TileToNeighborhoodProcessor {
             return;
         }
         let r = self.tile_radius() as i32;
-        let tiles_x = self.image_width.div_ceil(self.tile_size) as i32;
-        let tiles_y = self.image_height.div_ceil(self.tile_size) as i32;
+        // At mip level m, each tile covers tile_size * 2^m original pixels.
+        // tiles_x/y must count tiles in the mip-level grid, not the mip=0 grid.
+        let mip_step = self.tile_size.saturating_mul(1u32 << mip);
+        let tiles_x = self.image_width.div_ceil(mip_step) as i32;
+        let tiles_y = self.image_height.div_ceil(mip_step) as i32;
 
         if self.is_gpu == Some(true) {
             self.try_emit_gpu(mip, tx, ty, r, tiles_x, tiles_y, emit);
@@ -189,8 +192,12 @@ impl TileToNeighborhoodProcessor {
         );
         tracing::debug!(
             "[to_nbhd] emit CPU neighborhood center=({},{}) {}×{} radius={} tiles={}",
-            center.px, center.py, center.width, center.height,
-            self.pixel_radius, nbhd.data.tiles_cpu().len(),
+            center.px,
+            center.py,
+            center.width,
+            center.height,
+            self.pixel_radius,
+            nbhd.data.tiles_cpu().len(),
         );
         self.emitted.insert(key);
         emit.emit(Item::Neighborhood(nbhd));

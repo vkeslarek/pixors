@@ -1,4 +1,5 @@
-use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,14 +13,17 @@ use crate::stage::{
 pub type TileReadFn = Box<dyn Fn(u64, u64, u32, Option<TileRange>) -> Vec<Item> + Send + Sync>;
 //                               key, gen,  mip, range
 
-static TILE_READER: RwLock<Option<Arc<TileReadFn>>> = RwLock::new(None);
+static TILE_READERS: LazyLock<RwLock<HashMap<u64, Arc<TileReadFn>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
-pub fn install_viewport_cache_reader(f: TileReadFn) {
-    *TILE_READER.write().unwrap() = Some(Arc::new(f));
+/// Register a per-tab tile reader keyed by `tab_id`.
+pub fn install_viewport_cache_reader(tab_id: u64, f: TileReadFn) {
+    TILE_READERS.write().unwrap().insert(tab_id, Arc::new(f));
 }
 
-pub fn uninstall_viewport_cache_reader() {
-    *TILE_READER.write().unwrap() = None;
+/// Remove the tile reader for `tab_id`.
+pub fn uninstall_viewport_cache_reader(tab_id: u64) {
+    TILE_READERS.write().unwrap().remove(&tab_id);
 }
 
 static VCS_INPUTS: &[PortDeclaration] = &[];
@@ -53,7 +57,11 @@ impl Stage for ViewportCacheSource {
     }
 
     fn producer(&self) -> Option<Box<dyn Producer>> {
-        let cb = TILE_READER.read().unwrap().clone()?;
+        let cb = TILE_READERS
+            .read()
+            .unwrap()
+            .get(&self.routing_key)
+            .cloned()?;
         Some(Box::new(ViewportCacheSourceProducer {
             cb,
             routing_key: self.routing_key,
