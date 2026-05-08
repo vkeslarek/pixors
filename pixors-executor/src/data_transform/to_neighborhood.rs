@@ -187,6 +187,11 @@ impl TileToNeighborhoodProcessor {
             self.image_height,
             self.tile_size,
         );
+        tracing::debug!(
+            "[to_nbhd] emit CPU neighborhood center=({},{}) {}×{} radius={} tiles={}",
+            center.px, center.py, center.width, center.height,
+            self.pixel_radius, nbhd.data.tiles_cpu().len(),
+        );
         self.emitted.insert(key);
         emit.emit(Item::Neighborhood(nbhd));
     }

@@ -229,6 +229,7 @@ impl Scheduler {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("copy_tiles_padded"),
             });
+        let mut total_copied = 0usize;
         for info in tile_infos {
             let tile_w = info.width as usize;
             let tile_h = info.height as usize;
@@ -256,8 +257,13 @@ impl Scheduler {
                 let dst_off = ((buf_y as usize * pad_w + dst_start) * bpp) as u64;
                 let len = (copy_w * bpp) as u64;
                 enc.copy_buffer_to_buffer(src, src_off, dst, dst_off, len);
+                total_copied += copy_w;
             }
         }
+        tracing::debug!(
+            "[copy_padded] {} tiles, {} total pixel-cols copied, pad={pad_w}×{pad_h} orig=({orig_x},{orig_y})",
+            tile_infos.len(), total_copied,
+        );
         self.queue.submit(std::iter::once(enc.finish()));
     }
 

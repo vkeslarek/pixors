@@ -38,11 +38,19 @@ impl NeighborhoodData {
         matches!(self, Self::Gpu { .. })
     }
 
-    /// Iterate over tiles (CPU path only). Panics on GPU data.
+    /// Iterate over tiles (CPU path only). Returns empty for GPU data.
     pub fn tiles_cpu(&self) -> &[Tile] {
         match self {
             Self::Cpu { tiles } => tiles,
             Self::Gpu { .. } => &[],
+        }
+    }
+
+    /// Iterate over tile GPU metadata (GPU path only). Returns empty for CPU data.
+    pub fn tile_infos(&self) -> &[TileGpuInfo] {
+        match self {
+            Self::Cpu { .. } => &[],
+            Self::Gpu { tile_infos, .. } => tile_infos,
         }
     }
 }

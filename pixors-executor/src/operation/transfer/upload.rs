@@ -72,10 +72,18 @@ impl Processor for UploadProcessor {
             }
             Item::Neighborhood(nbhd) => match nbhd.data {
                 NeighborhoodData::Cpu { tiles } => {
-                    let gpu = ctx.gpu.as_ref().ok_or_else(|| {
-                        Error::internal("GPU unavailable for neighborhood upload")
-                    })?;
+                    let gpu = ctx
+                        .gpu
+                        .as_ref()
+                        .ok_or_else(|| Error::internal("GPU unavailable for neighborhood upload"))?;
                     let scheduler = gpu.scheduler();
+
+                    tracing::debug!(
+                        "[upload] Neighborhood Cpu→Gpu: {} tiles, center=({},{})",
+                        tiles.len(),
+                        nbhd.center.px,
+                        nbhd.center.py,
+                    );
 
                     // Upload each CPU tile to GPU, track metadata for consolidation
                     let mut gpu_tiles: Vec<(Arc<GpuBuffer>, &Tile)> = Vec::new();
@@ -127,6 +135,11 @@ impl Processor for UploadProcessor {
                         nbhd.image_width,
                         nbhd.image_height,
                         nbhd.tile_size,
+                    );
+                    tracing::debug!(
+                        "[upload] consolidated {} bytes, {} tile_infos",
+                        total_bytes,
+                        gpu_nbhd.data.tile_infos().len(),
                     );
                     ctx.emit.emit(Item::Neighborhood(gpu_nbhd));
                     Ok(())
