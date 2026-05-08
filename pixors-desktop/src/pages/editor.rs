@@ -1,8 +1,8 @@
-use iced::widget::{container, pane_grid, row};
-use iced::{Background, Element, Length};
+use iced::widget::{column, container, pane_grid, row, text};
+use iced::{Alignment, Background, Color, Element, Length};
 
 use crate::app::{App, Msg, PaneKind};
-use crate::theme::BG_SURFACE;
+use crate::theme::{BG_SURFACE, TEXT_MUTED};
 
 pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let active = app.state.active_tab();
@@ -11,19 +11,48 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let active_cache = active.map(|t| t.viewport_cache.clone());
     let tab_id = app.state.active_id();
     let viewport_state = active.map(|t| t.viewport_state.clone());
+    let tile_generation = active.map(|t| t.tile_generation).unwrap_or(0);
+    let mip_fetch_signal = active
+        .map(|t| t.mip_fetch_signal.clone())
+        .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
 
-    row![
-        app.tools.view().map(Msg::Toolbar),
+    let canvas = if let Some(tab_id) = tab_id {
         crate::components::viewport::view(
             app.tabs.view(&app.state).map(Msg::TabBar),
             canvas_w,
             canvas_h,
             active_cache,
-            app.tile_generation,
-            app.mip_fetch_signal.clone(),
-            tab_id,
+            tile_generation,
+            mip_fetch_signal,
+            Some(tab_id),
             viewport_state,
-        ),
+        )
+    } else {
+        column![
+            app.tabs.view(&app.state).map(Msg::TabBar),
+            container(
+                text("Open an image to start\n(Ctrl+O)")
+                    .size(14)
+                    .color(TEXT_MUTED),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(
+                    0.067, 0.067, 0.075, 1.0,
+                ))),
+                ..Default::default()
+            }),
+        ]
+        .width(Length::Fill)
+        .into()
+    };
+
+    row![
+        app.tools.view().map(Msg::Toolbar),
+        canvas,
         crate::components::sidebar_grid::view(
             &app.panes,
             |pane, kind| pane_content(app, pane, kind)

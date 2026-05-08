@@ -3,6 +3,7 @@ use iced::keyboard::{self, Key};
 use iced::widget::pane_grid;
 use pixors_executor::runtime::event::PipelineEvent;
 use pixors_executor::source::cache_reader::TileRange;
+use std::sync::{Arc, Mutex};
 
 use crate::app::{App, Msg, PaneKind};
 use crate::components::{filters_panel, layers_panel, menu_bar, tab_bar};
@@ -144,19 +145,13 @@ impl App {
     }
 
     pub(crate) fn open_file_dialog(&mut self) {
-        if let Some(tab) = self.state.active_tab_mut() {
-            tab.view.loading = true;
-            tab.view.progress = 0.0;
-        }
-        tracing::info!("[pixors] open_file_dialog: reset progress to 0.0");
+        tracing::info!("[pixors] open_file_dialog: starting");
 
         let vp_cache = crate::viewport::tile_cache::ViewportCache::new();
         match crate::file_ops::open_and_run(Some(vp_cache.clone())) {
             Ok((w, h, path)) => {
                 // --- backward compat: old flat fields (remove in Phase B) ---
                 self.image_path = Some(path.clone());
-                self.cache_dir = Some(path.with_extension("pixors_cache"));
-                self.image_dims = Some((w, h));
 
                 // --- new: create Tab in EditorState ---
                 let tab_id = self.state.alloc_tab_id();
@@ -200,6 +195,8 @@ impl App {
                         vs.camera.img_h = h as f32;
                         Rc::new(RefCell::new(vs))
                     },
+                    mip_fetch_signal: Arc::new(Mutex::new(Vec::<(TabId, u32, TileRange)>::new())),
+                    tile_generation: 0,
                     layers: vec![],
                     active_layer: None,
                     chain: Default::default(),
@@ -208,7 +205,7 @@ impl App {
                         zoom: 1.0,
                         pan: (0.0, 0.0),
                         active_mip: 0,
-                        loading: false,
+                        loading: true,
                         progress: 0.0,
                     },
                 });
@@ -229,19 +226,21 @@ impl App {
     pub(crate) fn handle_tick(&mut self) {
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        if let Some(ref cache) = self.state.active_tab()
-            .map(|t| &t.viewport_cache)
-            && cache.lock().is_ok_and(|g| g.has_pending()) {
-                self.tile_generation = self.tile_generation.wrapping_add(1);
-                tracing::info!("[pixors] handle_tick: tile_generation is now {}", self.tile_generation);
+        let mut mip_requests: Vec<(TabId, u32, TileRange)> = Vec::new();
+
+        for tab in &mut self.state.tabs {
+            if tab.viewport_cache.lock().is_ok_and(|g| g.has_pending()) {
+                tab.tile_generation = tab.tile_generation.wrapping_add(1);
             }
 
-        let mut sigs = self.mip_fetch_signal.lock().unwrap();
-        if !sigs.is_empty() {
-            let reqs: Vec<_> = sigs.drain(..).collect();
-            for (tab_id, mip, range) in reqs {
-                self.fetch_mip_from_cache(tab_id, mip, range);
+            let mut sigs = tab.mip_fetch_signal.lock().unwrap();
+            if !sigs.is_empty() {
+                mip_requests.extend(sigs.drain(..));
             }
+        }
+
+        for (tab_id, mip, range) in mip_requests {
+            self.fetch_mip_from_cache(tab_id, mip, range);
         }
     }
 

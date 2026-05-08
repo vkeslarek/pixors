@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use pixors_executor::common::image::ImageDescriptor;
+use pixors_executor::source::cache_reader::TileRange;
 
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::ViewportCache;
@@ -24,6 +25,8 @@ pub struct Tab {
     pub cache_dir: PathBuf,
     pub viewport_cache: Arc<Mutex<ViewportCache>>,
     pub viewport_state: Rc<RefCell<ViewportState>>,
+    pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    pub tile_generation: u64,
     pub layers: Vec<Layer>,
     pub active_layer: Option<LayerId>,
     pub chain: EditChain,

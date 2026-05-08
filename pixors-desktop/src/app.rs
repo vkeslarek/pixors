@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use iced::keyboard::{self};
 use iced::widget::pane_grid::{self, Configuration};
@@ -7,14 +7,12 @@ use iced::widget::{column, container, row, text};
 use iced::{Background, Color, Element, Length, Subscription};
 use pixors_executor::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
-use pixors_executor::source::cache_reader::TileRange;
 
 use crate::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar,
     workspace_bar,
 };
 use crate::state::EditorState;
-use crate::viewport::tile_cache::ViewportCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -53,13 +51,6 @@ pub struct App {
     pub status: status_bar::State,
     #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
-    #[allow(dead_code)]
-    pub cache: Option<Arc<Mutex<ViewportCache>>>,
-    pub tile_generation: u64,
-    /// Written by ViewportProgram when MIP changes; read here to trigger disk fetch.
-    pub mip_fetch_signal: Arc<Mutex<Vec<(crate::state::TabId, u32, TileRange)>>>,
-    pub cache_dir: Option<PathBuf>,
-    pub image_dims: Option<(u32, u32)>,
     pub image_path: Option<PathBuf>,
     pub show_export_dialog: bool,
     pub export_dialog: crate::dialog::export::ExportDialog,
@@ -95,11 +86,6 @@ impl Default for App {
             filters: filters_panel::State::default(),
             status: status_bar::State::default(),
             errors: Vec::new(),
-            cache: Some(ViewportCache::new()),
-            tile_generation: 0,
-            mip_fetch_signal: Arc::new(Mutex::new(Vec::new())),
-            cache_dir: None,
-            image_dims: None,
             image_path: None,
             show_export_dialog: false,
             export_dialog: crate::dialog::export::ExportDialog::default(),
@@ -124,18 +110,11 @@ impl App {
             iced::time::every(std::time::Duration::from_millis(33)).map(|_| Msg::Tick),
         ];
 
-        let has_pending = self
-            .state
-            .active_tab()
+        let has_pending = self.state.active_tab()
             .and_then(|t| t.viewport_cache.lock().ok())
-            .map(|g| g.has_pending())
-            .unwrap_or(false);
+            .is_some_and(|g| g.has_pending());
 
-        let tab_loading = self
-            .state
-            .active_tab()
-            .map(|t| t.view.loading)
-            .unwrap_or(false);
+        let tab_loading = self.loading_active();
 
         if tab_loading || has_pending {
             subs.push(iced::window::frames().map(|_| Msg::Frames));
