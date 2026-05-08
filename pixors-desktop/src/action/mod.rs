@@ -1,8 +1,8 @@
 pub mod actions;
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 
@@ -128,9 +128,8 @@ impl Dispatcher {
 
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-                let pipeline =
-                    Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone())
-                        .map_err(|e| e.to_string())?;
+                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone())
+                    .map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
                 thread::spawn(move || {

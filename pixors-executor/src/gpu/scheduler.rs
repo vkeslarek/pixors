@@ -192,6 +192,111 @@ impl Scheduler {
         buf
     }
 
+    /// Copy a slice from one GPU buffer to another.
+    pub fn copy_slice(
+        &self,
+        src: &wgpu::Buffer,
+        src_offset: u64,
+        dst: &wgpu::Buffer,
+        dst_offset: u64,
+        size: u64,
+    ) {
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("copy_slice"),
+            });
+        enc.copy_buffer_to_buffer(src, src_offset, dst, dst_offset, size);
+        self.queue.submit(std::iter::once(enc.finish()));
+    }
+
+    /// Copy tile data from a consolidated buffer into a padded buffer,
+    /// handling per-row placement relative to the padded origin.
+    #[allow(clippy::too_many_arguments)]
+    pub fn copy_tiles_into_padded(
+        &self,
+        src: &wgpu::Buffer,
+        tile_infos: &[crate::data::neighborhood::TileGpuInfo],
+        dst: &wgpu::Buffer,
+        pad_w: usize,
+        pad_h: usize,
+        orig_x: i64,
+        orig_y: i64,
+        bpp: usize,
+    ) {
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("copy_tiles_padded"),
+            });
+        for info in tile_infos {
+            let tile_w = info.width as usize;
+            let tile_h = info.height as usize;
+            for row in 0..tile_h {
+                let buf_y = info.py as i64 + row as i64 - orig_y;
+                if buf_y < 0 || buf_y as usize >= pad_h {
+                    continue;
+                }
+                let buf_x_base = info.px as i64 - orig_x;
+                let src_start: usize = if buf_x_base < 0 {
+                    (-buf_x_base) as usize
+                } else {
+                    0
+                };
+                let dst_start = buf_x_base.max(0) as usize;
+                let copy_w = tile_w
+                    .saturating_sub(src_start)
+                    .min(pad_w.saturating_sub(dst_start));
+                if copy_w == 0 {
+                    continue;
+                }
+                let src_off = info.data_offset
+                    + (row as u64 * tile_w as u64 * bpp as u64)
+                    + (src_start as u64 * bpp as u64);
+                let dst_off = ((buf_y as usize * pad_w + dst_start) * bpp) as u64;
+                let len = (copy_w * bpp) as u64;
+                enc.copy_buffer_to_buffer(src, src_off, dst, dst_off, len);
+            }
+        }
+        self.queue.submit(std::iter::once(enc.finish()));
+    }
+
+    /// Read a slice of bytes from a GPU buffer at the given offset.
+    pub fn read_from_buffer(&self, src: &wgpu::Buffer, offset: u64, size: u64) -> Vec<u8> {
+        let size_aligned = (size + 3) & !3;
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("read-staging"),
+            size: size_aligned,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("read_from_buffer"),
+            });
+        enc.copy_buffer_to_buffer(src, offset, &staging, 0, size_aligned);
+        self.queue.submit(std::iter::once(enc.finish()));
+        self.device.poll(wgpu::Maintain::Wait);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        staging
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |res| {
+                let _ = tx.send(res);
+            });
+        self.device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().unwrap();
+
+        let mut bytes = {
+            let view = staging.slice(..).get_mapped_range();
+            view.to_vec()
+        };
+        bytes.truncate(size as usize);
+        staging.unmap();
+        bytes
+    }
+
     // ── Public pipeline accessors ─────────────────────────────────────────
 
     pub fn compute_pipeline(

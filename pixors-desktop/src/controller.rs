@@ -327,13 +327,16 @@ impl App {
     }
 
     fn dispatch_blur_preview(&mut self, radius: u32) {
-        let Some(tab) = self.state.active_tab_mut() else { return; };
+        let Some(tab) = self.state.active_tab_mut() else {
+            return;
+        };
 
         let old_gen = tab.view.preview_gen;
         if old_gen > 0
-            && let Ok(mut cache) = tab.viewport_cache.lock() {
-                cache.clear_generation(old_gen);
-            }
+            && let Ok(mut cache) = tab.viewport_cache.lock()
+        {
+            cache.clear_generation(old_gen);
+        }
 
         // Cancel the previous background pipeline so it stops wasting resources
         self.dispatcher.cancel_background(tab.id);

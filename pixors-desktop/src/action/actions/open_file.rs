@@ -14,8 +14,8 @@ use pixors_executor::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
-use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
 use crate::state::tab::{BlendMode, Layer, LayerSource};
+use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::{CachedTile, ViewportCache};
 

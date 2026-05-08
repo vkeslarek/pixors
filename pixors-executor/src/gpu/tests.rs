@@ -38,7 +38,7 @@ mod tests {
         let coord = TileCoord::new(0, 0, 0, w, w, h);
 
         let cpu_tile = Tile::new(coord, meta, Buffer::cpu(data.clone()));
-        let cpu_nbhd = Neighborhood::new(
+        let cpu_nbhd = Neighborhood::new_cpu(
             r,
             coord,
             vec![cpu_tile],

@@ -8,8 +8,7 @@ use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
 
-pub type CacheCommitFn =
-    Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+pub type CacheCommitFn = Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 //       gen, mip,  tx,  ty,  px,  py,   w,   h, bytes
 
 static CACHE_ROUTER: RwLock<Option<HashMap<u64, Arc<CacheCommitFn>>>> = RwLock::new(None);

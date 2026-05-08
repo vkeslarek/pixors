@@ -6,7 +6,6 @@ use crate::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
 
-
 use crate::error::Error;
 use crate::graph::item::Item;
 

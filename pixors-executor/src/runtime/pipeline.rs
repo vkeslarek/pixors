@@ -153,10 +153,7 @@ impl PipelineHandle {
 }
 
 impl Pipeline {
-    pub fn run(
-        self,
-        events: Option<SyncSender<PipelineEvent>>,
-    ) -> PipelineHandle {
+    pub fn run(self, events: Option<SyncSender<PipelineEvent>>) -> PipelineHandle {
         let cancelled = Arc::new(AtomicBool::new(false));
         let mut handles = Vec::new();
 
@@ -185,10 +182,7 @@ impl Pipeline {
             handles.push(h);
         }
 
-        PipelineHandle {
-            cancelled,
-            handles,
-        }
+        PipelineHandle { cancelled, handles }
     }
 }
 
@@ -348,12 +342,24 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
             let all_same = adj_devs.iter().all(|&d| d == first);
 
             // Rule 2a: preference matches an adjacent device
-            if let Some(pref) = hints.preference
-                && adj_devs.contains(&pref) {
+            if let Some(pref) = hints.preference {
+                if adj_devs.contains(&pref) {
                     devs.insert(id, pref);
                     assigned_any = true;
                     continue;
                 }
+                // Rule 2b: preference set but no adjacent match — strong hint wins
+                devs.insert(id, pref);
+                assigned_any = true;
+                continue;
+            }
+
+            // Rule 2c: all adjacents on same device → assign to that device
+            if all_same {
+                devs.insert(id, first);
+                assigned_any = true;
+                continue;
+            }
 
             // Rule 2c: all adjacents on same device → assign to that device
             if all_same {
@@ -374,7 +380,8 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
 
     // Pass 3: any remaining unassigned → GPU if available
     for id in g.node_indices() {
-        devs.entry(id).or_insert_with(|| if gpu_ok { Device::Gpu } else { Device::Cpu });
+        devs.entry(id)
+            .or_insert_with(|| if gpu_ok { Device::Gpu } else { Device::Cpu });
     }
 
     devs
