@@ -54,6 +54,8 @@ pub struct TabView {
     pub zoom: f32,
     pub pan: (f32, f32),
     pub active_mip: u32,
+    pub loading: bool,
+    pub progress: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

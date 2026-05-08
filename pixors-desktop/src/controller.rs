@@ -46,21 +46,26 @@ impl App {
             Msg::Frames => {} // Just to wake up the event loop
             Msg::PipelineEvent(e) => match e {
                 PipelineEvent::Progress { done, total } => {
-                    self.progress = if total > 0 {
-                        done as f32 / total as f32
-                    } else {
-                        1.0
-                    };
-                    tracing::info!("[pixors] UI progress updated: {}/{} = {}", done, total, self.progress);
+                    let p = if total > 0 { done as f32 / total as f32 } else { 1.0 };
+                    for tab in &mut self.state.tabs {
+                        if tab.view.loading {
+                            tab.view.progress = p;
+                        }
+                    }
+                    tracing::info!("[pixors] UI progress updated: {}/{}", done, total);
                 }
                 PipelineEvent::Done => {
-                    self.progress = 1.0;
-                    self.loading = false;
-                    tracing::info!("[pixors] UI progress Done! set to 1.0");
+                    for tab in &mut self.state.tabs {
+                        tab.view.loading = false;
+                        tab.view.progress = 1.0;
+                    }
+                    tracing::info!("[pixors] UI progress Done!");
                 }
                 PipelineEvent::Error(s) => {
+                    for tab in &mut self.state.tabs {
+                        tab.view.loading = false;
+                    }
                     self.push_error(s);
-                    self.loading = false;
                 }
             },
             Msg::ExportDialog(m) => self.handle_export_dialog(m),
@@ -139,8 +144,10 @@ impl App {
     }
 
     pub(crate) fn open_file_dialog(&mut self) {
-        self.loading = true;
-        self.progress = 0.0;
+        if let Some(tab) = self.state.active_tab_mut() {
+            tab.view.loading = true;
+            tab.view.progress = 0.0;
+        }
         tracing::info!("[pixors] open_file_dialog: reset progress to 0.0");
 
         let vp_cache = crate::viewport::tile_cache::ViewportCache::new();
@@ -201,6 +208,8 @@ impl App {
                         zoom: 1.0,
                         pan: (0.0, 0.0),
                         active_mip: 0,
+                        loading: false,
+                        progress: 0.0,
                     },
                 });
                 self.update_status_from_active_tab();
@@ -273,8 +282,10 @@ impl App {
                         )
                         .save_file()
                     {
-                        self.loading = true;
-                        self.progress = 0.0;
+                        if let Some(tab) = self.state.active_tab_mut() {
+                            tab.view.loading = true;
+                            tab.view.progress = 0.0;
+                        }
                         let save = save_path.clone();
                         let c = config.clone();
                         let tx = crate::app::pipeline_event_tx();

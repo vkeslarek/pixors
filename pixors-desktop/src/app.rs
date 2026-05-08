@@ -51,8 +51,6 @@ pub struct App {
     pub layers: layers_panel::State,
     pub filters: filters_panel::State,
     pub status: status_bar::State,
-    pub loading: bool,
-    pub progress: f32,
     #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
     #[allow(dead_code)]
@@ -85,48 +83,7 @@ impl Default for App {
         };
         let panes = pane_grid::State::with_configuration(cfg);
 
-        let state = {
-            use pixors_executor::common::color::space::ColorSpace;
-            use crate::state::{Tab, TabSource, TabView};
-
-            let mut es = EditorState::new();
-            for i in 0..2 {
-                let id = es.alloc_tab_id();
-                es.push_tab(Tab {
-                    id,
-                    title: format!("Untitled {}", i + 1),
-                    source: TabSource::NewBlank { width: 1024, height: 1024 },
-                    desc: pixors_executor::common::image::ImageDescriptor {
-                        format: "RGBA8".into(),
-                        width: 1024,
-                        height: 1024,
-                        bit_depth: 8,
-                        color_space: ColorSpace::SRGB,
-                        dpi: None,
-                        metadata: vec![],
-                        icc_profile: None,
-                        pages: vec![],
-                    },
-                    cache_dir: std::path::PathBuf::new(),
-                    viewport_cache: ViewportCache::new(),
-                    viewport_state: {
-                        use std::cell::RefCell;
-                        use std::rc::Rc;
-                        use crate::viewport::state::ViewportState;
-                        let mut vs = ViewportState::default();
-                        vs.camera.img_w = 1024.0;
-                        vs.camera.img_h = 1024.0;
-                        Rc::new(RefCell::new(vs))
-                    },
-                    layers: vec![],
-                    active_layer: None,
-                    chain: Default::default(),
-                    history: Default::default(),
-                    view: TabView { zoom: 1.0, pan: (0.0, 0.0), active_mip: 0 },
-                });
-            }
-            es
-        };
+        let state = EditorState::new();
 
         let mut app = Self {
             state,
@@ -137,8 +94,6 @@ impl Default for App {
             layers: layers_panel::State::default(),
             filters: filters_panel::State::default(),
             status: status_bar::State::default(),
-            loading: true,
-            progress: 0.0,
             errors: Vec::new(),
             cache: Some(ViewportCache::new()),
             tile_generation: 0,
@@ -155,6 +110,14 @@ impl Default for App {
 }
 
 impl App {
+    pub fn loading_active(&self) -> bool {
+        self.state.active_tab().map(|t| t.view.loading).unwrap_or(false)
+    }
+
+    pub fn progress_active(&self) -> f32 {
+        self.state.active_tab().map(|t| t.view.progress).unwrap_or(0.0)
+    }
+
     pub fn subscription(&self) -> Subscription<Msg> {
         let mut subs = vec![
             keyboard::listen().map(Msg::KeyPressed),
@@ -168,7 +131,13 @@ impl App {
             .map(|g| g.has_pending())
             .unwrap_or(false);
 
-        if self.loading || has_pending {
+        let tab_loading = self
+            .state
+            .active_tab()
+            .map(|t| t.view.loading)
+            .unwrap_or(false);
+
+        if tab_loading || has_pending {
             subs.push(iced::window::frames().map(|_| Msg::Frames));
         }
 
@@ -209,7 +178,7 @@ impl App {
                 active_page,
             ]
             .height(Length::Fill),
-            crate::widgets::loading_bar(self.loading, self.progress),
+            crate::widgets::loading_bar(self.loading_active(), self.progress_active()),
             self.status.view::<Msg>(),
         ];
 
