@@ -1,3 +1,6 @@
+use pixors_executor::common::color::space::ColorSpace;
+use pixors_executor::common::pixel::PixelFormat;
+
 use super::tab::{LayerId, Tab, TabId};
 
 pub struct EditorState {
@@ -6,6 +9,10 @@ pub struct EditorState {
     pub next_tab_id: u64,
     pub next_layer_id: u64,
     pub pipeline_lock: Option<TabId>,
+    pub working_format: PixelFormat,
+    pub working_color_space: ColorSpace,
+    pub display_format: PixelFormat,
+    pub display_color_space: ColorSpace,
 }
 
 impl EditorState {
@@ -16,6 +23,10 @@ impl EditorState {
             next_tab_id: 0,
             next_layer_id: 0,
             pipeline_lock: None,
+            working_format: PixelFormat::RgbaF16,
+            working_color_space: ColorSpace::ACES_CG,
+            display_format: PixelFormat::Rgba8,
+            display_color_space: ColorSpace::SRGB,
         }
     }
 

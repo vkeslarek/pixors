@@ -52,6 +52,8 @@ pub struct CacheReader {
     pub image_width: u32,
     pub image_height: u32,
     pub tile_range: Option<TileRange>,
+    pub pixel_format: PixelFormat,
+    pub color_space: ColorSpace,
 }
 
 impl Stage for CacheReader {
@@ -71,6 +73,8 @@ impl Stage for CacheReader {
             image_width: self.image_width,
             image_height: self.image_height,
             tile_range: self.tile_range.clone(),
+            pixel_format: self.pixel_format,
+            color_space: self.color_space,
             use_compression: false,
         }))
     }
@@ -102,6 +106,8 @@ pub struct CacheReaderProducer {
     image_width: u32,
     image_height: u32,
     tile_range: Option<TileRange>,
+    pixel_format: PixelFormat,
+    color_space: ColorSpace,
     use_compression: bool,
 }
 
@@ -122,7 +128,7 @@ impl Producer for CacheReaderProducer {
             None => (0, cols, 0, rows),
         };
 
-        let meta = PixelMeta::new(PixelFormat::Rgba8, ColorSpace::SRGB, AlphaPolicy::Straight);
+        let meta = PixelMeta::new(self.pixel_format, self.color_space, AlphaPolicy::Straight);
         let dir = self.cache_dir.join(format!("mip_{}", self.mip_level));
 
         if !dir.is_dir() {

@@ -67,7 +67,8 @@ impl Consumer for CacheWriterConsumer {
                 return Err(Error::internal("CacheWriter requires CPU tiles"));
             }
         };
-        let expected = (w * h * 4) as usize;
+        let bpp = tile.meta.format.bytes_per_pixel() as usize;
+        let expected = (w as usize * h as usize * bpp) as usize;
         if data.len() != expected {
             return Err(Error::internal(format!(
                 "CacheWriter tile size mismatch: expected {expected} bytes, got {}",

@@ -35,6 +35,8 @@ impl Action for RequestMipFetch {
                 image_width: self.img_w,
                 image_height: self.img_h,
                 tile_range: Some(self.range.clone()),
+                pixel_format: PixelFormat::RgbaF16,
+                color_space: ColorSpace::ACES_CG,
             })
             .op(ColorConvert {
                 target_format: PixelFormat::Rgba8,

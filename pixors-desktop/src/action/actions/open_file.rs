@@ -2,9 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::common::color::space::ColorSpace;
 use pixors_executor::common::image::Image;
-use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_executor::common::pixel::AlphaPolicy;
 use pixors_executor::data::tile::TileGridPos;
 use pixors_executor::data_transform::to_tile::ScanLineToTile;
 use pixors_executor::operation::color::ColorConvert;
@@ -104,8 +103,8 @@ impl Action for OpenFile {
                 image_height: h,
             })
             .op(ColorConvert {
-                target_format: PixelFormat::RgbaF16,
-                target_color_space: ColorSpace::ACES_CG,
+                target_format: state.working_format,
+                target_color_space: state.working_color_space,
                 target_alpha: AlphaPolicy::Straight,
             })
             .op(MipDownsample {
@@ -123,8 +122,8 @@ impl Action for OpenFile {
         // Only the viewport path converts to sRGB; disk stores ACEScg f16
         let graph = pipe_vp
             .op(ColorConvert {
-                target_format: PixelFormat::Rgba8,
-                target_color_space: ColorSpace::SRGB,
+                target_format: state.display_format,
+                target_color_space: state.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
             })
             .sink(ViewportCacheSink::new(0))

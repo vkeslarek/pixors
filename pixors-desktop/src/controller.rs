@@ -318,9 +318,17 @@ impl App {
     }
 
     fn dispatch_blur_preview(&mut self, radius: u32) {
-        let Some(tab) = self.state.active_tab_mut() else {
-            return;
-        };
+        let Some(tab) = self.state.active_tab_mut() else { return; };
+
+        // Clear the previous preview generation so old and new tiles don't mix,
+        // which would create visible seams between tiles at different generations.
+        let old_gen = tab.view.preview_gen;
+        if old_gen > 0 {
+            if let Ok(mut cache) = tab.viewport_cache.lock() {
+                cache.clear_generation(old_gen);
+            }
+        }
+
         tab.view.preview_gen += 1;
         let generation = tab.view.preview_gen;
 

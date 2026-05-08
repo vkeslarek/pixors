@@ -168,23 +168,19 @@ fn gpu_blur_process(
         .ok_or_else(|| Error::internal(format!("blur: unsupported format {:?}", fmt)))?;
 
     if r == 0 {
-        // No blur needed — pass centre tile through as GPU buffer if available,
-        // or fall back to CPU assembling.
+        // No blur needed — pass centre tile through.
+        // Already on GPU → just pass through. CPU → upload to keep chain on GPU.
         if let Some(ct) = nbhd.tile_at(nbhd.center.tx, nbhd.center.ty) {
-            let data = ct
-                .data
-                .as_cpu_slice()
-                .ok_or_else(|| Error::internal("blur r=0: expected CPU tile for passthrough"))?;
-            // Upload to GPU so the rest of the chain stays on GPU
-            let gpu_ctx =
-                gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
-            let scheduler = gpu_ctx.scheduler();
-            let gbuf = scheduler.upload_bytes(data);
-            emit.emit(Item::Tile(Tile::new(
-                nbhd.center,
-                nbhd.meta,
-                Buffer::Gpu(Arc::new(gbuf)),
-            )));
+            let buf = match &ct.data {
+                Buffer::Gpu(g) => Buffer::Gpu(Arc::clone(g)),
+                Buffer::Cpu(data) => {
+                    let gpu_ctx = gpu::context::try_init()
+                        .ok_or_else(|| Error::internal("GPU unavailable"))?;
+                    let scheduler = gpu_ctx.scheduler();
+                    Buffer::Gpu(Arc::new(scheduler.upload_bytes(data)))
+                }
+            };
+            emit.emit(Item::Tile(Tile::new(nbhd.center, nbhd.meta, buf)));
         }
         return Ok(());
     }

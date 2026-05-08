@@ -42,6 +42,8 @@ impl Action for BlurPreview {
                 image_width: self.img_w,
                 image_height: self.img_h,
                 tile_range: Some(self.range.clone()),
+                pixel_format: PixelFormat::RgbaF16,
+                color_space: ColorSpace::ACES_CG,
             })
             .data_xform(TileToNeighborhood {
                 radius: self.radius,
