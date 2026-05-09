@@ -1,5 +1,9 @@
 # Pixors Architecture
 
+> **STALE** — this document describes `pixors-executor` which was split into
+> `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-ops`, `pixors-state`
+> in May 2026. See `CLAUDE.md` and `AGENTS.md` for current architecture.
+>
 > Authoritative reference. Updated: Phase 9 — executor-based, engine deprecated.
 
 ---

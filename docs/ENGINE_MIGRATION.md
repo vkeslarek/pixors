@@ -1,5 +1,9 @@
 # Roadmap — Próximas Features
 
+> **STALE** — the migration from `pixors-executor` to `pixors-engine` is complete.
+> This document is kept for historical reference. See `CLAUDE.md` and `AGENTS.md`
+> for current architecture.
+
 Estado atual do `pixors-executor` + `pixors-desktop` e o que falta implementar.
 
 ---
