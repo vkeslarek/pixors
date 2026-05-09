@@ -324,7 +324,10 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
     }
 
     // Pass 2: iterative assignment for Either stages. Minimize CPU↔GPU transfers.
+    let max_iterations = g.node_count() * 3;
+    let mut iterations = 0usize;
     loop {
+        iterations += 1;
         let mut assigned_any = false;
 
         for id in g.node_indices() {
@@ -379,6 +382,18 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
         }
 
         if !assigned_any {
+            break;
+        }
+        if iterations > max_iterations {
+            tracing::warn!(
+                "assign_devices: fixed-point did not converge after {iterations} passes; \
+                 remaining Either nodes will default to GPU"
+            );
+            for id in g.node_indices() {
+                if !devs.contains_key(&id) {
+                    devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu });
+                }
+            }
             break;
         }
     }
