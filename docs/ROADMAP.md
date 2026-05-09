@@ -30,15 +30,24 @@ See `docs/PHASE_10.md` for the full refined spec.
 
 ---
 
-## Phase 11 — Format support + Library workspace v1
+## Phase 11 — Format support + Blend modes + Library workspace v1
 
-**Goal:** support every common image format and deliver the Library workspace.
-Library needs thumbnail generation, which needs the decoders, so they land together.
-Libraries for each format will be decided when this phase begins.
+**Goal:** support every common image format, deliver blend modes for the compositor,
+and deliver the Library workspace. Multi-layer TIFF files land in this phase — they
+are immediately usable only if blend modes are also present, so the two ship together.
 
-- Decode JPEG, WEBP, AVIF, EXR — each enters the existing tile pipeline as a new
-  `TileSource` impl; the rest of the pipeline is unchanged.
+- Decode JPEG (moved from Phase 10 if not shipped there), WEBP, AVIF, EXR — each
+  enters the existing tile pipeline as a new `ImageDecoder` impl; the rest of the
+  pipeline is unchanged.
 - EXR decode: f16/f32 enters the pipeline naturally; no special casing needed.
+- Multi-layer TIFF: expose each TIFF page as a separate `Layer` in the tab, each
+  with its own cache subdirectory (layout already defined in Phase 10).
+- **Blend modes** — Normal (already ships in Phase 10), plus:
+  Multiply, Screen, Overlay, Soft Light, Hard Light, Color Dodge, Color Burn,
+  Difference, Exclusion. Luminosity, Color, Hue, Saturation deferred (need Lab
+  conversion in the compositor — revisit when Darkroom color science lands).
+  Implemented in `Compose` CPU path first; GPU path is a follow-up optimization.
+  Unblocks: layer groups, clipping masks, layer effects (all currently backlog).
 - Thumbnail extraction and disk cache (generated from MIP-N during decode,
   reused in Library grid).
 - Library workspace v1:
@@ -157,7 +166,7 @@ directory. Re-apply from the snapshot rather than re-running the op chain.
 Non-destructive ops in Darkroom make this simpler — history is just the parameter
 sequence, no tile snapshots needed for that workspace.
 
-**Depends on:** Operations (Phase 9 A.4), architecture decision in Phase 14.
+**Depends on:** Phase 10 operations, architecture decision in Phase 14.
 
 ---
 
@@ -167,7 +176,7 @@ Pipes do not currently listen to cancellation signals. If `close_image` fires
 mid-load, threads run until `StreamDone`. A `CancellationToken` checked at the
 top of each pipe loop would make tab close and job cancel instant.
 
-**Depends on:** Job system (Phase 9 A.2). Revisit after job architecture is stable.
+**Depends on:** Dispatcher/pipeline system (Phase 9, complete). Revisit after job architecture is stable.
 
 ---
 
@@ -178,7 +187,7 @@ While a Preview job is running, block zoom gestures on the frontend and reject
 level; zoom mid-preview discards visible tiles and triggers a new preview at the
 new level — cancel-on-zoom works but is flickery.
 
-**Depends on:** Preview system (Phase 9 A.3). Deferred — complicates tile scheduling.
+**Depends on:** Preview system (Phase 10). Deferred — complicates tile scheduling.
 
 ---
 
@@ -191,21 +200,13 @@ revisit as an optimization, not a correctness fix.
 
 ---
 
-### Multi-layer compositing — blend modes beyond alpha
-
-`composite_tile()` exists but only computes Porter-Duff over with straight alpha.
-Blend modes land in Phase 10. What remains after that: layer groups, clipping
-masks, fill opacity separate from layer opacity.
-
----
-
 ### Layer effects
 
 Drop shadow, inner shadow, outer glow, inner glow, bevel/emboss, color overlay,
 gradient overlay, pattern overlay, stroke. Each is a post-composite op applied to
 the layer's bounding box.
 
-**Depends on:** blend modes (Phase 10), layer groups.
+**Depends on:** blend modes (Phase 11), layer groups.
 
 ---
 
@@ -214,7 +215,7 @@ the layer's bounding box.
 Group layers into a folder with a shared blend mode and opacity. Clipping mask:
 a layer's pixels are clipped to the alpha of the layer directly below.
 
-**Depends on:** blend modes (Phase 10).
+**Depends on:** blend modes (Phase 11).
 
 ---
 
@@ -290,7 +291,7 @@ Real-time luminance and per-channel histogram computed from the current viewport
 MIP level. Needs a `viewport_histogram` engine command that reads from the Viewport
 RAM cache and returns 256-bucket per-channel data.
 
-**Depends on:** ViewportService (Phase 9 A.1). Deferred until core image processing
+**Depends on:** Phase 10 composite display. Deferred until core image processing
 is stable — no point displaying accurate histograms before ops are complete.
 
 ---
@@ -301,7 +302,7 @@ Pixel dimensions and offset for the active layer, with editable fields that
 dispatch `Layer.SetOffset` and eventually `Layer.Resize`. The data already exists
 in `ImageLoaded` and `LayerEvent::Changed` — this panel just needs wiring.
 
-**Depends on:** LayerService (Phase 9 A.1). Low effort, deferred alongside Histogram.
+**Depends on:** Phase 10 layer wiring. Low effort, deferred alongside Histogram.
 
 ---
 
