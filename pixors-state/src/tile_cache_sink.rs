@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock};
+
+use parking_lot::RwLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -11,22 +13,23 @@ use pixors_engine::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortS
 pub type CacheCommitFn = Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 //       gen, mip,  tx,  ty,  px,  py,   w,   h, bytes
 
-static CACHE_ROUTER: RwLock<Option<HashMap<u64, Arc<CacheCommitFn>>>> = RwLock::new(None);
+static CACHE_ROUTER: LazyLock<RwLock<Option<HashMap<u64, Arc<CacheCommitFn>>>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 pub fn install_router() {
-    let mut w = CACHE_ROUTER.write().unwrap();
+    let mut w = CACHE_ROUTER.write();
     if w.is_none() {
         *w = Some(HashMap::new());
     }
 }
 
 pub fn register_tile_cache(key: u64, f: CacheCommitFn) {
-    let mut w = CACHE_ROUTER.write().unwrap();
+    let mut w = CACHE_ROUTER.write();
     w.get_or_insert_with(HashMap::new).insert(key, Arc::new(f));
 }
 
 pub fn unregister_tile_cache(key: u64) {
-    if let Some(ref mut map) = *CACHE_ROUTER.write().unwrap() {
+    if let Some(ref mut map) = *CACHE_ROUTER.write() {
         map.remove(&key);
     }
 }
@@ -34,7 +37,6 @@ pub fn unregister_tile_cache(key: u64) {
 fn lookup_cb(key: u64) -> Option<Arc<CacheCommitFn>> {
     CACHE_ROUTER
         .read()
-        .unwrap()
         .as_ref()
         .and_then(|m| m.get(&key).cloned())
 }

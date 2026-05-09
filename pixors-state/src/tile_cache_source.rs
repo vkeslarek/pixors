@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, LazyLock};
+
+use parking_lot::RwLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,17 +20,17 @@ static TILE_READERS: LazyLock<RwLock<HashMap<u64, Arc<TileReadFn>>>> =
 
 /// Register a per-tab tile reader keyed by `tab_id`.
 pub fn install_tile_cache_reader(tab_id: u64, f: TileReadFn) {
-    TILE_READERS.write().unwrap().insert(tab_id, Arc::new(f));
+    TILE_READERS.write().insert(tab_id, Arc::new(f));
 }
 
 /// Check if a tile reader is installed for the given `tab_id`.
 pub fn is_tile_cache_reader_installed(tab_id: u64) -> bool {
-    TILE_READERS.read().unwrap().contains_key(&tab_id)
+    TILE_READERS.read().contains_key(&tab_id)
 }
 
 /// Remove the tile reader for `tab_id`.
 pub fn uninstall_tile_cache_reader(tab_id: u64) {
-    TILE_READERS.write().unwrap().remove(&tab_id);
+    TILE_READERS.write().remove(&tab_id);
 }
 
 static VCS_INPUTS: &[PortDeclaration] = &[];
@@ -64,7 +66,6 @@ impl Stage for TileCacheSource {
     fn producer(&self) -> Option<Box<dyn Producer>> {
         let cb = TILE_READERS
             .read()
-            .unwrap()
             .get(&self.routing_key)
             .cloned()?;
         Some(Box::new(TileCacheSourceProducer {
