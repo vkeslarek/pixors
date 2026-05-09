@@ -8,10 +8,10 @@ use crate::tile_cache_sink::TileCacheSink;
 use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
-use crate::path_builder::PathBuilder;
+use crate::PathBuilder;
 use crate::state::{EditorState, TabId};
 
-const TILE_SIZE: u32 = 256;
+use crate::TILE_SIZE;
 
 #[derive(Debug)]
 pub struct RequestMipFetch {

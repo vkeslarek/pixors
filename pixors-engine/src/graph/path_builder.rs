@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use pixors_engine::graph::graph::{EdgePorts, ExecGraph, StageArc, StageId};
-use pixors_engine::graph::path::Path;
+use crate::graph::graph::{EdgePorts, ExecGraph, StageArc, StageId};
+use crate::graph::path::Path;
 
 #[derive(Clone)]
 struct Inner {

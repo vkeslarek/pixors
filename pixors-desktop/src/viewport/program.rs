@@ -11,7 +11,7 @@ use crate::viewport::pipeline::ViewportPrimitive;
 use pixors_state::viewport::state::ViewportState;
 use pixors_state::viewport::tile_cache::TileCache;
 
-pub const TILE_SIZE: u32 = 256;
+use pixors_state::TILE_SIZE;
 
 pub struct ViewportProgram {
     pub cache: Option<Arc<Mutex<TileCache>>>,

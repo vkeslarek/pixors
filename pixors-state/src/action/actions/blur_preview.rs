@@ -16,11 +16,11 @@ use crate::tile_cache_source::{
 };
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
-use crate::path_builder::PathBuilder;
+use crate::PathBuilder;
 use crate::state::{EditorState, TabId};
 use crate::viewport::tile_cache::TileCache;
 
-const TILE_SIZE: u32 = 256;
+use crate::TILE_SIZE;
 
 #[derive(Debug)]
 pub struct BlurPreview {

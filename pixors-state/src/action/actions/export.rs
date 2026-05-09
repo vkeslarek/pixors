@@ -9,10 +9,10 @@ use pixors_color::operation::color::ColorConvert;
 use pixors_image::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
-use crate::path_builder::PathBuilder;
+use crate::PathBuilder;
 use crate::state::{EditorState, TabId};
 
-const TILE_SIZE: u32 = 256;
+use crate::TILE_SIZE;
 
 #[derive(Debug)]
 pub struct Export {

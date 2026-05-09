@@ -12,13 +12,13 @@ use crate::tile_cache_sink::{TileCacheSink, register_tile_cache};
 use pixors_image::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
-use crate::path_builder::PathBuilder;
+use crate::PathBuilder;
 use crate::state::tab::{BlendMode, FilterState, Layer, LayerSource};
 use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::{CachedTile, TileCache};
 
-const TILE_SIZE: u32 = 256;
+use crate::TILE_SIZE;
 
 pub struct OpenFile {
     pub path: std::path::PathBuf,
