@@ -28,6 +28,16 @@ jobs:
             libegl-dev \
             libfontconfig1-dev
 
+      - name: Install slangc
+        env:
+          SLANG_VERSION: 2026.8.1
+        run: |
+          mkdir -p /tmp/slang
+          curl -fsSL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64.tar.gz" \
+            | tar xz -C /tmp/slang
+          SLANGC=$(find /tmp/slang -name slangc -type f | head -1)
+          echo "$(dirname "$SLANGC")" >> "$GITHUB_PATH"
+
       - name: Build
         run: cargo build --release -p pixors-desktop
 
@@ -54,6 +64,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-mingw-w64-x86-64 pkg-config
 
+      - name: Install slangc
+        env:
+          SLANG_VERSION: 2026.8.1
+        run: |
+          mkdir -p /tmp/slang
+          curl -fsSL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64.tar.gz" \
+            | tar xz -C /tmp/slang
+          SLANGC=$(find /tmp/slang -name slangc -type f | head -1)
+          echo "$(dirname "$SLANGC")" >> "$GITHUB_PATH"
+
       - name: Build
         run: cargo build --release -p pixors-desktop --target x86_64-pc-windows-gnu
 
@@ -74,6 +94,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install slangc
+        env:
+          SLANG_VERSION: 2026.8.1
+        run: |
+          mkdir -p /tmp/slang
+          curl -fsSL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-macos-aarch64.tar.gz" \
+            | tar xz -C /tmp/slang
+          SLANGC=$(find /tmp/slang -name slangc -type f | head -1)
+          echo "$(dirname "$SLANGC")" >> "$GITHUB_PATH"
 
       - name: Build
         run: cargo build --release -p pixors-desktop

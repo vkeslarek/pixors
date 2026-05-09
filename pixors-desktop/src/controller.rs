@@ -181,10 +181,8 @@ impl App {
             if modifiers.contains(keyboard::Modifiers::CTRL) {
                 match key.as_ref() {
                     Key::Character("o") => self.open_file_dialog(),
-                    Key::Character("e") => {
-                        if self.active_file_path().is_some() {
-                            self.show_export_dialog = true;
-                        }
+                    Key::Character("e") if self.active_file_path().is_some() => {
+                        self.show_export_dialog = true;
                     }
                     _ => {}
                 }
@@ -437,10 +435,8 @@ impl App {
                 self.panes = Self::default().panes;
             }
             menu_bar::Msg::OpenFile => self.open_file_dialog(),
-            menu_bar::Msg::Export => {
-                if self.active_file_path().is_some() {
-                    self.show_export_dialog = true;
-                }
+            menu_bar::Msg::Export if self.active_file_path().is_some() => {
+                self.show_export_dialog = true;
             }
             _ => {}
         }

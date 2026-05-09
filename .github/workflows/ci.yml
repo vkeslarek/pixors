@@ -33,6 +33,16 @@ jobs:
             libegl-dev \
             libfontconfig1-dev
 
+      - name: Install slangc
+        env:
+          SLANG_VERSION: 2026.8.1
+        run: |
+          mkdir -p /tmp/slang
+          curl -fsSL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64.tar.gz" \
+            | tar xz -C /tmp/slang
+          SLANGC=$(find /tmp/slang -name slangc -type f | head -1)
+          echo "$(dirname "$SLANGC")" >> "$GITHUB_PATH"
+
       - run: cargo check --workspace
       - run: cargo test --workspace
       - run: cargo clippy --workspace -- -D warnings
