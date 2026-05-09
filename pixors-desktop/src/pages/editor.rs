@@ -1,4 +1,4 @@
-use iced::widget::{column, container, pane_grid, row, text};
+use iced::widget::{column, container, pane_grid, row, stack, text};
 use iced::{Alignment, Background, Color, Element, Length};
 
 use crate::app::{App, Msg, PaneKind};
@@ -15,9 +15,11 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let mip_fetch_signal = active
         .map(|t| t.mip_fetch_signal.clone())
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
+    let loading = active.map(|t| t.view.loading).unwrap_or(false);
+    let progress = active.map(|t| t.view.progress).unwrap_or(0.0);
 
     let canvas = if let Some(tab_id) = tab_id {
-        crate::components::viewport::view(
+        let viewport = crate::components::viewport::view(
             app.tabs.view(&app.state).map(Msg::TabBar),
             canvas_w,
             canvas_h,
@@ -26,7 +28,28 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             mip_fetch_signal,
             Some(tab_id),
             viewport_state,
-        )
+        );
+
+        if loading {
+            let pct = (progress.clamp(0.0, 1.0) * 100.0) as u8;
+            let overlay = container(
+                container(text(format!("Loading… {pct}%")))
+                    .padding([2, 8])
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.7,
+                        ))),
+                        ..Default::default()
+                    }),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+            stack![viewport, overlay].into()
+        } else {
+            viewport
+        }
     } else {
         column![
             app.tabs.view(&app.state).map(Msg::TabBar),

@@ -99,20 +99,6 @@ impl Default for App {
 }
 
 impl App {
-    pub fn loading_active(&self) -> bool {
-        self.state
-            .active_tab()
-            .map(|t| t.view.loading)
-            .unwrap_or(false)
-    }
-
-    pub fn progress_active(&self) -> f32 {
-        self.state
-            .active_tab()
-            .map(|t| t.view.progress)
-            .unwrap_or(0.0)
-    }
-
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
         self.state.active_tab().and_then(|t| match &t.source {
             pixors_state::state::TabSource::File { path } => Some(path.as_path()),
@@ -157,7 +143,6 @@ impl App {
         let content = column![
             menu_bar::view().map(Msg::MenuBar),
             row![self.workspace.view().map(Msg::WorkspaceBar), active_page,].height(Length::Fill),
-            crate::widgets::loading_bar(self.loading_active(), self.progress_active()),
             self.status.view::<Msg>(),
         ];
 
