@@ -51,8 +51,6 @@ pub struct App {
     pub workspace: workspace_bar::State,
     pub tools: toolbar::State,
     pub tabs: tab_bar::State,
-    pub layers: layers_panel::State,
-    pub filters: filters_panel::State,
     pub status: status_bar::State,
     #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
@@ -89,8 +87,6 @@ impl Default for App {
             workspace: workspace_bar::State::default(),
             tools: toolbar::State::default(),
             tabs: tab_bar::State::default(),
-            layers: layers_panel::State::default(),
-            filters: filters_panel::State::default(),
             status: status_bar::State::default(),
             errors: Vec::new(),
             show_export_dialog: false,

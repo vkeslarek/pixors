@@ -317,10 +317,18 @@ impl App {
     pub(crate) fn handle_layers_msg(&mut self, m: layers_panel::Msg) {
         match m {
             layers_panel::Msg::Close => self.toggle_pane(PaneKind::Layers),
-            layers_panel::Msg::Select(i) => self.layers.active = i,
+            layers_panel::Msg::Select(i) => {
+                if let Some(tab) = self.state.active_tab_mut() {
+                    if let Some(layer) = tab.layers.get(i) {
+                        tab.active_layer = Some(layer.id);
+                    }
+                }
+            }
             layers_panel::Msg::ToggleVisibility(i) => {
-                if let Some(layer) = self.layers.layers.get_mut(i) {
-                    layer.visible = !layer.visible;
+                if let Some(tab) = self.state.active_tab_mut() {
+                    if let Some(layer) = tab.layers.get_mut(i) {
+                        layer.visible = !layer.visible;
+                    }
                 }
             }
         }
@@ -330,14 +338,15 @@ impl App {
         match m {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             filters_panel::Msg::SetBlur(v) => {
-                self.filters.previewing = true;
-                if self.filters.blur_radius != v {
-                    self.filters.blur_radius = v;
-                    self.dispatch_blur_preview(v as u32);
+                if let Some(tab) = self.state.active_tab_mut() {
+                    if tab.filter.blur_radius != v {
+                        tab.filter.blur_radius = v;
+                        drop(tab);
+                        self.dispatch_blur_preview(v as u32);
+                    }
                 }
             }
             filters_panel::Msg::CancelPreview => {
-                self.filters.previewing = false;
                 self.dispatch_blur_cancel();
             }
         }
@@ -361,7 +370,7 @@ impl App {
             };
             (
                 tab.id,
-                tab.viewport_state.borrow().current_mip,
+                tab.viewport_state.read().unwrap().current_mip,
                 tab.desc.width,
                 tab.desc.height,
                 tab.viewport_cache.clone(),
@@ -400,9 +409,9 @@ impl App {
             (
                 tab.id,
                 tab.tile_generation.wrapping_add(1),
-                tab.viewport_state.borrow().current_mip,
-                tab.viewport_state.borrow().camera.padded_tile_range(
-                    tab.viewport_state.borrow().current_mip,
+                tab.viewport_state.read().unwrap().current_mip,
+                tab.viewport_state.read().unwrap().camera.padded_tile_range(
+                    tab.viewport_state.read().unwrap().current_mip,
                     256,
                     1,
                 ),

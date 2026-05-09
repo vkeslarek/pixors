@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use pixors_image::common::image::open_image;
@@ -14,24 +13,31 @@ use pixors_image::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
-use crate::state::tab::{BlendMode, Layer, LayerSource};
+use crate::state::tab::{BlendMode, FilterState, Layer, LayerSource};
 use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::{CachedTile, ViewportCache};
 
 const TILE_SIZE: u32 = 256;
 
-#[derive(Debug)]
 pub struct OpenFile {
     pub path: std::path::PathBuf,
-    pending_tab_id: Mutex<Option<TabId>>,
+    pending_tab: Mutex<Option<Tab>>,
+}
+
+impl fmt::Debug for OpenFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenFile")
+            .field("path", &self.path)
+            .finish()
+    }
 }
 
 impl OpenFile {
     pub fn new(path: std::path::PathBuf) -> Self {
         Self {
             path,
-            pending_tab_id: Mutex::new(None),
+            pending_tab: Mutex::new(None),
         }
     }
 }
@@ -142,8 +148,29 @@ impl Action for OpenFile {
         vs.camera.img_w = w as f32;
         vs.camera.img_h = h as f32;
 
-        let base_layer_id = state.alloc_layer_id();
-        state.push_tab(Tab {
+        let num_pages = img.page_count();
+        let mut layers: Vec<Layer> = Vec::with_capacity(num_pages);
+        let mut active_layer = None;
+        for page in 0..num_pages {
+            let layer_id = state.alloc_layer_id();
+            if page == 0 {
+                active_layer = Some(layer_id);
+            }
+            let name = desc.pages.get(page)
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| format!("Page {}", page + 1));
+            layers.push(Layer {
+                id: layer_id,
+                name,
+                visible: page == 0,
+                opacity: 1.0,
+                blend: BlendMode::Normal,
+                source: LayerSource::FilePage { page },
+            });
+        }
+        let active_layer = active_layer;
+
+        let tab = Tab {
             id: tab_id,
             title,
             source: TabSource::File {
@@ -152,18 +179,11 @@ impl Action for OpenFile {
             desc,
             cache_dir,
             viewport_cache: vp_cache,
-            viewport_state: Rc::new(RefCell::new(vs)),
+            viewport_state: Arc::new(std::sync::RwLock::new(vs)),
             mip_fetch_signal: Arc::new(Mutex::new(Vec::new())),
             tile_generation: 0,
-            layers: vec![Layer {
-                id: base_layer_id,
-                name: "Background".to_string(),
-                visible: true,
-                opacity: 1.0,
-                blend: BlendMode::Normal,
-                source: LayerSource::FilePage { page: 0 },
-            }],
-            active_layer: Some(base_layer_id),
+            layers,
+            active_layer,
             chain: Default::default(),
             history: Default::default(),
             view: TabView {
@@ -174,9 +194,10 @@ impl Action for OpenFile {
                 progress: 0.0,
                 preview_gen: 0,
             },
-        });
+            filter: FilterState::default(),
+        };
 
-        *self.pending_tab_id.lock().unwrap() = Some(tab_id);
+        *self.pending_tab.lock().unwrap() = Some(tab);
 
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Background,
@@ -186,15 +207,23 @@ impl Action for OpenFile {
         })
     }
 
-    fn apply(&self, _state: &mut EditorState, status: PipelineStatus) {
-        if let PipelineStatus::Error(e) = status {
-            tracing::error!("OpenFile failed: {e}");
+    fn apply(&self, state: &mut EditorState, status: PipelineStatus) {
+        match status {
+            PipelineStatus::Done => {
+                if let Some(tab) = self.pending_tab.lock().unwrap().take() {
+                    state.push_tab(tab);
+                }
+            }
+            PipelineStatus::Error(e) => {
+                tracing::error!("OpenFile failed: {e}");
+            }
+            PipelineStatus::Cancelled => {}
         }
     }
 
     fn undo(&self, state: &mut EditorState) {
-        if let Some(id) = *self.pending_tab_id.lock().unwrap() {
-            state.close(id);
+        if let Some(tab) = self.pending_tab.lock().unwrap().take() {
+            state.close(tab.id);
         }
     }
 

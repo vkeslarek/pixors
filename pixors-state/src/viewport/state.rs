@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::state::TabId;
@@ -8,7 +6,7 @@ use crate::viewport::camera::Camera;
 pub struct ViewportState {
     pub camera: Camera,
     pub current_mip: u32,
-    pub last_generation: Cell<u64>,
+    pub last_generation: u64,
     pub dragging: bool,
     pub fitted: bool,
     pub last_pos: Option<(f32, f32)>,
@@ -21,7 +19,7 @@ impl Default for ViewportState {
         Self {
             camera: Camera::new(1.0, 1.0),
             current_mip: 0,
-            last_generation: Cell::new(0),
+            last_generation: 0,
             dragging: false,
             fitted: false,
             last_pos: None,

@@ -100,8 +100,24 @@ fn pane_content<'a>(
     kind: PaneKind,
 ) -> pane_grid::Content<'a, Msg> {
     let body: Element<Msg> = match kind {
-        PaneKind::Layers => app.layers.body_view().map(Msg::LayersPanel),
-        PaneKind::Filters => app.filters.body_view().map(Msg::FiltersPanel),
+        PaneKind::Layers => {
+            let idx = app.state.active_tab()
+                .and_then(|t| t.active_layer)
+                .and_then(|active_id| {
+                    app.state.active_tab()?.layers.iter().position(|l| l.id == active_id)
+                })
+                .unwrap_or(0);
+            let layers = app.state.active_tab()
+                .map(|t| t.layers.as_slice())
+                .unwrap_or(&[]);
+            crate::panel::layers::view(layers, idx).map(Msg::LayersPanel)
+        }
+        PaneKind::Filters => {
+            let radius = app.state.active_tab()
+                .map(|t| t.filter.blur_radius)
+                .unwrap_or(3.0);
+            crate::panel::filter::body_view(radius).map(Msg::FiltersPanel)
+        }
     };
     let label = match kind {
         PaneKind::Layers => "LAYERS",

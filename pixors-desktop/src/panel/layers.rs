@@ -11,95 +11,50 @@ pub enum Msg {
     ToggleVisibility(usize),
 }
 
-#[derive(Debug, Clone)]
-pub struct LayerInfo {
-    pub name: String,
-    pub visible: bool,
-    pub opacity: f32,
-    pub color: Color,
-}
+pub fn view<'a>(
+    layers: &'a [pixors_state::state::tab::Layer],
+    active_idx: usize,
+) -> Element<'a, Msg> {
+    if layers.is_empty() {
+        container(text("No layers yet.").size(12).color(TEXT_MUTED))
+            .padding(16)
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .into()
+    } else {
+        let items: Vec<Element<Msg>> = layers
+            .iter()
+            .enumerate()
+            .map(|(i, layer)| layer_row(i, layer, i == active_idx))
+            .collect();
 
-impl LayerInfo {
-    fn fake_layers() -> Vec<Self> {
-        vec![
-            LayerInfo {
-                name: "Background".into(),
-                visible: true,
-                opacity: 1.0,
-                color: Color::from_rgb(0.3, 0.5, 0.8),
-            },
-            LayerInfo {
-                name: "Gradient Map".into(),
-                visible: true,
-                opacity: 0.8,
-                color: Color::from_rgb(0.8, 0.3, 0.5),
-            },
-            LayerInfo {
-                name: "Text overlay".into(),
-                visible: true,
-                opacity: 1.0,
-                color: Color::from_rgb(0.9, 0.9, 0.2),
-            },
-            LayerInfo {
-                name: "Vignette".into(),
-                visible: false,
-                opacity: 0.5,
-                color: Color::from_rgb(0.1, 0.1, 0.1),
-            },
-            LayerInfo {
-                name: "Sharpening".into(),
-                visible: true,
-                opacity: 1.0,
-                color: Color::from_rgb(0.5, 0.5, 0.5),
-            },
-        ]
+        column(items)
+            .spacing(2)
+            .padding([4, 8])
+            .width(Length::Fill)
+            .into()
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct State {
-    pub layers: Vec<LayerInfo>,
-    pub active: usize,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        let layers = LayerInfo::fake_layers();
-        Self { layers, active: 0 }
-    }
-}
-
-impl State {
-    pub fn body_view(&self) -> Element<'_, Msg> {
-        if self.layers.is_empty() {
-            container(text("No layers yet.").size(12).color(TEXT_MUTED))
-                .padding(16)
-                .width(Length::Fill)
-                .center_x(Length::Fill)
-                .into()
-        } else {
-            let items: Vec<Element<Msg>> = self
-                .layers
-                .iter()
-                .enumerate()
-                .map(|(i, layer)| layer_row(i, layer, i == self.active))
-                .collect();
-
-            column(items)
-                .spacing(2)
-                .padding([4, 8])
-                .width(Length::Fill)
-                .into()
+fn layer_row<'a>(
+    i: usize,
+    layer: &'a pixors_state::state::tab::Layer,
+    is_active: bool,
+) -> Element<'a, Msg> {
+    let color = match &layer.source {
+        pixors_state::state::tab::LayerSource::FilePage { .. } => {
+            Color::from_rgb(0.3, 0.5, 0.8)
         }
-    }
-}
+        pixors_state::state::tab::LayerSource::SolidColor { color } => {
+            Color::from_rgba(color[0] as f32 / 255.0, color[1] as f32 / 255.0, color[2] as f32 / 255.0, 1.0)
+        }
+    };
 
-fn layer_row<'a>(i: usize, layer: &'a LayerInfo, is_active: bool) -> Element<'a, Msg> {
     let thumb = container(text(""))
         .width(28)
         .height(28)
         .style(move |_| container::Style {
-            background: Some(Background::Color(layer.color)),
+            background: Some(Background::Color(color)),
             border: Border {
                 radius: 3.0.into(),
                 width: if is_active { 2.0 } else { 0.0 },

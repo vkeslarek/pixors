@@ -72,6 +72,7 @@ pub struct Dispatcher {
     pub event_tx: broadcast::Sender<PipelineEvent>,
     pub tabs: HashMap<TabId, TabDispatcher>,
     active_apply_actions: HashMap<TabId, Arc<dyn Action>>,
+    background_actions: HashMap<TabId, Arc<dyn Action>>,
     background_tasks: HashMap<TabId, PipelineHandle>,
 }
 
@@ -81,6 +82,7 @@ impl Dispatcher {
             event_tx,
             tabs: HashMap::new(),
             active_apply_actions: HashMap::new(),
+            background_actions: HashMap::new(),
             background_tasks: HashMap::new(),
         }
     }
@@ -153,6 +155,7 @@ impl Dispatcher {
 
                 if !is_apply && let Some(tid) = effective_tab {
                     self.background_tasks.insert(tid, handle);
+                    self.background_actions.insert(tid, Arc::clone(&action));
                 }
 
                 Ok(())
@@ -161,7 +164,9 @@ impl Dispatcher {
     }
 
     pub fn on_pipeline_done(&mut self, state: &mut EditorState, tab_id: TabId) {
-        if let Some(action) = self.active_apply_actions.remove(&tab_id) {
+        if let Some(action) = self.active_apply_actions.remove(&tab_id)
+            .or_else(|| self.background_actions.remove(&tab_id))
+        {
             action.apply(state, PipelineStatus::Done);
         }
         if let Some(td) = self.tabs.get_mut(&tab_id) {
@@ -170,7 +175,9 @@ impl Dispatcher {
     }
 
     pub fn on_pipeline_error(&mut self, state: &mut EditorState, tab_id: TabId, error: String) {
-        if let Some(action) = self.active_apply_actions.remove(&tab_id) {
+        if let Some(action) = self.active_apply_actions.remove(&tab_id)
+            .or_else(|| self.background_actions.remove(&tab_id))
+        {
             action.apply(state, PipelineStatus::Error(error));
         }
         if let Some(td) = self.tabs.get_mut(&tab_id) {
@@ -182,6 +189,7 @@ impl Dispatcher {
     pub fn cleanup_tab(&mut self, id: TabId) {
         self.tabs.remove(&id);
         self.background_tasks.remove(&id);
+        self.background_actions.remove(&id);
         self.active_apply_actions.remove(&id);
     }
 
@@ -202,6 +210,8 @@ impl Dispatcher {
             }
             still_running
         });
+        self.background_actions
+            .retain(|tab_id, _| self.background_tasks.contains_key(tab_id));
         for tab in &mut self.tabs.values_mut() {
             tab.locked = false;
         }

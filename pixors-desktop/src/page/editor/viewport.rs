@@ -1,6 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use iced::widget::{column, container, shader as shader_widget, stack};
 use iced::{Background, Color, Element, Length};
@@ -21,7 +19,7 @@ pub fn view<'a, Msg: 'a>(
     tile_generation: u64,
     mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     tab_id: Option<TabId>,
-    viewport_state: Option<Rc<RefCell<ViewportState>>>,
+    viewport_state: Option<Arc<RwLock<ViewportState>>>,
 ) -> Element<'a, Msg> {
     let program = ViewportProgram {
         cache: active_cache,

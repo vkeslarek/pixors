@@ -1,7 +1,5 @@
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use pixors_image::common::image::ImageDescriptor;
 use pixors_ops::source::cache_reader::TileRange;
@@ -24,7 +22,7 @@ pub struct Tab {
     pub desc: ImageDescriptor,
     pub cache_dir: PathBuf,
     pub viewport_cache: Arc<Mutex<ViewportCache>>,
-    pub viewport_state: Rc<RefCell<ViewportState>>,
+    pub viewport_state: Arc<RwLock<ViewportState>>,
     pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     pub tile_generation: u64,
     pub layers: Vec<Layer>,
@@ -32,6 +30,7 @@ pub struct Tab {
     pub chain: EditChain,
     pub history: History,
     pub view: TabView,
+    pub filter: FilterState,
 }
 
 pub enum TabSource {
@@ -66,6 +65,17 @@ pub struct TabView {
 pub enum BlendMode {
     Normal,
     Multiply,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilterState {
+    pub blur_radius: f32,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self { blur_radius: 3.0 }
+    }
 }
 
 #[derive(Default)]

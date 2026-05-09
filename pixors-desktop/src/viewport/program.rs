@@ -1,6 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use iced::mouse;
 use iced::widget::shader;
@@ -20,7 +18,7 @@ pub struct ViewportProgram {
     pub tile_generation: u64,
     pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     pub tab_id: Option<TabId>,
-    pub viewport_state: Option<Rc<RefCell<ViewportState>>>,
+    pub viewport_state: Option<Arc<RwLock<ViewportState>>>,
 }
 
 impl<Msg> shader::Program<Msg> for ViewportProgram {
@@ -45,7 +43,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 },
             };
         };
-        let mut state = vp_state.borrow_mut();
+        let mut state = vp_state.write().unwrap();
 
         let old_mip = state.current_mip;
 
@@ -160,15 +158,15 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         cursor: mouse::Cursor,
     ) -> Option<shader::Action<Msg>> {
         let vp_state = self.viewport_state.as_ref()?;
-        let mut state = vp_state.borrow_mut();
+        let mut state = vp_state.write().unwrap();
 
-        if self.tile_generation != state.last_generation.get() {
+        if self.tile_generation != state.last_generation {
             tracing::debug!(
                 "[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw",
-                state.last_generation.get(),
+                state.last_generation,
                 self.tile_generation
             );
-            state.last_generation.set(self.tile_generation);
+            state.last_generation = self.tile_generation;
             return Some(shader::Action::request_redraw());
         }
 
@@ -227,7 +225,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let Some(ref vp_state) = self.viewport_state else {
             return mouse::Interaction::default();
         };
-        let state = vp_state.borrow();
+        let state = vp_state.read().unwrap();
         if state.dragging {
             mouse::Interaction::Grabbing
         } else {
