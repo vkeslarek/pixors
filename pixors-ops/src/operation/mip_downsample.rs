@@ -229,7 +229,6 @@ impl MipDownsampleProcessor {
     /// Flush all remaining tiles as partial blocks (edge/odd-sized images).
     fn flush_remaining(&mut self, emit: &mut Emitter<Item>) {
         let start_len = self.grid.len();
-        let mut iteration = 0u32;
         loop {
             let min_mip = self.grid.keys().map(|k| k.mip_level).min();
             let Some(mip) = min_mip else { break };
@@ -300,20 +299,15 @@ impl MipDownsampleProcessor {
                 let block = TileBlock { coord, tiles };
                 self.downsample_block(block, emit);
             }
-
-            iteration += 1;
-            if iteration > 50 {
-                tracing::error!(
-                    "[pixors] mip_downsample: flush_remaining ABORT after {iteration} iterations — possible infinite loop"
-                );
-                break;
-            }
         }
+        debug_assert!(
+            self.grid.is_empty(),
+            "flush_remaining must drain all pending blocks"
+        );
         if start_len > 0 {
             tracing::debug!(
-                "[pixors] mip_downsample: flush_remaining flushed {} tiles in {} iterations",
+                "[pixors] mip_downsample: flush_remaining flushed {} tiles",
                 start_len,
-                iteration
             );
         }
     }
