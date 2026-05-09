@@ -306,7 +306,9 @@ impl Scheduler {
                 let _ = tx.send(res);
             });
         self.device.poll(wgpu::Maintain::Wait);
-        rx.recv().unwrap().unwrap();
+        rx.recv()
+            .expect("GPU buffer map channel closed unexpectedly")
+            .expect("GPU buffer map failed");
 
         let mut bytes = {
             let view = staging.slice(..).get_mapped_range();

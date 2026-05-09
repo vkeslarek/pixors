@@ -50,16 +50,15 @@ impl App {
             Msg::Tick => self.handle_tick(),
             Msg::Frames => {} // Just to wake up the event loop
             Msg::PipelineEvent(e) => match e {
-                PipelineEvent::Progress { done, total } => {
+                PipelineEvent::Progress { tag, done, total } => {
                     let p = if total > 0 {
                         done as f32 / total as f32
                     } else {
                         1.0
                     };
-                    for tab in &mut self.state.tabs {
-                        if tab.view.loading {
-                            tab.view.progress = p;
-                        }
+                    let tab_id = TabId(tag);
+                    if let Some(tab) = self.state.tab_mut(tab_id) {
+                        tab.view.progress = p;
                     }
                 }
                 PipelineEvent::Done { tag } => {

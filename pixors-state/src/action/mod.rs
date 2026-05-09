@@ -128,23 +128,24 @@ impl Dispatcher {
 
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone())
+                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone(), tag)
                     .map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
                 thread::spawn(move || {
                     while let Ok(event) = event_rx.recv() {
-                        // Replace tag=0 placeholders with the real routing tag
                         let tagged = match event {
                             PipelineEvent::Error { message, .. } => {
                                 PipelineEvent::Error { tag, message }
                             }
                             PipelineEvent::Cancelled { .. } => PipelineEvent::Cancelled { tag },
+                            PipelineEvent::Progress { done, total, .. } => {
+                                PipelineEvent::Progress { tag, done, total }
+                            }
                             other => other,
                         };
                         let _ = broadcast_tx.send(tagged);
                     }
-                    // All event_tx senders dropped → pipeline is done
                     let _ = broadcast_tx.send(PipelineEvent::Done { tag });
                 });
 

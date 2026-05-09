@@ -28,6 +28,7 @@ pub struct ChainRunner {
     pub progress: Option<Arc<ProgressState>>,
     pub chain_name: String,
     pub cancelled: Arc<AtomicBool>,
+    pub tag: u64,
 }
 
 impl ChainRunner {
@@ -40,6 +41,7 @@ impl ChainRunner {
         progress: Option<Arc<ProgressState>>,
         chain_name: String,
         cancelled: Arc<AtomicBool>,
+        tag: u64,
     ) -> Self {
         Self {
             producer,
@@ -50,14 +52,16 @@ impl ChainRunner {
             progress,
             chain_name,
             cancelled,
+            tag,
         }
     }
 
-    fn bump_progress(progress: &Option<Arc<ProgressState>>) {
+    fn bump_progress(tag: u64, progress: &Option<Arc<ProgressState>>) {
         if let Some(p) = progress {
             let done = p.done.fetch_add(1, Ordering::Relaxed) + 1;
             if done % 128 == 0 || done >= p.total || done == 1 {
                 let _ = p.tx.try_send(PipelineEvent::Progress {
+                    tag,
                     done,
                     total: p.total,
                 });
@@ -66,6 +70,7 @@ impl ChainRunner {
     }
 
     fn run_item_streaming(
+        tag: u64,
         kernels: &mut [Box<dyn Processor>],
         consumer: &mut Option<Box<dyn Consumer>>,
         device: Device,
@@ -80,7 +85,7 @@ impl ChainRunner {
             match consumer {
                 Some(c) => {
                     c.consume(item)?;
-                    Self::bump_progress(progress);
+                    Self::bump_progress(tag, progress);
                 }
                 None => send_to_all(
                     outputs,
@@ -102,12 +107,13 @@ impl ChainRunner {
             gpu: gpu.clone(),
         };
 
-        Self::bump_progress(progress);
+        Self::bump_progress(tag, progress);
         kernels[kernel_idx].process(ctx, item)?;
         let items = emit.into_items();
 
         for next_item in items {
             Self::run_item_streaming(
+                tag,
                 kernels,
                 consumer,
                 device,
@@ -124,6 +130,7 @@ impl ChainRunner {
     }
 
     fn run_finish_streaming(
+        tag: u64,
         kernels: &mut [Box<dyn Processor>],
         consumer: &mut Option<Box<dyn Consumer>>,
         device: Device,
@@ -152,6 +159,7 @@ impl ChainRunner {
 
         for next_item in items {
             Self::run_item_streaming(
+                tag,
                 kernels,
                 consumer,
                 device,
@@ -165,6 +173,7 @@ impl ChainRunner {
         }
 
         Self::run_finish_streaming(
+            tag,
             kernels,
             consumer,
             device,
@@ -190,6 +199,7 @@ impl Runner for ChainRunner {
         let gpu = &self.gpu;
         let name = self.chain_name.clone();
         let num_outputs = outputs.len();
+        let tag = self.tag;
 
         if let Some(mut producer) = self.producer.take() {
             let mut emit = Emitter::new();
@@ -203,6 +213,7 @@ impl Runner for ChainRunner {
             let items = emit.into_items();
             for item in items {
                 Self::run_item_streaming(
+                    tag,
                     kernels,
                     &mut self.consumer,
                     device,
@@ -215,6 +226,7 @@ impl Runner for ChainRunner {
                 )?;
             }
             Self::run_finish_streaming(
+                tag,
                 kernels,
                 &mut self.consumer,
                 device,
@@ -225,6 +237,7 @@ impl Runner for ChainRunner {
             )?;
         } else if inputs.is_empty() {
             Self::run_finish_streaming(
+                tag,
                 kernels,
                 &mut self.consumer,
                 device,
@@ -252,8 +265,9 @@ impl Runner for ChainRunner {
                                 routed.port
                             );
                         }
-                        Self::run_item_streaming(
-                            kernels,
+            Self::run_item_streaming(
+                tag,
+                kernels,
                             &mut self.consumer,
                             device,
                             gpu,
@@ -270,6 +284,7 @@ impl Runner for ChainRunner {
                             "[pixors] {name}: received None after {item_count} items, entering finish phase…"
                         );
                         Self::run_finish_streaming(
+                            tag,
                             kernels,
                             &mut self.consumer,
                             device,

@@ -39,6 +39,7 @@ impl Pipeline {
         graph: &ExecGraph,
         progress_tx: Option<SyncSender<PipelineEvent>>,
         cancelled: Arc<AtomicBool>,
+        tag: u64,
     ) -> Result<Self, Error> {
         let mut g: Graph = graph.graph.clone();
         let gpu_ok = gpu::context::gpu_available();
@@ -109,6 +110,7 @@ impl Pipeline {
                     progress.clone(),
                     chain_name,
                     cancelled.clone(),
+                    tag,
                 )) as Box<dyn Runner>,
                 inputs,
                 outputs,
