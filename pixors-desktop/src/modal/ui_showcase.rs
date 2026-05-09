@@ -2,7 +2,7 @@ use iced::widget::{column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
 use crate::theme::{BG_BASE, BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
 use crate::components::*;
-use crate::dialog;
+use crate::layout::dialog::dialog;
 
 #[derive(Debug, Clone)]
 pub enum Msg {
