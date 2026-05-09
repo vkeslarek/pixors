@@ -8,23 +8,23 @@ use pixors_ops::source::cache_reader::TileRange;
 use pixors_state::state::TabId;
 use crate::viewport::program::ViewportProgram;
 use pixors_state::viewport::state::ViewportState;
-use pixors_state::viewport::tile_cache::ViewportCache;
+use pixors_state::viewport::tile_cache::TileCache;
 use crate::components::pill::pill;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,
     canvas_w: u32,
     canvas_h: u32,
-    active_cache: Option<Arc<Mutex<ViewportCache>>>,
-    tile_generation: u64,
-    mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    active_cache: Option<Arc<Mutex<TileCache>>>,
+    redraw_seq: u64,
+    mip_fetch_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     tab_id: Option<TabId>,
     viewport_state: Option<Arc<RwLock<ViewportState>>>,
 ) -> Element<'a, Msg> {
     let program = ViewportProgram {
         cache: active_cache,
-        tile_generation,
-        mip_fetch_signal,
+        redraw_seq,
+        mip_fetch_queue,
         tab_id,
         viewport_state,
     };
@@ -32,7 +32,7 @@ pub fn view<'a, Msg: 'a>(
     // By alternating the width of a sibling space widget slightly, we force
     // iced to invalidate the shader widget's bounds cache and call draw(),
     // allowing new tiles to be displayed immediately without waiting for events.
-    let pad = if tile_generation.is_multiple_of(2) {
+    let pad = if redraw_seq.is_multiple_of(2) {
         0.0
     } else {
         1.0

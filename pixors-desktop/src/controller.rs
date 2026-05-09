@@ -209,11 +209,11 @@ impl App {
             Vec::new();
 
         for tab in &mut self.state.tabs {
-            if tab.viewport_cache.lock().is_ok_and(|g| g.has_pending()) {
-                tab.tile_generation = tab.tile_generation.wrapping_add(1);
+            if tab.tile_cache.lock().is_ok_and(|g| g.has_pending()) {
+                tab.redraw_seq = tab.redraw_seq.wrapping_add(1);
             }
 
-            let mut sigs = tab.mip_fetch_signal.lock().unwrap();
+            let mut sigs = tab.mip_fetch_queue.lock().unwrap();
             if !sigs.is_empty() {
                 for (tab_id, mip, range) in sigs.drain(..) {
                     let cache_dir = tab.cache_dir.clone();
@@ -225,7 +225,7 @@ impl App {
 
         for (tab_id, mip, range, cache_dir, img_w, img_h) in mip_requests {
             if let Some(tab) = self.state.tab(tab_id)
-                && let Ok(guard) = tab.viewport_cache.lock()
+                && let Ok(guard) = tab.tile_cache.lock()
                 && guard.has_all_tiles(mip, &range)
             {
                 continue;
@@ -373,8 +373,8 @@ impl App {
                 tab.viewport_state.read().unwrap().current_mip,
                 tab.desc.width,
                 tab.desc.height,
-                tab.viewport_cache.clone(),
-                tab.tile_generation.wrapping_add(1),
+                tab.tile_cache.clone(),
+                tab.redraw_seq.wrapping_add(1),
                 self.state.display_format,
                 self.state.display_color_space,
                 self.state.working_format,
@@ -408,14 +408,14 @@ impl App {
             };
             (
                 tab.id,
-                tab.tile_generation.wrapping_add(1),
+                tab.redraw_seq.wrapping_add(1),
                 tab.viewport_state.read().unwrap().current_mip,
                 tab.viewport_state.read().unwrap().camera.padded_tile_range(
                     tab.viewport_state.read().unwrap().current_mip,
                     256,
                     1,
                 ),
-                tab.mip_fetch_signal.clone(),
+                tab.mip_fetch_queue.clone(),
             )
         };
 

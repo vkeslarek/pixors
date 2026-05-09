@@ -5,7 +5,7 @@ use pixors_image::common::image::ImageDescriptor;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::viewport::state::ViewportState;
-use crate::viewport::tile_cache::ViewportCache;
+use crate::viewport::tile_cache::TileCache;
 
 use super::history::History;
 
@@ -21,10 +21,10 @@ pub struct Tab {
     pub source: TabSource,
     pub desc: ImageDescriptor,
     pub cache_dir: PathBuf,
-    pub viewport_cache: Arc<Mutex<ViewportCache>>,
+    pub tile_cache: Arc<Mutex<TileCache>>,
     pub viewport_state: Arc<RwLock<ViewportState>>,
-    pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
-    pub tile_generation: u64,
+    pub mip_fetch_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    pub redraw_seq: u64,
     pub layers: Vec<Layer>,
     pub active_layer: Option<LayerId>,
     pub chain: EditChain,
@@ -53,12 +53,9 @@ pub enum LayerSource {
 }
 
 pub struct TabView {
-    pub zoom: f32,
-    pub pan: (f32, f32),
     pub active_mip: u32,
     pub loading: bool,
     pub progress: f32,
-    pub preview_gen: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

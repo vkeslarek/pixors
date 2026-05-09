@@ -14,7 +14,7 @@ impl Action for BlurCancel {
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
         if let Some(tab) = state.tab_mut(self.tab)
-            && let Ok(mut cache) = tab.viewport_cache.lock()
+            && let Ok(mut cache) = tab.tile_cache.lock()
         {
             cache.clear_generation(self.generation);
         }

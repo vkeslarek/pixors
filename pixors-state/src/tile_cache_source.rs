@@ -17,17 +17,17 @@ static TILE_READERS: LazyLock<RwLock<HashMap<u64, Arc<TileReadFn>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// Register a per-tab tile reader keyed by `tab_id`.
-pub fn install_viewport_cache_reader(tab_id: u64, f: TileReadFn) {
+pub fn install_tile_cache_reader(tab_id: u64, f: TileReadFn) {
     TILE_READERS.write().unwrap().insert(tab_id, Arc::new(f));
 }
 
 /// Check if a tile reader is installed for the given `tab_id`.
-pub fn is_viewport_cache_reader_installed(tab_id: u64) -> bool {
+pub fn is_tile_cache_reader_installed(tab_id: u64) -> bool {
     TILE_READERS.read().unwrap().contains_key(&tab_id)
 }
 
 /// Remove the tile reader for `tab_id`.
-pub fn uninstall_viewport_cache_reader(tab_id: u64) {
+pub fn uninstall_tile_cache_reader(tab_id: u64) {
     TILE_READERS.write().unwrap().remove(&tab_id);
 }
 
@@ -45,16 +45,16 @@ static VCS_PORTS: PortSpecification = PortSpecification {
 /// The desktop registers a global callback keyed by `routing_key` (TabId.0)
 /// so multiple tabs can use separate ViewportCaches.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ViewportCacheSource {
+pub struct TileCacheSource {
     pub routing_key: u64,
     pub mip_level: u32,
     pub generation: u64,
     pub tile_range: Option<TileRange>,
 }
 
-impl Stage for ViewportCacheSource {
+impl Stage for TileCacheSource {
     fn kind(&self) -> &'static str {
-        "viewport_cache_source"
+        "tile_cache_source"
     }
 
     fn ports(&self) -> &'static PortSpecification {
@@ -67,7 +67,7 @@ impl Stage for ViewportCacheSource {
             .unwrap()
             .get(&self.routing_key)
             .cloned()?;
-        Some(Box::new(ViewportCacheSourceProducer {
+        Some(Box::new(TileCacheSourceProducer {
             cb,
             routing_key: self.routing_key,
             mip_level: self.mip_level,
@@ -81,7 +81,7 @@ impl Stage for ViewportCacheSource {
     }
 }
 
-pub struct ViewportCacheSourceProducer {
+pub struct TileCacheSourceProducer {
     cb: Arc<TileReadFn>,
     routing_key: u64,
     mip_level: u32,
@@ -89,7 +89,7 @@ pub struct ViewportCacheSourceProducer {
     tile_range: Option<TileRange>,
 }
 
-impl Producer for ViewportCacheSourceProducer {
+impl Producer for TileCacheSourceProducer {
     fn produce(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let items = (self.cb)(
             self.routing_key,

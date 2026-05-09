@@ -10,7 +10,7 @@ pub struct CachedTile {
     pub width: u32,
     pub height: u32,
     pub bytes: Arc<Vec<u8>>,
-    pub generation: u64,
+    pub layer: u64,
 }
 
 /// Two-tier tile cache.
@@ -26,7 +26,7 @@ pub struct CachedTile {
 /// This invariant ensures the blur-preview source always finds its gen=0
 /// input tiles regardless of how many preview cycles have run.
 #[derive(Debug)]
-pub struct ViewportCache {
+pub struct TileCache {
     base: HashMap<TileGridPos, CachedTile>,
     overlay: HashMap<TileGridPos, CachedTile>,
     pending: HashSet<TileGridPos>,
@@ -35,7 +35,7 @@ pub struct ViewportCache {
     pub active_mip: u32,
 }
 
-impl ViewportCache {
+impl TileCache {
     pub fn new() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             base: HashMap::new(),
@@ -61,7 +61,7 @@ impl ViewportCache {
             self.pending.insert(key);
         } else {
             if let Some(existing) = self.overlay.get(&key)
-                && existing.generation > generation
+                && existing.layer > generation
             {
                 return;
             }
@@ -167,7 +167,7 @@ impl ViewportCache {
             &self.overlay
         };
         map.iter()
-            .filter(|(k, v)| k.mip_level == mip && v.generation == generation)
+            .filter(|(k, v)| k.mip_level == mip && v.layer == generation)
             .map(|(k, v)| (*k, v))
             .collect()
     }

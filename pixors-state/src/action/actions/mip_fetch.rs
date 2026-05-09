@@ -4,7 +4,7 @@ use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::graph::path::Path;
 use pixors_color::operation::color::ColorConvert;
-use crate::viewport_cache_sink::ViewportCacheSink;
+use crate::tile_cache_sink::TileCacheSink;
 use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
@@ -53,7 +53,7 @@ impl Action for RequestMipFetch {
         }
 
         let graph = pipe
-            .sink(Arc::new(ViewportCacheSink::new(self.tab.0, 0)))
+            .sink(Arc::new(TileCacheSink::new(self.tab.0, 0)))
             .compile();
 
         Ok(PreparedAction::Pipeline {

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use iced::widget::shader;
 
 use pixors_state::viewport::camera::CameraUniform;
-use pixors_state::viewport::tile_cache::ViewportCache;
+use pixors_state::viewport::tile_cache::TileCache;
 use crate::viewport::tiled_texture::TiledTexture;
 
 pub struct ViewportPipeline {
@@ -184,7 +184,7 @@ impl ViewportPipeline {
 
 pub struct ViewportPrimitive {
     pub(super) camera: CameraUniform,
-    pub(super) cache: Option<Arc<Mutex<ViewportCache>>>,
+    pub(super) cache: Option<Arc<Mutex<TileCache>>>,
     pub(super) visible_range: pixors_ops::source::cache_reader::TileRange,
 }
 

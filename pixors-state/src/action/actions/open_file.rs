@@ -8,7 +8,7 @@ use pixors_engine::data_transform::to_tile::ScanLineToTile;
 use pixors_color::operation::color::ColorConvert;
 use pixors_ops::operation::mip_downsample::MipDownsample;
 use pixors_image::sink::cache_writer::CacheWriter;
-use crate::viewport_cache_sink::{ViewportCacheSink, register_tab_cache};
+use crate::tile_cache_sink::{TileCacheSink, register_tile_cache};
 use pixors_image::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
@@ -16,7 +16,7 @@ use crate::path_builder::PathBuilder;
 use crate::state::tab::{BlendMode, FilterState, Layer, LayerSource};
 use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
 use crate::viewport::state::ViewportState;
-use crate::viewport::tile_cache::{CachedTile, ViewportCache};
+use crate::viewport::tile_cache::{CachedTile, TileCache};
 
 const TILE_SIZE: u32 = 256;
 
@@ -65,7 +65,7 @@ impl Action for OpenFile {
         }
 
         let cache_dir = self.path.with_extension("pixors_cache");
-        let vp_cache = ViewportCache::new();
+        let vp_cache = TileCache::new();
         vp_cache.lock().unwrap().clear_all();
         vp_cache.lock().unwrap().signal_new_img(w, h);
 
@@ -73,7 +73,7 @@ impl Action for OpenFile {
 
         {
             let c = vp_cache.clone();
-            register_tab_cache(
+            register_tile_cache(
                 tab_id.0,
                 Box::new(move |generation, mip, tx, ty, px, py, tw, th, bytes| {
                     if let Ok(mut guard) = c.lock() {
@@ -90,7 +90,7 @@ impl Action for OpenFile {
                                 width: tw,
                                 height: th,
                                 bytes: Arc::new(bytes.to_vec()),
-                                generation,
+                                layer: generation,
                             },
                         );
                     }
@@ -135,7 +135,7 @@ impl Action for OpenFile {
                 target_color_space: state.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
             }))
-            .sink(Arc::new(ViewportCacheSink::new(tab_id.0, 0)))
+            .sink(Arc::new(TileCacheSink::new(tab_id.0, 0)))
             .compile();
         let title = self
             .path
@@ -178,21 +178,18 @@ impl Action for OpenFile {
             },
             desc,
             cache_dir,
-            viewport_cache: vp_cache,
+            tile_cache: vp_cache,
             viewport_state: Arc::new(std::sync::RwLock::new(vs)),
-            mip_fetch_signal: Arc::new(Mutex::new(Vec::new())),
-            tile_generation: 0,
+            mip_fetch_queue: Arc::new(Mutex::new(Vec::new())),
+            redraw_seq: 0,
             layers,
             active_layer,
             chain: Default::default(),
             history: Default::default(),
             view: TabView {
-                zoom: 1.0,
-                pan: (0.0, 0.0),
                 active_mip: 0,
                 loading: true,
                 progress: 0.0,
-                preview_gen: 0,
             },
             filter: FilterState::default(),
         };

@@ -20,12 +20,12 @@ pub fn install_router() {
     }
 }
 
-pub fn register_tab_cache(key: u64, f: CacheCommitFn) {
+pub fn register_tile_cache(key: u64, f: CacheCommitFn) {
     let mut w = CACHE_ROUTER.write().unwrap();
     w.get_or_insert_with(HashMap::new).insert(key, Arc::new(f));
 }
 
-pub fn unregister_tab_cache(key: u64) {
+pub fn unregister_tile_cache(key: u64) {
     if let Some(ref mut map) = *CACHE_ROUTER.write().unwrap() {
         map.remove(&key);
     }
@@ -50,12 +50,12 @@ static VCS_PORTS: PortSpecification = PortSpecification {
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ViewportCacheSink {
+pub struct TileCacheSink {
     pub routing_key: u64,
     pub generation: u64,
 }
 
-impl ViewportCacheSink {
+impl TileCacheSink {
     pub fn new(routing_key: u64, generation: u64) -> Self {
         Self {
             routing_key,
@@ -64,9 +64,9 @@ impl ViewportCacheSink {
     }
 }
 
-impl Stage for ViewportCacheSink {
+impl Stage for TileCacheSink {
     fn kind(&self) -> &'static str {
-        "viewport_cache_sink"
+        "tile_cache_sink"
     }
 
     fn ports(&self) -> &'static PortSpecification {
@@ -75,24 +75,24 @@ impl Stage for ViewportCacheSink {
 
     fn consumer(&self) -> Option<Box<dyn Consumer>> {
         let cb = lookup_cb(self.routing_key)?;
-        Some(Box::new(ViewportCacheSinkConsumer {
+        Some(Box::new(TileCacheSinkConsumer {
             cb,
             generation: self.generation,
         }))
     }
 }
 
-pub struct ViewportCacheSinkConsumer {
+pub struct TileCacheSinkConsumer {
     cb: Arc<CacheCommitFn>,
     generation: u64,
 }
 
-impl Consumer for ViewportCacheSinkConsumer {
+impl Consumer for TileCacheSinkConsumer {
     fn consume(&mut self, item: Item) -> Result<(), Error> {
         let tile = pixors_engine::stage::ProcessorContext::take_tile(item)?;
         let data = match &tile.data {
             Buffer::Cpu(v) => v.as_slice(),
-            Buffer::Gpu(_) => return Err(Error::internal("ViewportCacheSink requires CPU tiles")),
+            Buffer::Gpu(_) => return Err(Error::internal("TileCacheSink requires CPU tiles")),
         };
         (self.cb)(
             self.generation,

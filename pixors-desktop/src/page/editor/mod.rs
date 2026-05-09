@@ -12,12 +12,12 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let active = app.state.active_tab();
     let canvas_w = active.map(|t| t.desc.width).unwrap_or(0);
     let canvas_h = active.map(|t| t.desc.height).unwrap_or(0);
-    let active_cache = active.map(|t| t.viewport_cache.clone());
+    let active_cache = active.map(|t| t.tile_cache.clone());
     let tab_id = app.state.active_id();
     let viewport_state = active.map(|t| t.viewport_state.clone());
-    let tile_generation = active.map(|t| t.tile_generation).unwrap_or(0);
-    let mip_fetch_signal = active
-        .map(|t| t.mip_fetch_signal.clone())
+    let redraw_seq = active.map(|t| t.redraw_seq).unwrap_or(0);
+    let mip_fetch_queue = active
+        .map(|t| t.mip_fetch_queue.clone())
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
     let loading = active.map(|t| t.view.loading).unwrap_or(false);
     let progress = active.map(|t| t.view.progress).unwrap_or(0.0);
@@ -28,8 +28,8 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             canvas_w,
             canvas_h,
             active_cache,
-            tile_generation,
-            mip_fetch_signal,
+            redraw_seq,
+            mip_fetch_queue,
             Some(tab_id),
             viewport_state,
         );

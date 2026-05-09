@@ -1,7 +1,5 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use pixors_engine::graph::graph::{EdgePorts, ExecGraph, StageArc, StageId};
 use pixors_engine::graph::path::Path;
@@ -15,14 +13,14 @@ struct Inner {
 
 #[derive(Clone)]
 pub struct PathBuilder {
-    inner: Rc<RefCell<Inner>>,
+    inner: Arc<Mutex<Inner>>,
     anchors: Vec<usize>,
 }
 
 impl PathBuilder {
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(Inner {
+            inner: Arc::new(Mutex::new(Inner {
                 stages: Vec::new(),
                 edges: Vec::new(),
                 outputs: Vec::new(),
@@ -46,7 +44,7 @@ impl PathBuilder {
     pub fn sink(self, s: StageArc) -> Self {
         let next = self.add(s);
         {
-            let mut inner = next.inner.borrow_mut();
+            let mut inner = next.inner.lock().unwrap();
             inner.outputs.push((next.anchors[0], 0));
         }
         next
@@ -54,7 +52,7 @@ impl PathBuilder {
 
     fn add(self, stage: StageArc) -> Self {
         let idx = {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.inner.lock().unwrap();
             let idx = inner.stages.len();
             inner.stages.push(stage);
             for &a in &self.anchors {
@@ -70,7 +68,7 @@ impl PathBuilder {
 
     pub fn split<const N: usize>(self) -> [Self; N] {
         std::array::from_fn(|_| Self {
-            inner: Rc::clone(&self.inner),
+            inner: Arc::clone(&self.inner),
             anchors: self.anchors.clone(),
         })
     }
@@ -83,7 +81,7 @@ impl PathBuilder {
     }
 
     pub fn compile(self) -> ExecGraph {
-        let inner = self.inner.borrow();
+        let inner = self.inner.lock().unwrap();
         let n = inner.stages.len();
 
         let mut seen: HashMap<String, StageId> = HashMap::with_capacity(n);

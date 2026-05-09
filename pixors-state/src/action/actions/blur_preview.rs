@@ -10,15 +10,15 @@ use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
 use pixors_engine::graph::item::Item;
 use pixors_ops::operation::blur::Blur;
 use pixors_color::operation::color::ColorConvert;
-use crate::viewport_cache_sink::ViewportCacheSink;
-use crate::viewport_cache_source::{
-    ViewportCacheSource, install_viewport_cache_reader, is_viewport_cache_reader_installed,
+use crate::tile_cache_sink::TileCacheSink;
+use crate::tile_cache_source::{
+    TileCacheSource, install_tile_cache_reader, is_tile_cache_reader_installed,
 };
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
 use crate::state::{EditorState, TabId};
-use crate::viewport::tile_cache::ViewportCache;
+use crate::viewport::tile_cache::TileCache;
 
 const TILE_SIZE: u32 = 256;
 
@@ -30,7 +30,7 @@ pub struct BlurPreview {
     pub mip: u32,
     pub image_width: u32,
     pub image_height: u32,
-    pub cache: Arc<Mutex<ViewportCache>>,
+    pub cache: Arc<Mutex<TileCache>>,
     pub display_format: PixelFormat,
     pub display_color_space: ColorSpace,
     pub working_format: PixelFormat,
@@ -43,14 +43,14 @@ impl Action for BlurPreview {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        if !is_viewport_cache_reader_installed(self.tab.0) {
+        if !is_tile_cache_reader_installed(self.tab.0) {
             let cache = self.cache.clone();
             let image_width = self.image_width;
             let image_height = self.image_height;
             let display_format = self.display_format;
             let display_color_space = self.display_color_space;
 
-            install_viewport_cache_reader(
+            install_tile_cache_reader(
                 self.tab.0,
                 Box::new(move |_key, generation, mip, _range| {
                     let guard = cache.lock().unwrap();
@@ -85,7 +85,7 @@ impl Action for BlurPreview {
         }
 
         let graph = PathBuilder::new()
-            .src(Arc::new(ViewportCacheSource {
+            .src(Arc::new(TileCacheSource {
                 routing_key: self.tab.0,
                 mip_level: self.mip,
                 generation: 0,
@@ -107,7 +107,7 @@ impl Action for BlurPreview {
                 target_color_space: self.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
             }))
-            .sink(Arc::new(ViewportCacheSink::new(self.tab.0, self.generation)))
+            .sink(Arc::new(TileCacheSink::new(self.tab.0, self.generation)))
             .compile();
 
         Ok(PreparedAction::Pipeline {

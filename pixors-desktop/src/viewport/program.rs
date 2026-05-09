@@ -9,14 +9,14 @@ use pixors_state::state::TabId;
 use pixors_state::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
 use pixors_state::viewport::state::ViewportState;
-use pixors_state::viewport::tile_cache::ViewportCache;
+use pixors_state::viewport::tile_cache::TileCache;
 
 pub const TILE_SIZE: u32 = 256;
 
 pub struct ViewportProgram {
-    pub cache: Option<Arc<Mutex<ViewportCache>>>,
-    pub tile_generation: u64,
-    pub mip_fetch_signal: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    pub cache: Option<Arc<Mutex<TileCache>>>,
+    pub redraw_seq: u64,
+    pub mip_fetch_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     pub tab_id: Option<TabId>,
     pub viewport_state: Option<Arc<RwLock<ViewportState>>>,
 }
@@ -135,7 +135,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 );
             }
 
-            if let Ok(mut sig) = self.mip_fetch_signal.lock() {
+            if let Ok(mut sig) = self.mip_fetch_queue.lock() {
                 *sig = reqs.clone();
             }
             state.last_reqs = Some(reqs);
@@ -160,13 +160,13 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let vp_state = self.viewport_state.as_ref()?;
         let mut state = vp_state.write().unwrap();
 
-        if self.tile_generation != state.last_generation {
+        if self.redraw_seq != state.last_generation {
             tracing::debug!(
                 "[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw",
                 state.last_generation,
-                self.tile_generation
+                self.redraw_seq
             );
-            state.last_generation = self.tile_generation;
+            state.last_generation = self.redraw_seq;
             return Some(shader::Action::request_redraw());
         }
 
