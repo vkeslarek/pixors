@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{column, container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::theme::{ACCENT, BG_ELEVATED, TEXT_MUTED, TEXT_SECONDARY};
@@ -114,24 +114,8 @@ fn layer_row<'a>(i: usize, layer: &'a LayerInfo, is_active: bool) -> Element<'a,
 
     let name = text(layer.name.as_str()).size(11).color(TEXT_SECONDARY);
 
-    let eye_icon = if layer.visible { "👁" } else { "—" };
-    let visibility_btn = button(text(eye_icon).size(12))
-        .on_press(Msg::ToggleVisibility(i))
-        .padding(2)
-        .style(|_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            let bg = if hovered {
-                Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-            } else {
-                Color::TRANSPARENT
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border::default().rounded(3),
-                text_color: TEXT_SECONDARY,
-                ..Default::default()
-            }
-        });
+    let eye_icon = if layer.visible { crate::icons::EYE } else { crate::icons::EYE_OFF };
+    let visibility_btn = crate::components::icon_button::icon_button(eye_icon).size(12).on_press(Msg::ToggleVisibility(i));
 
     let opacity_text = text(format!("{}%", (layer.opacity * 100.0) as u32))
         .size(9)

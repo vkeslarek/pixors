@@ -11,7 +11,7 @@ use pixors_state::state::TabId;
 use crate::viewport::program::ViewportProgram;
 use pixors_state::viewport::state::ViewportState;
 use pixors_state::viewport::tile_cache::ViewportCache;
-use crate::widgets::pill;
+use crate::components::pill::pill;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,

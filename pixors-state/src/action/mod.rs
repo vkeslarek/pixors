@@ -190,4 +190,20 @@ impl Dispatcher {
             handle.cancel();
         }
     }
+
+    pub fn resync_locks(&mut self, state: &mut EditorState) {
+        self.background_tasks.retain(|tab_id, handle| {
+            let still_running = handle.is_running();
+            if !still_running
+                && let Some(tab) = state.tab_mut(*tab_id)
+            {
+                tab.view.loading = false;
+                tab.view.progress = 1.0;
+            }
+            still_running
+        });
+        for tab in &mut self.tabs.values_mut() {
+            tab.locked = false;
+        }
+    }
 }

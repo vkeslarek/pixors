@@ -1,7 +1,7 @@
 use iced::widget::{container, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::components::toolbar::Tool;
+use crate::page::editor::toolbar::Tool;
 use crate::theme::{
     ACCENT, BG_SURFACE, BORDER_SUBTLE, OK_GREEN, STATUSBAR_H, TEXT_MUTED, TEXT_SECONDARY,
 };

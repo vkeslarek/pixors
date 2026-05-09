@@ -1,7 +1,7 @@
 use iced::widget::{button, column, container, row, scrollable, slider, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-use crate::components::filters_panel::Msg;
+use crate::panel::filter::Msg;
 use crate::icons::{
     CIRCLE_SLASH, EYE, EYE_OFF, GRIP_VERTICAL, INFO, LUCIDE, PLUS, SUN, TRASH, UNDO,
 };

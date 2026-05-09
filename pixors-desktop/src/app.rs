@@ -7,11 +7,12 @@ use iced::{Background, Color, Element, Length, Subscription};
 use pixors_engine::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 
-use pixors_engine::graph::path::Path;
 use pixors_state::action::{Action, Dispatcher};
-use crate::components::{
-    filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar, workspace_bar,
+use crate::page::{
+    menu_bar, status_bar, workspace_bar,
+    editor::{tab_bar, toolbar},
 };
+use crate::panel::{filter as filters_panel, layers as layers_panel};
 use pixors_state::state::EditorState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +39,9 @@ pub enum Msg {
     Tick,
     Frames,
     PipelineEvent(PipelineEvent),
-    ExportDialog(crate::dialog::export::Msg),
+    PipelineLagged(u64),
+    ExportDialog(crate::modal::export::Msg),
+    UiShowcase(crate::modal::ui_showcase::Msg),
 }
 
 pub struct App {
@@ -54,15 +57,16 @@ pub struct App {
     #[allow(dead_code)]
     pub errors: Vec<(String, std::time::Instant)>,
     pub show_export_dialog: bool,
-    pub export_dialog: crate::dialog::export::ExportDialog,
-    pub active_post_process: Option<Path>,
+    pub export_dialog: crate::modal::export::ExportDialog,
+    pub show_ui_showcase: bool,
+    pub ui_showcase: crate::modal::ui_showcase::UiShowcase,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
 
 pub fn pipeline_event_tx() -> broadcast::Sender<PipelineEvent> {
     PIPELINE_BROADCAST
-        .get_or_init(|| broadcast::channel(64).0)
+        .get_or_init(|| broadcast::channel(256).0)
         .clone()
 }
 
@@ -90,8 +94,9 @@ impl Default for App {
             status: status_bar::State::default(),
             errors: Vec::new(),
             show_export_dialog: false,
-            export_dialog: crate::dialog::export::ExportDialog::default(),
-            active_post_process: None,
+            export_dialog: crate::modal::export::ExportDialog::default(),
+            show_ui_showcase: false,
+            ui_showcase: crate::modal::ui_showcase::UiShowcase::default(),
         };
         app.update_status_from_active_tab();
         app
@@ -125,7 +130,12 @@ impl App {
                 loop {
                     match rx.recv().await {
                         Ok(event) => return Some((Msg::PipelineEvent(event), rx)),
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            tracing::warn!(
+                                "pipeline event channel lagged, skipped={skipped}; resyncing tab locks"
+                            );
+                            return Some((Msg::PipelineLagged(skipped), rx));
+                        }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
                     }
                 }
@@ -135,9 +145,9 @@ impl App {
 
     pub fn view(&self) -> Element<'_, Msg> {
         let active_page = match self.workspace.active {
-            workspace_bar::Workspace::Editor => crate::pages::editor::view(self),
-            workspace_bar::Workspace::Library => crate::pages::library::view(),
-            workspace_bar::Workspace::Darkroom => crate::pages::darkroom::view(),
+            workspace_bar::Workspace::Editor => crate::page::editor::view(self),
+            workspace_bar::Workspace::Library => crate::page::library::view(),
+            workspace_bar::Workspace::Darkroom => crate::page::darkroom::view(),
         };
 
         let content = column![
@@ -167,6 +177,27 @@ impl App {
             layers.push(
                 iced::widget::stack![backdrop, self.export_dialog.view().map(Msg::ExportDialog),]
                     .into(),
+            );
+        }
+
+        if self.show_ui_showcase {
+            let backdrop = container(text(""))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.6))),
+                    ..Default::default()
+                });
+            layers.push(
+                iced::widget::stack![
+                    backdrop,
+                    container(self.ui_showcase.view().map(Msg::UiShowcase))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .center_x(Length::Fill)
+                        .center_y(Length::Fill),
+                ]
+                .into(),
             );
         }
 

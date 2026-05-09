@@ -22,6 +22,7 @@ pub enum Msg {
     ActualSize,
     ToggleLayers,
     ToggleFilters,
+    ShowUiShowcase,
     ResetLayout,
     None,
 }
@@ -57,6 +58,7 @@ pub fn view() -> Element<'static, Msg> {
             mtpl(menu_items!(
                 (item("Toggle Layers", "", Msg::ToggleLayers)),
                 (item("Toggle Filters", "", Msg::ToggleFilters)),
+                (item("UI Showcase", "", Msg::ShowUiShowcase)),
                 (separator()),
                 (item("Reset Layout", "", Msg::ResetLayout)),
             ))

@@ -12,7 +12,7 @@ use pixors_ops::operation::blur::Blur;
 use pixors_color::operation::color::ColorConvert;
 use crate::viewport_cache_sink::ViewportCacheSink;
 use crate::viewport_cache_source::{
-    ViewportCacheSource, install_viewport_cache_reader,
+    ViewportCacheSource, install_viewport_cache_reader, is_viewport_cache_reader_installed,
 };
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
@@ -43,44 +43,46 @@ impl Action for BlurPreview {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        let cache = self.cache.clone();
-        let image_width = self.image_width;
-        let image_height = self.image_height;
-        let display_format = self.display_format;
-        let display_color_space = self.display_color_space;
+        if !is_viewport_cache_reader_installed(self.tab.0) {
+            let cache = self.cache.clone();
+            let image_width = self.image_width;
+            let image_height = self.image_height;
+            let display_format = self.display_format;
+            let display_color_space = self.display_color_space;
 
-        install_viewport_cache_reader(
-            self.tab.0,
-            Box::new(move |_key, generation, mip, _range| {
-                let guard = cache.lock().unwrap();
-                guard
-                    .tiles_at_mip(mip, generation)
-                    .into_iter()
-                    .map(|(pos, ct)| {
-                        Item::Tile(Tile::new(
-                            TileCoord {
-                                mip_level: pos.mip_level,
-                                tx: pos.tx,
-                                ty: pos.ty,
-                                px: ct.px,
-                                py: ct.py,
-                                width: ct.width,
-                                height: ct.height,
-                                tile_size: TILE_SIZE,
-                                image_width,
-                                image_height,
-                            },
-                            PixelMeta::new(
-                                display_format,
-                                display_color_space,
-                                AlphaPolicy::Straight,
-                            ),
-                            Buffer::cpu(ct.bytes.as_ref().clone()),
-                        ))
-                    })
-                    .collect()
-            }),
-        );
+            install_viewport_cache_reader(
+                self.tab.0,
+                Box::new(move |_key, generation, mip, _range| {
+                    let guard = cache.lock().unwrap();
+                    guard
+                        .tiles_at_mip(mip, generation)
+                        .into_iter()
+                        .map(|(pos, ct)| {
+                            Item::Tile(Tile::new(
+                                TileCoord {
+                                    mip_level: pos.mip_level,
+                                    tx: pos.tx,
+                                    ty: pos.ty,
+                                    px: ct.px,
+                                    py: ct.py,
+                                    width: ct.width,
+                                    height: ct.height,
+                                    tile_size: TILE_SIZE,
+                                    image_width,
+                                    image_height,
+                                },
+                                PixelMeta::new(
+                                    display_format,
+                                    display_color_space,
+                                    AlphaPolicy::Straight,
+                                ),
+                                Buffer::cpu(ct.bytes.as_ref().clone()),
+                            ))
+                        })
+                        .collect()
+                }),
+            );
+        }
 
         let graph = PathBuilder::new()
             .src(Arc::new(ViewportCacheSource {
@@ -116,7 +118,13 @@ impl Action for BlurPreview {
         })
     }
 
-    fn apply(&self, _state: &mut EditorState, _status: PipelineStatus) {}
+    fn apply(&self, _state: &mut EditorState, status: PipelineStatus) {
+        if matches!(status, PipelineStatus::Cancelled | PipelineStatus::Error(_)) {
+            if let Ok(mut guard) = self.cache.lock() {
+                guard.clear_generation(self.generation);
+            }
+        }
+    }
 
     fn undo(&self, _state: &mut EditorState) {}
 

@@ -2,8 +2,9 @@ use iced::widget::{button, column, container, text};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::theme::{
-    self, ACCENT, BG_BASE, BG_HOVER, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY, WORKSPACE_BAR_W,
+    self, ACCENT, BG_BASE, BG_HOVER, TEXT_MUTED, TEXT_SECONDARY, WORKSPACE_BAR_W,
 };
+use crate::layout::sidebar;
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -35,8 +36,8 @@ impl State {
             .collect();
 
         let footer_items: Vec<Element<Msg>> = vec![
-            footer_btn(crate::icons::SETTINGS),
-            footer_btn(crate::icons::HELP),
+            crate::components::icon_button(crate::icons::SETTINGS).size(16).into(),
+            crate::components::icon_button(crate::icons::HELP).size(16).into(),
         ];
 
         let layout = column![
@@ -46,18 +47,9 @@ impl State {
         ]
         .height(Length::Fill);
 
-        container(layout)
+        sidebar(layout)
             .width(WORKSPACE_BAR_W)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(BG_BASE)),
-                border: Border {
-                    width: 0.0,
-                    color: BORDER_SUBTLE,
-                    radius: 0.0.into(),
-                },
-                ..Default::default()
-            })
+            .background(BG_BASE)
             .into()
     }
 }
@@ -113,37 +105,6 @@ fn ws_btn(ws: Workspace, is_active: bool) -> Element<'static, Msg> {
     btn.into()
 }
 
-fn footer_btn(label: &'static str) -> Element<'static, Msg> {
-    button(
-        container(
-            text(label)
-                .size(16)
-                .font(crate::icons::LUCIDE)
-                .color(TEXT_MUTED)
-                .center(),
-        )
-        .width(Length::Fill)
-        .height(34)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill),
-    )
-    .width(Length::Fill)
-    .style(|_, status| {
-        let hovered = matches!(status, button::Status::Hovered);
-        let bg = if hovered {
-            BG_HOVER
-        } else {
-            Color::TRANSPARENT
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border::default().rounded(8),
-            text_color: TEXT_MUTED,
-            ..Default::default()
-        }
-    })
-    .into()
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Workspace {

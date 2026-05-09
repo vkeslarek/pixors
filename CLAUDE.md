@@ -169,6 +169,8 @@ Pure view layer. No business logic. Renders `EditorState` via Iced, manages GPU 
 
 **Do NOT add to pixors-desktop**: `EditorState` mutations, pipeline construction, action business logic, tile cache management. All of those belong in `pixors-state`.
 
+**UI Guidelines**: See [UI.md](UI.md) for detailed rules on component standardisation, Modals vs Dialogs, and UX architecture.
+
 ### State ↔ Desktop boundary rules
 
 | Lives in `pixors-state` | Lives in `pixors-desktop` |

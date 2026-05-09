@@ -154,33 +154,12 @@ pub fn labeled_pick<'a, T>(
 where
     T: std::fmt::Display + PartialEq + Clone + 'static,
 {
-    let pl = pick_list(options, Some(selected), msg)
-        .style(|_, status| pick_list::Style {
-            text_color: TEXT_PRIMARY,
-            placeholder_color: TEXT_MUTED,
-            handle_color: TEXT_SECONDARY,
-            background: Background::Color(
-                if matches!(
-                    status,
-                    pick_list::Status::Hovered | pick_list::Status::Opened { .. }
-                ) {
-                    BG_HOVER
-                } else {
-                    BG_SURFACE
-                },
-            ),
-            border: Border {
-                color: BORDER,
-                width: 1.0,
-                radius: 6.0.into(),
-            },
-        })
-        .padding([6, 10])
-        .text_size(13);
-
-    row![text(label).size(13).color(TEXT_SECONDARY).width(140), pl]
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        text(label).size(13).color(TEXT_SECONDARY).width(140),
+        crate::components::dropdown(options, Some(selected), msg)
+    ]
+    .align_y(Alignment::Center)
+    .into()
 }
 
 pub fn labeled_checkbox<M: Clone + 'static>(
@@ -188,32 +167,12 @@ pub fn labeled_checkbox<M: Clone + 'static>(
     checked: bool,
     msg: impl Fn(bool) -> M + 'static,
 ) -> Element<'static, M> {
-    let cb = checkbox(checked).on_toggle(msg).style(move |_, status| {
-        let is_checked = checked;
-        let hovered = matches!(status, iced::widget::checkbox::Status::Hovered { .. });
-        iced::widget::checkbox::Style {
-            background: Background::Color(if is_checked {
-                if hovered {
-                    Color::from_rgb(0.45, 0.60, 0.95)
-                } else {
-                    ACCENT
-                }
-            } else {
-                if hovered { BG_HOVER } else { BG_SURFACE }
-            }),
-            icon_color: Color::WHITE,
-            border: Border {
-                color: if is_checked { ACCENT } else { BORDER },
-                width: 1.0,
-                radius: 4.0.into(),
-            },
-            text_color: None,
-        }
-    });
-
-    row![text(label).size(13).color(TEXT_SECONDARY).width(140), cb]
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        text(label).size(13).color(TEXT_SECONDARY).width(140),
+        crate::components::switch("", checked, msg)
+    ]
+    .align_y(Alignment::Center)
+    .into()
 }
 
 pub fn labeled_slider<'a>(
@@ -222,44 +181,9 @@ pub fn labeled_slider<'a>(
     value: f32,
     msg: impl Fn(f32) -> Msg + 'a,
 ) -> Element<'a, Msg> {
-    let val_label = text(format!("{}", value as u8))
-        .size(13)
-        .color(TEXT_PRIMARY)
-        .width(28);
-
-    let sl = slider(range, value, msg)
-        .step(1.0)
-        .width(Length::Fill)
-        .style(|_, status| iced::widget::slider::Style {
-            rail: iced::widget::slider::Rail {
-                backgrounds: (Background::Color(ACCENT), Background::Color(BG_HOVER)),
-                width: 4.0,
-                border: Border::default(),
-            },
-            handle: iced::widget::slider::Handle {
-                shape: iced::widget::slider::HandleShape::Circle { radius: 7.0 },
-                background: Background::Color(
-                    if matches!(
-                        status,
-                        iced::widget::slider::Status::Hovered
-                            | iced::widget::slider::Status::Dragged
-                    ) {
-                        Color::from_rgb(0.45, 0.60, 0.95)
-                    } else {
-                        ACCENT
-                    },
-                ),
-                border_width: 0.0,
-                border_color: Color::TRANSPARENT,
-            },
-        });
-
     row![
-        text(label).size(13).color(TEXT_SECONDARY).width(140),
-        sl,
-        val_label,
+        crate::components::slider(label, value, range, msg).value_format(|v| format!("{:.0}", v))
     ]
-    .spacing(12)
     .align_y(Alignment::Center)
     .into()
 }
@@ -269,28 +193,10 @@ pub fn labeled_text_input<'a>(
     value: &'a str,
     msg: impl Fn(String) -> Msg + 'a,
 ) -> Element<'a, Msg> {
-    let ti = text_input("", value)
-        .on_input(msg)
-        .padding([6, 10])
-        .size(13)
-        .style(|_, status| iced::widget::text_input::Style {
-            background: Background::Color(BG_SURFACE),
-            border: Border {
-                color: if matches!(status, iced::widget::text_input::Status::Focused { .. }) {
-                    ACCENT
-                } else {
-                    BORDER
-                },
-                width: 1.0,
-                radius: 6.0.into(),
-            },
-            icon: TEXT_MUTED,
-            placeholder: TEXT_MUTED,
-            value: TEXT_PRIMARY,
-            selection: Color::from_rgba(0.388, 0.533, 0.949, 0.3),
-        });
-
-    row![text(label).size(13).color(TEXT_SECONDARY).width(140), ti]
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        text(label).size(13).color(TEXT_SECONDARY).width(140),
+        crate::components::input("", value, msg)
+    ]
+    .align_y(Alignment::Center)
+    .into()
 }

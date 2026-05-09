@@ -21,6 +21,11 @@ pub fn install_viewport_cache_reader(tab_id: u64, f: TileReadFn) {
     TILE_READERS.write().unwrap().insert(tab_id, Arc::new(f));
 }
 
+/// Check if a tile reader is installed for the given `tab_id`.
+pub fn is_viewport_cache_reader_installed(tab_id: u64) -> bool {
+    TILE_READERS.read().unwrap().contains_key(&tab_id)
+}
+
 /// Remove the tile reader for `tab_id`.
 pub fn uninstall_viewport_cache_reader(tab_id: u64) {
     TILE_READERS.write().unwrap().remove(&tab_id);

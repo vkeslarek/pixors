@@ -30,26 +30,9 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
     let header = row![
         text("Export Image").size(16).color(TEXT_PRIMARY),
         iced::widget::Space::new().width(Length::Fill),
-        button(
-            text(crate::icons::X)
-                .size(14)
-                .font(crate::icons::LUCIDE)
-                .color(TEXT_MUTED)
-        )
-        .on_press(Msg::Cancel)
-        .padding(6)
-        .style(|_, status| button::Style {
-            background: Some(Background::Color(
-                if matches!(status, button::Status::Hovered) {
-                    Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-                } else {
-                    Color::TRANSPARENT
-                },
-            )),
-            border: Border::default().rounded(4),
-            text_color: TEXT_MUTED,
-            ..Default::default()
-        }),
+        Element::from(crate::components::icon_button(crate::icons::X)
+            .size(14)
+            .on_press(Msg::Cancel)),
     ]
     .align_y(Alignment::Center);
 
@@ -87,56 +70,21 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
     }
 
     // Action buttons
-    let cancel_btn = button(text("Cancel").size(14).color(TEXT_SECONDARY))
-        .padding([10, 24])
-        .style(|_, status| button::Style {
-            background: Some(Background::Color(
-                if matches!(status, button::Status::Hovered) {
-                    BG_HOVER
-                } else {
-                    Color::TRANSPARENT
-                },
-            )),
-            border: Border::default().rounded(6),
-            text_color: TEXT_SECONDARY,
-            ..Default::default()
-        })
+    let cancel_btn = crate::components::button("Cancel")
+        .variant(crate::components::ButtonVariant::Secondary)
         .on_press(Msg::Cancel);
 
-    let export_label = text("Export").size(14).color(Color::WHITE);
-    let export_btn = if dialog.error.is_none() {
-        button(export_label)
-            .padding([10, 24])
-            .style(|_, status: button::Status| button::Style {
-                background: Some(Background::Color(
-                    if matches!(status, button::Status::Hovered) {
-                        Color::from_rgb(0.45, 0.60, 0.95)
-                    } else {
-                        ACCENT
-                    },
-                )),
-                border: Border::default().rounded(6),
-                text_color: Color::WHITE,
-                ..Default::default()
-            })
-            .on_press(Msg::Export)
-    } else {
-        button(export_label)
-            .padding([10, 24])
-            .style(|_, _| button::Style {
-                background: Some(Background::Color(Color::from_rgba(
-                    0.388, 0.533, 0.949, 0.35,
-                ))),
-                border: Border::default().rounded(6),
-                text_color: Color::from_rgba(1.0, 1.0, 1.0, 0.5),
-                ..Default::default()
-            })
-    };
+    let mut export_btn = crate::components::button("Export")
+        .variant(crate::components::ButtonVariant::Primary);
+
+    if dialog.error.is_none() {
+        export_btn = export_btn.on_press(Msg::Export);
+    }
 
     let btns = row![
         iced::widget::Space::new().width(Length::Fill),
-        cancel_btn,
-        export_btn,
+        Element::from(cancel_btn),
+        Element::from(export_btn),
     ]
     .spacing(12)
     .align_y(Alignment::Center);

@@ -1,12 +1,13 @@
 mod app;
-mod components;
 mod controller;
-mod dialog;
 mod icons;
-mod pages;
 mod theme;
 mod viewport;
-mod widgets;
+pub mod components;
+pub mod layout;
+pub mod modal;
+pub mod page;
+pub mod panel;
 
 use app::App;
 
@@ -32,7 +33,7 @@ fn main() -> iced::Result {
 
     iced::application(App::default, App::update, App::view)
         .subscription(App::subscription)
-        .title("Pixors Ultra Test")
+        .title("Pixors")
         .window_size((1280.0, 720.0))
         .font(icons::FONT_BYTES)
         .font(SPACE_GROTESK)

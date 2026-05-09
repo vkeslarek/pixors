@@ -1,3 +1,7 @@
+pub mod tab_bar;
+pub mod toolbar;
+pub mod viewport;
+
 use iced::widget::{column, container, pane_grid, row, stack, text};
 use iced::{Alignment, Background, Color, Element, Length};
 
@@ -19,7 +23,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let progress = active.map(|t| t.view.progress).unwrap_or(0.0);
 
     let canvas = if let Some(tab_id) = tab_id {
-        let viewport = crate::components::viewport::view(
+        let viewport = crate::page::editor::viewport::view(
             app.tabs.view(&app.state).map(Msg::TabBar),
             canvas_w,
             canvas_h,
@@ -73,12 +77,18 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
         .into()
     };
 
+    let grid: Element<'_, Msg> = crate::layout::pane_grid_layout::<PaneKind, Msg>(&app.panes, |pane, kind, _| pane_content(
+        app, pane, *kind
+    ))
+    .on_resize(|e| Msg::PaneResized(e))
+    .on_drag(|e| Msg::PaneDragged(e))
+    .width(crate::theme::SIDEBAR_W)
+    .into();
+
     row![
         app.tools.view().map(Msg::Toolbar),
         canvas,
-        crate::components::sidebar_grid::view(&app.panes, |pane, kind| pane_content(
-            app, pane, kind
-        )),
+        grid,
     ]
     .height(Length::Fill)
     .into()
@@ -98,7 +108,7 @@ fn pane_content<'a>(
         PaneKind::Filters => "FILTERS",
     };
 
-    let title_bar = crate::components::panel::title_bar(label, Msg::ClosePane(pane));
+    let title_bar = crate::layout::pane_title_bar(label, Some(Msg::ClosePane(pane)));
 
     let body = container(body)
         .width(Length::Fill)

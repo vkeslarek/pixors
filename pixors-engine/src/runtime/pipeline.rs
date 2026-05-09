@@ -140,6 +140,10 @@ impl PipelineHandle {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
+    pub fn is_running(&self) -> bool {
+        self.handles.iter().any(|h| !h.is_finished())
+    }
+
     pub fn join(self) -> Result<(), Error> {
         let mut first_err: Option<Error> = None;
         for (i, h) in self.handles.into_iter().enumerate() {

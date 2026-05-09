@@ -7,8 +7,10 @@ use pixors_engine::runtime::event::PipelineEvent;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::app::{App, Msg, PaneKind};
-use crate::components::toolbar::Tool;
-use crate::components::{filters_panel, layers_panel, menu_bar, tab_bar};
+use crate::page::editor::toolbar::Tool;
+use crate::page::menu_bar;
+use crate::page::editor::tab_bar;
+use crate::panel::{filter as filters_panel, layers as layers_panel};
 
 impl App {
     pub(crate) fn find_pane(&self, kind: PaneKind) -> Option<pane_grid::Pane> {
@@ -85,7 +87,17 @@ impl App {
                     }
                 }
             },
+            Msg::PipelineLagged(skipped) => {
+                tracing::warn!(
+                    "pipeline event channel lagged, skipped={skipped}; resyncing tab locks"
+                );
+                self.dispatcher.resync_locks(&mut self.state);
+            }
             Msg::ExportDialog(m) => self.handle_export_dialog(m),
+            Msg::UiShowcase(m) => match m {
+                crate::modal::ui_showcase::Msg::Close => self.show_ui_showcase = false,
+                other => self.ui_showcase.update(other),
+            },
             Msg::MenuBar(m) => self.handle_menu_msg(m),
             Msg::WorkspaceBar(m) => self.workspace.update(m),
             Msg::Toolbar(m) => {
@@ -178,7 +190,9 @@ impl App {
 
         if let Some(path) = path {
             if let Err(e) = self.dispatcher.dispatch(
-                Arc::new(pixors_state::action::actions::open_file::OpenFile::new(path)),
+                Arc::new(pixors_state::action::actions::open_file::OpenFile::new(
+                    path,
+                )),
                 &mut self.state,
             ) {
                 self.push_error(e);
@@ -210,8 +224,7 @@ impl App {
         }
 
         for (tab_id, mip, range, cache_dir, img_w, img_h) in mip_requests {
-            if self.active_post_process.is_none()
-                && let Some(tab) = self.state.tab(tab_id)
+            if let Some(tab) = self.state.tab(tab_id)
                 && let Ok(guard) = tab.viewport_cache.lock()
                 && guard.has_all_tiles(mip, &range)
             {
@@ -226,7 +239,7 @@ impl App {
                     cache_dir,
                     img_w,
                     img_h,
-                    post_process: self.active_post_process.clone(),
+                    post_process: None,
                 }),
                 &mut self.state,
             );
@@ -238,6 +251,7 @@ impl App {
             menu_bar::Msg::Exit => std::process::exit(0),
             menu_bar::Msg::ToggleLayers => self.toggle_pane(PaneKind::Layers),
             menu_bar::Msg::ToggleFilters => self.toggle_pane(PaneKind::Filters),
+            menu_bar::Msg::ShowUiShowcase => self.show_ui_showcase = true,
             menu_bar::Msg::ResetLayout => {
                 self.panes = Self::default().panes;
             }
@@ -251,9 +265,9 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_export_dialog(&mut self, m: crate::dialog::export::Msg) {
+    pub(crate) fn handle_export_dialog(&mut self, m: crate::modal::export::Msg) {
         match m {
-            crate::dialog::export::Msg::Export => {
+            crate::modal::export::Msg::Export => {
                 let config = self.export_dialog.encoder_config();
                 let ext = self.export_dialog.file_extension();
                 self.show_export_dialog = false;
@@ -293,7 +307,7 @@ impl App {
                     }
                 }
             }
-            crate::dialog::export::Msg::Cancel => {
+            crate::modal::export::Msg::Cancel => {
                 self.show_export_dialog = false;
             }
             other => self.export_dialog.update(other),
@@ -316,9 +330,11 @@ impl App {
         match m {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             filters_panel::Msg::SetBlur(v) => {
-                self.filters.blur_radius = v;
                 self.filters.previewing = true;
-                self.dispatch_blur_preview(v as u32);
+                if self.filters.blur_radius != v {
+                    self.filters.blur_radius = v;
+                    self.dispatch_blur_preview(v as u32);
+                }
             }
             filters_panel::Msg::CancelPreview => {
                 self.filters.previewing = false;
@@ -328,43 +344,82 @@ impl App {
     }
 
     fn dispatch_blur_preview(&mut self, radius: u32) {
-        use std::sync::Arc;
-        use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
-        use pixors_engine::common::color::space::ColorSpace;
-        use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
-        use pixors_engine::graph::path::Path;
-        use pixors_color::operation::color::ColorConvert;
-        use pixors_ops::operation::blur::Blur;
+        let (
+            tab_id,
+            mip,
+            img_w,
+            img_h,
+            cache,
+            generation,
+            display_format,
+            display_color_space,
+            working_format,
+            working_color_space,
+        ) = {
+            let Some(tab) = self.state.active_tab() else {
+                return;
+            };
+            (
+                tab.id,
+                tab.viewport_state.borrow().current_mip,
+                tab.desc.width,
+                tab.desc.height,
+                tab.viewport_cache.clone(),
+                tab.tile_generation.wrapping_add(1),
+                self.state.display_format,
+                self.state.display_color_space,
+                self.state.working_format,
+                self.state.working_color_space,
+            )
+        };
 
-        let path = Path::new()
-            .push(Arc::new(TileToNeighborhood { radius }))
-            .push(Arc::new(Blur { radius }))
-            .push(Arc::new(ColorConvert {
-                target_format: PixelFormat::Rgba8,
-                target_color_space: ColorSpace::SRGB,
-                target_alpha: AlphaPolicy::Straight,
-            }));
-        self.active_post_process = Some(path);
+        let action = Arc::new(pixors_state::action::actions::blur_preview::BlurPreview {
+            tab: tab_id,
+            radius,
+            generation,
+            mip,
+            image_width: img_w,
+            image_height: img_h,
+            cache,
+            display_format,
+            display_color_space,
+            working_format,
+            working_color_space,
+        });
 
-        let Some(tab) = self.state.active_tab() else { return; };
-        let tab_id = tab.id;
-        let (img_w, img_h) = (tab.desc.width, tab.desc.height);
-        let mip = tab.viewport_state.borrow().current_mip;
-        let cache_dir = tab.cache_dir.clone();
-        let range = tab.viewport_state.borrow().camera.padded_tile_range(mip, 256, 1);
-        if let Ok(mut sigs) = tab.mip_fetch_signal.lock() {
-            sigs.push((tab_id, mip, range));
+        if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
+            self.push_error(e);
         }
     }
 
     fn dispatch_blur_cancel(&mut self) {
-        self.active_post_process = None;
+        let (tab_id, generation, mip, range, signal) = {
+            let Some(tab) = self.state.active_tab() else {
+                return;
+            };
+            (
+                tab.id,
+                tab.tile_generation.wrapping_add(1),
+                tab.viewport_state.borrow().current_mip,
+                tab.viewport_state.borrow().camera.padded_tile_range(
+                    tab.viewport_state.borrow().current_mip,
+                    256,
+                    1,
+                ),
+                tab.mip_fetch_signal.clone(),
+            )
+        };
 
-        let Some(tab) = self.state.active_tab() else { return; };
-        let tab_id = tab.id;
-        let mip = tab.viewport_state.borrow().current_mip;
-        let range = tab.viewport_state.borrow().camera.padded_tile_range(mip, 256, 1);
-        if let Ok(mut sigs) = tab.mip_fetch_signal.lock() {
+        let action = Arc::new(pixors_state::action::actions::blur_cancel::BlurCancel {
+            tab: tab_id,
+            generation,
+        });
+
+        if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
+            self.push_error(e);
+        }
+
+        if let Ok(mut sigs) = signal.lock() {
             sigs.push((tab_id, mip, range));
         }
     }

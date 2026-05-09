@@ -1,8 +1,7 @@
-use crate::theme::{
-    ACCENT, ACCENT_DIM, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_SECONDARY, TOOLBAR_W,
-};
-use iced::widget::{button, column, container, mouse_area, row, text};
-use iced::{Background, Border, Color, Element, Length};
+use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TOOLBAR_W};
+use crate::layout::sidebar;
+use iced::widget::{column, container, row, text};
+use iced::{Background, Element, Length};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -68,76 +67,29 @@ impl State {
                 .padding([4, 4])
                 .align_x(iced::Alignment::Center),
         )
-        .width(TOOLBAR_W)
-        .height(Length::Shrink)
-        .style(|_| container::Style {
-            background: Some(Background::Color(BG_SURFACE)),
-            border: Border {
-                width: 0.0,
-                color: BORDER_SUBTLE,
-                radius: 0.0.into(),
-            },
-            ..Default::default()
-        });
+        .width(Length::Fill)
+        .height(Length::Shrink);
 
-        container(row![ctn, iced::widget::space().height(Length::Fill)])
-            .style(|_| container::Style {
-                background: Some(Background::Color(BG_SURFACE)),
-                border: Border {
-                    width: 0.0,
-                    color: BORDER_SUBTLE,
-                    radius: 0.0.into(),
-                },
-                ..Default::default()
-            })
+        sidebar(row![ctn, iced::widget::space().height(Length::Fill)])
+            .width(TOOLBAR_W)
+            .background(BG_SURFACE)
             .into()
     }
 }
 
 fn tool_btn(t: Tool, active: bool) -> Element<'static, Msg> {
-    let icon_color = if active { ACCENT } else { TEXT_MUTED };
-    let inner = container(
-        text(t.icon())
-            .size(18)
-            .font(crate::icons::LUCIDE)
-            .color(icon_color)
-            .center(),
+    let btn = crate::components::icon_button(t.icon())
+        .size(18)
+        .width(40)
+        .height(40)
+        .active(active)
+        .on_press(Msg::Select(t));
+
+    crate::components::tooltip::tooltip(
+        iced::widget::container(iced::widget::mouse_area(btn)).width(Length::Shrink),
+        t.label(),
+        iced::widget::tooltip::Position::Right
     )
-    .width(40)
-    .height(40)
-    .center_x(Length::Fill)
-    .center_y(Length::Fill);
-
-    let btn = container(mouse_area(button(inner).on_press(Msg::Select(t)).style(
-        move |_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            let bg = if active {
-                ACCENT_DIM
-            } else if hovered {
-                BG_HOVER
-            } else {
-                Color::TRANSPARENT
-            };
-            let border_color = if active {
-                crate::theme::ACCENT_GLOW
-            } else {
-                Color::TRANSPARENT
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                text_color: if active { ACCENT } else { TEXT_SECONDARY },
-                border: Border {
-                    width: if active { 1.0 } else { 0.0 },
-                    color: border_color,
-                    radius: 6.0.into(),
-                },
-                ..Default::default()
-            }
-        },
-    )))
-    .width(Length::Shrink);
-
-    crate::widgets::tooltip(btn, t.label(), iced::widget::tooltip::Position::Right)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
