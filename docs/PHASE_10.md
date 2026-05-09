@@ -10,13 +10,66 @@ Every piece must be wired end-to-end — no stubs, no hardcoded values.
 
 | Area | What ships |
 |---|---|
+| **Export fix** | Current export is broken — fix before anything else |
 | Layer UX | Select, visibility toggle, opacity (0–100%) wired to composite |
 | Per-layer filter stack | `new_filter.rs` panel wired; Blur is the only filter op |
 | Display composite pipeline | All visible layers → Compose → ViewportSink |
 | Export composite pipeline | Same layer stack → encode to disk |
 | Checkerboard viewport | Transparency pattern behind composed result |
-| Format decode | JPEG decode (via `image-rs`) plugged into `ImageStreamSource` |
+| Format decode | JPEG (mozjpeg), WebP; AVIF deferred |
+| Format encode | JPEG (mozjpeg), WebP |
 | Blend modes | **Deferred** — Normal/alpha-over is sufficient for Phase 10 |
+| **Controller routing** | Refactor panel message handling out of `controller.rs` |
+
+---
+
+## 0 · Fix export (prerequisite — do this first)
+
+Export is currently broken. Implement this before any composite work — it validates
+the encode pipeline in isolation and provides a working baseline to build on.
+
+### 0.1 · What is broken
+
+`Export::prepare()` in `pixors-state/src/action/actions/export.rs` opens the
+**original source file** via `open_image(&self.source_path)` and streams raw
+scanlines through `ImageStreamSource → ScanLineToTile → ColorConvert → Encoder`.
+
+Problems:
+1. It re-decodes the source file instead of reading from the disk tile cache.
+   For edited images (filters applied) the export will not reflect any edits.
+2. `EncoderConfig` match in `prepare()` constructs `PngEncoderV2` and
+   `TiffEncoderStage` — verify these stages actually write a valid file on disk
+   by running an export and checking the output. If the file is empty or corrupt,
+   the issue is likely in how the consumer sink receives tiles (the sink may not
+   be reached if the pipeline terminates early due to a missing `StreamDone` signal
+   or a channel drop).
+3. `image_height` is passed from the controller but also read from `img.desc.height`
+   inside prepare — double-check these match and that the scanline emitter produces
+   the correct row count.
+
+### 0.2 · Fix strategy
+
+**Phase A — make existing export write a correct file:**
+
+1. Add an integration test or manual smoke test: open a PNG, trigger export to a
+   temp path, verify the output file is non-empty and can be re-opened.
+2. If the pipeline does not complete: add `tracing::debug!` to `PngEncoderV2::consume`
+   to confirm tiles are arriving. If no tiles arrive, the issue is upstream — check
+   that `ImageStreamSource` emits scanlines and `ScanLineToTile` converts them.
+3. Fix whatever prevents the consumer from receiving tiles.
+
+**Phase B — switch export to read from disk cache (ties into §6):**
+
+After the composite pipeline (§3) is implemented, replace the `ImageStreamSource`
+path with the `CacheReader`-based composite graph (see §6). This is when export
+becomes correct for filtered/composited images.
+
+### 0.3 · Export modal: verify format options reach the action
+
+`handle_export_dialog` in `controller.rs` calls `self.export_dialog.encoder_config()`
+and passes it to `Export`. Verify `EncoderConfig` values (bit depth, compression,
+color type) actually reach the encoder stage parameters. PNG color type mismatches
+between `EncoderConfig` and actual tile pixel format cause silent format errors.
 
 ---
 
@@ -575,109 +628,338 @@ via a small uniform or as a shader define.
 
 ---
 
-## 8 · JPEG decode
+## 8 · Format support — decode and encode
 
-### 8.1 · Crate
+### 8.1 · Codec crate choices
 
-Add `image = { version = "0.25", default-features = false, features = ["jpeg"] }`
-to `pixors-image/Cargo.toml`.
+Do **not** use `image-rs` for JPEG. It wraps `jpeg-decoder` which is a pure-Rust
+baseline implementation — correct but slow and producing larger files at equivalent
+quality compared to mozjpeg.
+
+| Format | Decode crate | Encode crate | Notes |
+|--------|-------------|-------------|-------|
+| JPEG | `mozjpeg` | `mozjpeg` | libjpeg-turbo fork; best quality/size ratio; `mozjpeg-sys` for FFI |
+| WebP | `libwebp-sys2` | `libwebp-sys2` | Google's reference implementation; supports lossless and lossy |
+| AVIF | — | — | **Deferred to Phase 11** — `ravif`/`dav1d` add significant compile time |
+
+`mozjpeg` requires a C toolchain (already present for wgpu). Add to `pixors-image/Cargo.toml`:
+```toml
+mozjpeg = { version = "0.10", features = ["with_simd"] }
+libwebp-sys2 = "0.1"
+```
 
 ### 8.2 · `JpegDecoder`
 
 **File:** `pixors-image/src/jpeg/mod.rs` (new)
 
-Implement `ImageDecoder` + `PageStream` following the exact pattern of
-`pixors-image/src/png/mod.rs`:
+```rust
+pub struct JpegDecoder;
+pub struct JpegPageStream { /* mozjpeg decompress state */ }
+```
 
+Follow the exact pattern of `pixors-image/src/png/mod.rs`:
 - `JpegDecoder::open(path) -> Result<Image, Error>`
 - `JpegPageStream::next_scanline() -> Option<ScanLine>`
-- Map `image::ColorType` → `PixelFormat` (RGB8 → `PixelFormat::Rgb8`, RGBA8 → `PixelFormat::Rgba8`, L8 → `PixelFormat::Gray8`, LA8 → `PixelFormat::GrayAlpha8`)
+- Map mozjpeg colorspace to `PixelFormat`: RGB → `Rgb8`, Grayscale → `Gray8`,
+  CMYK → `Cmyk8` (JPEG CMYK is common in print files)
 - JPEG is always single-page; `PageInfo.frame_count = 1`, `PageInfo.blend_mode = BlendMode::Normal`
+- Read EXIF from the JFIF/EXIF APP1 marker for DPI and orientation
 
-### 8.3 · Wire into `open_image()`
+### 8.3 · `JpegEncoderStage`
+
+**File:** `pixors-image/src/sink/jpeg_encoder.rs`
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JpegExportConfig {
+    pub quality: u8,        // 1–100, default 90
+    pub progressive: bool,  // default true — smaller files, better web perf
+    pub subsample: JpegSubsample,  // 4:2:0 (default), 4:4:4 (lossless-ish), 4:2:2
+}
+```
+
+Consumer sink: receives `Rgba8` tiles in row order, strips alpha, passes RGB rows
+to mozjpeg compressor. Alpha strip happens in the stage, not via a separate
+`ColorConvert` — JPEG has no alpha channel and this is always correct.
+
+### 8.4 · `WebPDecoder` + `WebPEncoderStage`
+
+**File:** `pixors-image/src/webp/mod.rs` (new)
+
+WebP is increasingly common as a source format (exported from browsers, design tools).
+Decode via `libwebp-sys2::WebPDecodeRGBA`. Single-page, may have animation frames
+(treat frame 0 only in Phase 10; animated WebP deferred).
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebPExportConfig {
+    pub lossless: bool,   // default false
+    pub quality: f32,     // 0.0–100.0, default 85.0 (lossy) / ignored for lossless
+}
+```
+
+### 8.5 · Wire into `open_image()` and `EncoderConfig`
 
 **File:** `pixors-image/src/image.rs`
 
 ```rust
 pub fn open_image(path: &Path) -> Result<Image, Error> {
     match path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()).as_deref() {
-        Some("png") => PngDecoder::open(path),
+        Some("png")              => PngDecoder::open(path),
         Some("tif") | Some("tiff") => TiffDecoder::open(path),
-        Some("jpg") | Some("jpeg") => JpegDecoder::open(path),  // NEW
-        _ => Err(Error::UnsupportedFormat),
+        Some("jpg") | Some("jpeg") => JpegDecoder::open(path),   // NEW
+        Some("webp")             => WebPDecoder::open(path),      // NEW
+        _                        => Err(Error::UnsupportedFormat),
     }
 }
 ```
 
-### 8.4 · Export to JPEG
-
-Add `EncoderConfig::Jpeg(JpegExportConfig)`:
-
+`EncoderConfig` in `pixors-image/src/codec.rs`:
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JpegExportConfig {
-    pub quality: u8,  // 1–100
+pub enum EncoderConfig {
+    Png(PngExportConfig),
+    Tiff(TiffExportConfig),
+    Jpeg(JpegExportConfig),   // NEW
+    WebP(WebPExportConfig),   // NEW
 }
 ```
 
-`JpegEncoderStage` (new file `pixors-image/src/sink/jpeg_encoder.rs`):
-
-- Takes Tile stream (Rgba8 sRGB), strips alpha, writes JPEG via `image` crate
-- ColorConvert to `Rgb8` happens in the graph before this sink (same pattern as PNG)
-
-Wire into `Export::prepare()` match arm and into the export modal's format list.
-
-### 8.5 · Export modal: add JPEG tab
+### 8.6 · Export modal: JPEG + WebP tabs
 
 **File:** `pixors-desktop/src/modal/export/mod.rs`
 
-Add `ExportFormat::Jpeg` variant. Add `jpeg.rs` module alongside `png.rs` / `tiff.rs`
-with a quality slider (1–100, default 90). Update the format tab bar in `view.rs`.
+Add `ExportFormat::Jpeg` and `ExportFormat::WebP` variants.
+Add `jpeg.rs` and `webp.rs` modules:
+- `jpeg.rs`: quality slider (1–100), progressive toggle, subsampling picker (4:2:0 / 4:2:2 / 4:4:4)
+- `webp.rs`: lossless toggle, quality slider (shown only when lossy)
+
+Update format tab bar in `view.rs`. Update `open_file_dialog` filter in `controller.rs` to include `.jpg`, `.jpeg`, `.webp`.
 
 ---
 
-## 9 · Sequencing
+## 9 · Controller routing refactor
+
+### 9.1 · The problem
+
+`controller.rs` currently routes every panel message inline:
+`handle_layers_msg`, `handle_filters_msg`, etc. — each a match block that reads
+app state, builds actions or graphs, and calls dispatcher methods. As panels grow
+(filter stack, layer ops, export dialog, keyboard shortcuts) this file becomes a
+God Object: it knows the internals of every panel, every action, and the dispatcher.
+
+The result: adding a new filter op requires editing `controller.rs`. Adding a panel
+requires adding a new `handle_X_msg` function and a new `Msg` arm. Untestable in
+isolation.
+
+### 9.2 · Target pattern: panels return `Effect`s
+
+Each panel module owns its update logic. The controller only executes effects.
+
+```rust
+// pixors-desktop/src/effect.rs  (new file)
+pub enum Effect {
+    Dispatch(Arc<dyn pixors_state::action::Action>),
+    RunGraph {
+        graph: pixors_engine::graph::graph::ExecGraph,
+        mode: pixors_state::action::PipelineMode,
+        tab_id: Option<pixors_state::TabId>,
+    },
+    QueueDisplayRefresh(pixors_state::TabId),
+    CancelBackground(pixors_state::TabId),
+    ClearOverlay(pixors_state::TabId),
+    OpenFileDialog,
+    ShowExportDialog,
+    TogglePane(crate::app::PaneKind),
+    None,
+}
+```
+
+### 9.3 · Panel update functions
+
+Each panel module gains an `update()` function that takes its own `Msg` plus a
+read-only context struct, and returns `Vec<Effect>`:
+
+```rust
+// pixors-desktop/src/panel/layers.rs
+
+pub struct LayersContext<'a> {
+    pub active_tab: Option<&'a pixors_state::tab::Tab>,
+}
+
+pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
+    match msg {
+        Msg::Close => vec![Effect::TogglePane(PaneKind::Layers)],
+        Msg::Select(id) => {
+            let Some(tab) = ctx.active_tab else { return vec![] };
+            vec![Effect::Dispatch(Arc::new(SelectLayer { tab: tab.id, layer: id }))]
+        }
+        Msg::ToggleVisibility(id) => {
+            let Some(tab) = ctx.active_tab else { return vec![] };
+            let visible = tab.layers.iter().find(|l| l.id == id).map(|l| !l.visible).unwrap_or(true);
+            vec![
+                Effect::Dispatch(Arc::new(SetLayerVisibility { tab: tab.id, layer: id, visible })),
+                Effect::QueueDisplayRefresh(tab.id),
+            ]
+        }
+        Msg::SetOpacity(id, opacity) => {
+            let Some(tab) = ctx.active_tab else { return vec![] };
+            let prev = tab.layers.iter().find(|l| l.id == id).map(|l| l.opacity).unwrap_or(1.0);
+            vec![
+                Effect::Dispatch(Arc::new(SetLayerOpacity { tab: tab.id, layer: id, opacity, prev_opacity: prev })),
+                Effect::QueueDisplayRefresh(tab.id),
+            ]
+        }
+    }
+}
+```
+
+The panel module no longer imports `App` or `Dispatcher`. It only knows its own
+domain types and `Effect`.
+
+### 9.4 · Controller becomes an effect executor
+
+```rust
+// pixors-desktop/src/controller.rs  (simplified)
+
+impl App {
+    fn execute_effects(&mut self, effects: Vec<Effect>) {
+        for effect in effects {
+            match effect {
+                Effect::Dispatch(action) => {
+                    if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
+                        self.push_error(e);
+                    }
+                }
+                Effect::RunGraph { graph, mode, tab_id } => {
+                    let _ = self.dispatcher.run_graph(graph, mode, tab_id);
+                }
+                Effect::QueueDisplayRefresh(tab_id) => {
+                    self.queue_display_refresh(tab_id);
+                }
+                Effect::CancelBackground(tab_id) => {
+                    self.dispatcher.cancel_background(tab_id);
+                }
+                Effect::ClearOverlay(tab_id) => {
+                    if let Some(cache) = self.tile_caches.get(&tab_id)
+                        && let Ok(mut g) = cache.lock()
+                    {
+                        g.clear_overlay();
+                    }
+                }
+                Effect::TogglePane(kind) => self.toggle_pane(kind),
+                Effect::ShowExportDialog => self.show_export_dialog = true,
+                Effect::OpenFileDialog => self.open_file_dialog(),
+                Effect::None => {}
+            }
+        }
+    }
+
+    // Route messages to panel update functions, then execute effects:
+    fn handle_layers_msg(&mut self, m: layers_panel::Msg) {
+        let ctx = layers_panel::LayersContext { active_tab: self.state.active_tab() };
+        let effects = layers_panel::update(m, ctx);
+        self.execute_effects(effects);
+    }
+
+    fn handle_filters_msg(&mut self, m: filters_panel::Msg) {
+        let ctx = filters_panel::FiltersContext {
+            active_tab: self.state.active_tab(),
+            viewport_state: self.state.active_tab()
+                .and_then(|t| self.viewport_states.get(&t.id))
+                .and_then(|vs| vs.read().ok().map(|g| *g)),  // copy current_mip etc.
+        };
+        let effects = filters_panel::update(m, ctx);
+        self.execute_effects(effects);
+    }
+}
+```
+
+### 9.5 · Context structs for complex panels
+
+Some panels (filters) need viewport state to build preview pipelines.
+Pass only what they need — no full `App` reference:
+
+```rust
+// pixors-desktop/src/panel/filter.rs
+pub struct FiltersContext {
+    pub active_tab: Option<&'a Tab>,
+    pub current_mip: u32,
+    pub routing_key: u64,  // tab_id.0, for TileCacheSource/Sink
+    pub working_format: PixelFormat,
+    pub working_color_space: ColorSpace,
+    pub display_format: PixelFormat,
+    pub display_color_space: ColorSpace,
+}
+```
+
+For effects that return a pre-built graph (like `run_blur_preview`), the panel
+builds the graph itself and returns `Effect::RunGraph { graph, .. }`. The controller
+just executes it — no knowledge of blur internals required.
+
+### 9.6 · Files affected
+
+- `pixors-desktop/src/effect.rs` — new, defines `Effect` enum
+- `pixors-desktop/src/panel/layers.rs` — gains `LayersContext`, `update()` fn; loses direct app coupling
+- `pixors-desktop/src/panel/filter.rs` — gains `FiltersContext`, `update()` fn; builds graphs internally
+- `pixors-desktop/src/panel/mod.rs` — re-exports context types
+- `pixors-desktop/src/controller.rs` — gains `execute_effects()`; `handle_X_msg` methods become thin routers; loses all panel business logic
+
+### 9.7 · Do NOT apply this pattern to
+
+- `handle_export_dialog` — the export dialog needs access to `rfd::FileDialog` (blocking
+  dialog call) which cannot be expressed as an `Effect` without async plumbing. Keep it
+  in `controller.rs` for now.
+- `handle_menu_msg` — menu actions are trivial one-liners; not worth the indirection.
+- `handle_keyboard` — same.
+
+Revisit these when there are more complex interactions.
+
+---
 
 Implement in this order to avoid integration pain:
 
-1. **State model** (§1): `LayerFilter`, remove old `FilterState`, `BlendMode` unify
-2. **New actions** (§2): `SetLayerVisibility`, `SetLayerOpacity`, `SelectLayer`
-3. **Layer panel wiring** (§4): get visibility toggle and select working first
-4. **Per-layer cache dir** (§3.2.4 + OpenFile update): prerequisite for display graph
-5. **Display composite graph** (§3.2): single visible layer first, then multi
-6. **Checkerboard** (§7): quick win, visible immediately
-7. **Filter actions** (§2.4, §2.5) + **filter panel wiring** (§5)
-8. **Blur preview pipeline** (§5.5): needs filter actions and display graph working
-9. **Export via composite** (§6): needs display graph pattern working
-10. **JPEG decode** (§8.1–8.3)
-11. **JPEG export** (§8.4–8.5)
+1. **Export smoke test + fix** (§0): verify a PNG export writes a valid file before touching anything else
+2. **Controller routing refactor** (§9): `Effect` enum + panel `update()` fns — do this early so all subsequent wiring follows the new pattern
+3. **State model** (§1): `LayerFilter`, remove old `FilterState`, `BlendMode` unify
+4. **New actions** (§2): `SetLayerVisibility`, `SetLayerOpacity`, `SelectLayer`
+5. **Layer panel wiring** (§4): visibility toggle and select using the new routing pattern
+6. **Per-layer cache dir** (§3.2.4 + OpenFile update): prerequisite for display graph
+7. **Display composite graph** (§3.2): single visible layer first, then multi
+8. **Checkerboard** (§7): quick win, visible immediately
+9. **Filter actions** (§2.4, §2.5) + **filter panel wiring** (§5) via new routing
+10. **Blur preview pipeline** (§5.5): panel builds the graph, returns `Effect::RunGraph`
+11. **Export via composite** (§6): needs display graph pattern working; replaces §0 source-file path
+12. **JPEG decode + encode** (§8.1–§8.3): mozjpeg
+13. **WebP decode + encode** (§8.4): libwebp-sys2
+14. **Export modal: JPEG + WebP tabs** (§8.6)
 
 ---
-
-## 10 · What is explicitly out of scope for Phase 10
 
 - Blend modes beyond Normal/alpha-over
-- Multi-layer TIFF files (the decode infrastructure is there, but the compositor UX
-  for managing imported layers is Phase 11)
+- Multi-layer TIFF files (decode infrastructure exists; compositor UX for imported layers is Phase 11)
 - Layer groups, clipping masks
 - Any operation other than Blur in the filter stack
-- Undo/redo for filter operations (state mutations happen, but history is not snapshotted)
-- WEBP / AVIF decode or encode (Phase 11)
+- Undo/redo for filter operations (state mutations happen, history not snapshotted)
+- AVIF decode or encode (Phase 11 — `ravif`/`dav1d` add significant build time)
 - EXR decode or encode (Phase 11+)
+- Async file dialog (blocks on `rfd::FileDialog::pick_file`; non-blocking dialog is a separate effort)
 
 ---
 
-## 11 · Files changed (summary for the implementing AI)
+## 12 · Files changed (summary for the implementing AI)
 
 ### `pixors-engine`
 - `src/common/blend.rs` — new, defines `BlendMode`
 - `src/lib.rs` — `pub mod common { pub mod blend; }`
 
 ### `pixors-image`
-- `src/image.rs` — `BlendMode` re-exported from engine, `JpegDecoder` arm in `open_image()`
-- `src/jpeg/mod.rs` — new `JpegDecoder` + `JpegPageStream`
-- `src/sink/jpeg_encoder.rs` — new `JpegEncoderStage`
-- `src/codec.rs` — `EncoderConfig::Jpeg(JpegExportConfig)`, `JpegExportConfig` struct
+- `src/image.rs` — `BlendMode` re-exported from engine, `JpegDecoder` + `WebPDecoder` arms in `open_image()`
+- `src/jpeg/mod.rs` — new `JpegDecoder` + `JpegPageStream` (mozjpeg)
+- `src/webp/mod.rs` — new `WebPDecoder` + `WebPPageStream` (libwebp-sys2)
+- `src/sink/jpeg_encoder.rs` — new `JpegEncoderStage` (mozjpeg)
+- `src/sink/webp_encoder.rs` — new `WebPEncoderStage` (libwebp-sys2)
+- `src/codec.rs` — `EncoderConfig::Jpeg`, `EncoderConfig::WebP`, their config structs
+- `Cargo.toml` — add `mozjpeg`, `libwebp-sys2`
 
 ### `pixors-ops`
 - `src/processor/compose.rs` — `opacities: Vec<f32>` field, opacity pre-multiply in blend loop
@@ -696,14 +978,16 @@ Implement in this order to avoid integration pain:
 - `src/lib.rs` — remove `FilterState` re-export if any
 
 ### `pixors-desktop`
-- `src/panel/filter.rs` — replace with `new_filter.rs` content, add `FilterPanelState`
+- `src/effect.rs` — **new** `Effect` enum (§9.2)
+- `src/panel/filter.rs` — replace with `new_filter.rs` content; gains `FiltersContext` + `update()` fn
 - `src/panel/new_filter.rs` — delete (merged into `filter.rs`)
-- `src/panel/layers.rs` — `Msg` uses `LayerId`, add opacity slider
-- `src/panel/mod.rs` — update any changed re-exports
-- `src/controller.rs` — `handle_layers_msg`, `handle_filters_msg`, `build_display_graph()`, `run_mip_fetch` uses new graph, `run_blur_preview` uses layer filter index, `queue_display_refresh()`
+- `src/panel/layers.rs` — `Msg` uses `LayerId`; gains `LayersContext` + `update()` fn; opacity slider
+- `src/panel/mod.rs` — re-exports context types
+- `src/controller.rs` — gains `execute_effects()`; `handle_X_msg` become thin routers; `build_display_graph()`, `queue_display_refresh()`; `run_mip_fetch` uses composite graph; loses all panel business logic
 - `src/app.rs` — `FilterPanelState` field, remove old `filter` field references
-- `src/modal/export/mod.rs` — `ExportFormat::Jpeg`, `Msg::JpegQuality(f32)`
-- `src/modal/export/jpeg.rs` — new quality slider view
-- `src/modal/export/view.rs` — add JPEG tab to format bar
+- `src/modal/export/mod.rs` — `ExportFormat::Jpeg`, `ExportFormat::WebP`, their `Msg` variants
+- `src/modal/export/jpeg.rs` — new: quality slider, progressive toggle, subsample picker
+- `src/modal/export/webp.rs` — new: lossless toggle, quality slider
+- `src/modal/export/view.rs` — add JPEG + WebP tabs; update `open_file_dialog` filter
 - `src/viewport/pipeline.rs` or WGSL/Slang shader — checkerboard fragment logic
 - `src/viewport/viewport_state.rs` — `show_transparency_grid: bool`
