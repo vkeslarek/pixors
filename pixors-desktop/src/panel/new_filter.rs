@@ -1,10 +1,10 @@
-use iced::widget::{button, column, container, row, scrollable, slider, text, Space};
+use iced::widget::{Space, button, column, container, row, scrollable, slider, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-use crate::panel::filter::Msg;
 use crate::icons::{
     CIRCLE_SLASH, EYE, EYE_OFF, GRIP_VERTICAL, INFO, LUCIDE, PLUS, SUN, TRASH, UNDO,
 };
+use crate::panel::filter::Msg;
 use crate::theme::{
     ACCENT, BG_BASE, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY,
     TEXT_SECONDARY,
@@ -44,7 +44,12 @@ pub fn view<'a>() -> Element<'a, Msg> {
         .padding([8, 12])
         .style(btn_style)
     ]
-    .padding(iced::Padding { top: 12.0, right: 16.0, bottom: 12.0, left: 16.0 });
+    .padding(iced::Padding {
+        top: 12.0,
+        right: 16.0,
+        bottom: 12.0,
+        left: 16.0,
+    });
 
     let filter1 = build_collapsed_filter(
         "01",
@@ -65,39 +70,44 @@ pub fn view<'a>() -> Element<'a, Msg> {
 
     let content = column![toolbar, filter1, filter2, filter3].spacing(0);
 
-    let footer = container(row![
+    let footer = container(
         row![
-            container(Space::new().width(Length::Fixed(6.0)).height(Length::Fixed(6.0))).style(
-                |_| container::Style {
+            row![
+                container(
+                    Space::new()
+                        .width(Length::Fixed(6.0))
+                        .height(Length::Fixed(6.0))
+                )
+                .style(|_| container::Style {
                     background: Some(Background::Color(Color::from_rgb(0.2, 0.8, 0.2))),
                     border: Border::default().rounded(3),
                     ..Default::default()
-                }
-            ),
+                }),
+                Space::new().width(Length::Fixed(6.0)),
+                text("3 active").size(11).color(TEXT_SECONDARY),
+                text(" • 12ms").size(11).color(TEXT_MUTED),
+            ]
+            .align_y(Alignment::Center),
+            Space::new().width(Length::Fill),
+            button(text("Save preset").size(12).color(TEXT_SECONDARY))
+                .padding([6, 10])
+                .style(|t, s| {
+                    let mut st = btn_style(t, s);
+                    st.background = Some(Background::Color(BG_BASE));
+                    st.border = Border {
+                        color: BORDER_SUBTLE,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    };
+                    st
+                }),
             Space::new().width(Length::Fixed(6.0)),
-            text("3 active").size(11).color(TEXT_SECONDARY),
-            text(" • 12ms").size(11).color(TEXT_MUTED),
+            button(text("Flatten").size(12).color(Color::WHITE))
+                .padding([6, 12])
+                .style(primary_btn_style),
         ]
         .align_y(Alignment::Center),
-        Space::new().width(Length::Fill),
-        button(text("Save preset").size(12).color(TEXT_SECONDARY))
-            .padding([6, 10])
-            .style(|t, s| {
-                let mut st = btn_style(t, s);
-                st.background = Some(Background::Color(BG_BASE));
-                st.border = Border {
-                    color: BORDER_SUBTLE,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                };
-                st
-            }),
-        Space::new().width(Length::Fixed(6.0)),
-        button(text("Flatten").size(12).color(Color::WHITE))
-            .padding([6, 12])
-            .style(primary_btn_style),
-    ]
-    .align_y(Alignment::Center))
+    )
     .padding([12, 16])
     .style(|_| container::Style {
         border: Border {
@@ -129,12 +139,16 @@ fn build_collapsed_filter<'a>(
     subtitle2: &'static str,
     color: Color,
 ) -> Element<'a, Msg> {
-    let icon_sq = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(24.0)))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(color)),
-            border: Border::default().rounded(4),
-            ..Default::default()
-        });
+    let icon_sq = container(
+        Space::new()
+            .width(Length::Fixed(24.0))
+            .height(Length::Fixed(24.0)),
+    )
+    .style(move |_| container::Style {
+        background: Some(Background::Color(color)),
+        border: Border::default().rounded(4),
+        ..Default::default()
+    });
 
     let info = column![
         text(title).size(13).color(TEXT_PRIMARY),
@@ -183,12 +197,16 @@ fn build_collapsed_filter<'a>(
 }
 
 fn build_expanded_filter<'a>() -> Element<'a, Msg> {
-    let icon_sq = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(24.0)))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(Color::from_rgb(0.8, 0.4, 0.6))),
-            border: Border::default().rounded(4),
-            ..Default::default()
-        });
+    let icon_sq = container(
+        Space::new()
+            .width(Length::Fixed(24.0))
+            .height(Length::Fixed(24.0)),
+    )
+    .style(move |_| container::Style {
+        background: Some(Background::Color(Color::from_rgb(0.8, 0.4, 0.6))),
+        border: Border::default().rounded(4),
+        ..Default::default()
+    });
 
     let info = column![
         text("Smart Sharpen")
@@ -312,7 +330,12 @@ fn build_expanded_filter<'a>() -> Element<'a, Msg> {
             .style(ghost_btn_style),
         ]
     ]
-    .padding(iced::Padding { top: 0.0, right: 16.0, bottom: 16.0, left: 16.0 });
+    .padding(iced::Padding {
+        top: 0.0,
+        right: 16.0,
+        bottom: 16.0,
+        left: 16.0,
+    });
 
     let body = container(column![header, controls])
         .width(Length::Fill)
@@ -345,12 +368,16 @@ fn build_disabled_filter<'a>(
     subtitle: &'static str,
     color: Color,
 ) -> Element<'a, Msg> {
-    let icon_sq = container(Space::new().width(Length::Fixed(24.0)).height(Length::Fixed(24.0)))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(color)),
-            border: Border::default().rounded(4),
-            ..Default::default()
-        });
+    let icon_sq = container(
+        Space::new()
+            .width(Length::Fixed(24.0))
+            .height(Length::Fixed(24.0)),
+    )
+    .style(move |_| container::Style {
+        background: Some(Background::Color(color)),
+        border: Border::default().rounded(4),
+        ..Default::default()
+    });
 
     let info = column![
         text(title).size(13).color(TEXT_MUTED),

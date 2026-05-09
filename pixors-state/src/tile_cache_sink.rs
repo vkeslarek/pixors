@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
+use pixors_engine::stage::{
+    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
+};
 
 pub type CacheCommitFn = Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 //       gen, mip,  tx,  ty,  px,  py,   w,   h, bytes

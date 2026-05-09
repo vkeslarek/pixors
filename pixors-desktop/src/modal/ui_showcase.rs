@@ -1,8 +1,7 @@
-use iced::widget::{column, container, row, scrollable, text};
-use iced::{Alignment, Background, Border, Element, Length, Padding};
-use crate::theme::{BG_BASE, BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
 use crate::components::*;
 use crate::layout::dialog::dialog;
+use iced::widget::{column, row, scrollable};
+use iced::{Alignment, Element};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -55,33 +54,68 @@ impl UiShowcase {
                         badge("Neutral").variant(BadgeVariant::Neutral),
                     ]
                     .spacing(8)
-                ).title("Badges"),
-
+                )
+                .title("Badges"),
                 // Buttons
                 card(
                     column![
                         row![
-                            button("Primary").variant(ButtonVariant::Primary).size(ButtonSize::Md).on_press(Msg::ButtonClicked),
-                            button("Secondary").variant(ButtonVariant::Secondary).size(ButtonSize::Md).on_press(Msg::ButtonClicked),
-                            button("Ghost").variant(ButtonVariant::Ghost).size(ButtonSize::Md).on_press(Msg::ButtonClicked),
-                            button("Danger").variant(ButtonVariant::Danger).size(ButtonSize::Md).on_press(Msg::ButtonClicked),
-                        ].spacing(8),
+                            button("Primary")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Md)
+                                .on_press(Msg::ButtonClicked),
+                            button("Secondary")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Md)
+                                .on_press(Msg::ButtonClicked),
+                            button("Ghost")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::Md)
+                                .on_press(Msg::ButtonClicked),
+                            button("Danger")
+                                .variant(ButtonVariant::Danger)
+                                .size(ButtonSize::Md)
+                                .on_press(Msg::ButtonClicked),
+                        ]
+                        .spacing(8),
                         row![
-                            button("Small").variant(ButtonVariant::Primary).size(ButtonSize::Sm).on_press(Msg::ButtonClicked),
-                            button("Medium").variant(ButtonVariant::Primary).size(ButtonSize::Md).on_press(Msg::ButtonClicked),
-                            button("Large").variant(ButtonVariant::Primary).size(ButtonSize::Lg).on_press(Msg::ButtonClicked),
-                        ].spacing(8).align_y(Alignment::Center),
+                            button("Small")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Sm)
+                                .on_press(Msg::ButtonClicked),
+                            button("Medium")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Md)
+                                .on_press(Msg::ButtonClicked),
+                            button("Large")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Lg)
+                                .on_press(Msg::ButtonClicked),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
                         row![
-                            button("Disabled").variant(ButtonVariant::Primary).size(ButtonSize::Md),
+                            button("Disabled")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Md),
                         ],
                         row![
-                            icon_button(crate::icons::EYE).size(16).on_press(Msg::ButtonClicked),
-                            icon_button(crate::icons::TRASH).size(16).on_press(Msg::ButtonClicked),
-                            icon_button(crate::icons::INFO).size(16).on_press(Msg::ButtonClicked),
-                        ].spacing(8).align_y(Alignment::Center),
-                    ].spacing(16)
-                ).title("Buttons (Variants & Sizes)"),
-
+                            icon_button(crate::icons::EYE)
+                                .size(16)
+                                .on_press(Msg::ButtonClicked),
+                            icon_button(crate::icons::TRASH)
+                                .size(16)
+                                .on_press(Msg::ButtonClicked),
+                            icon_button(crate::icons::INFO)
+                                .size(16)
+                                .on_press(Msg::ButtonClicked),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(16)
+                )
+                .title("Buttons (Variants & Sizes)"),
                 // Inputs
                 card(
                     column![
@@ -90,22 +124,30 @@ impl UiShowcase {
                             self.slider_value,
                             0.0..=100.0,
                             Msg::SliderChanged
-                        ).value_format(|v| format!("{:.0}%", v)),
+                        )
+                        .value_format(|v| format!("{:.0}%", v)),
                         divider(),
                         switch(
                             "Hardware Acceleration",
                             self.switch_value,
                             Msg::SwitchToggled
-                        ).description("Use GPU for rendering where possible"),
+                        )
+                        .description("Use GPU for rendering where possible"),
                         divider(),
                         input("Type something...", &self.input_value, Msg::InputChanged),
                         dropdown(
-                            vec!["Option 1".to_string(), "Option 2".to_string(), "Option 3".to_string()],
+                            vec![
+                                "Option 1".to_string(),
+                                "Option 2".to_string(),
+                                "Option 3".to_string()
+                            ],
                             self.dropdown_selection.clone(),
                             Msg::DropdownSelected
                         )
-                    ].spacing(16)
-                ).title("Inputs"),
+                    ]
+                    .spacing(16)
+                )
+                .title("Inputs"),
             ]
             .spacing(16)
             .padding(20),

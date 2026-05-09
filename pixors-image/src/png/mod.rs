@@ -10,14 +10,15 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use ::exif as exif_crate;
-use ::png;
+use exif as exif_crate;
+use png;
 
 use pixors_engine::common::pixel::AlphaPolicy;
 use pixors_engine::error::Error;
 
-use crate::common::image::codec::{ImageDecoder, PageStream};
-use crate::common::image::*;
+use crate::codec::{ImageDecoder, PageStream};
+use crate::exif::Metadata;
+use crate::image::*;
 
 pub struct PngDecoder;
 
@@ -100,12 +101,12 @@ impl ImageDecoder for PngDecoder {
         for t in &info.utf8_text {
             text_pairs.push((t.keyword.as_str(), t.get_text().unwrap_or_default()));
         }
-        metadata.extend(crate::common::image::exif::from_png_text(&text_pairs));
+        metadata.extend(crate::exif::from_png_text(&text_pairs));
 
         if let Some(ref exif_bytes) = info.exif_metadata
             && let Ok((exif_fields, _little_endian)) = exif_crate::parse_exif(exif_bytes)
         {
-            metadata.extend(crate::common::image::exif::from_exif_fields(&exif_fields));
+            metadata.extend(crate::exif::from_exif_fields(&exif_fields));
         }
 
         let icc_profile = info.icc_profile.clone().map(|c| c.into_owned());

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use pixors_image::common::image::BlendMode;
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::data::tile::{Tile, TileGridPos};
 use pixors_engine::error::Error;
@@ -11,6 +10,7 @@ use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
 };
+use pixors_image::image::BlendMode;
 
 static COMPOSE_INPUT: PortDeclaration = PortDeclaration {
     name: "layers",

@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
+use crate::tile_cache_sink::TileCacheSink;
+use pixors_color::processor::ColorConvert;
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::graph::path::Path;
-use pixors_color::operation::color::ColorConvert;
-use crate::tile_cache_sink::TileCacheSink;
 use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
-use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::PathBuilder;
-use crate::state::{EditorState, TabId};
+use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
+use crate::{EditorState, TabId};
 
 use crate::TILE_SIZE;
 
@@ -30,17 +30,16 @@ impl Action for RequestMipFetch {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        let mut pipe = PathBuilder::new()
-            .src(Arc::new(CacheReader {
-                cache_dir: self.cache_dir.clone(),
-                mip_level: self.mip,
-                tile_size: TILE_SIZE,
-                image_width: self.img_w,
-                image_height: self.img_h,
-                tile_range: Some(self.range.clone()),
-                pixel_format: PixelFormat::RgbaF16,
-                color_space: ColorSpace::ACES_CG,
-            }));
+        let mut pipe = PathBuilder::new().src(Arc::new(CacheReader {
+            cache_dir: self.cache_dir.clone(),
+            mip_level: self.mip,
+            tile_size: TILE_SIZE,
+            image_width: self.img_w,
+            image_height: self.img_h,
+            tile_range: Some(self.range.clone()),
+            pixel_format: PixelFormat::RgbaF16,
+            color_space: ColorSpace::ACES_CG,
+        }));
 
         if let Some(ref path) = self.post_process {
             pipe = pipe.attach(path);

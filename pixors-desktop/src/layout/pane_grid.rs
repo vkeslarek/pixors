@@ -1,6 +1,6 @@
-use iced::widget::{container, pane_grid, PaneGrid};
-use iced::{Background, Border, Color, Element, Length};
 use crate::theme::{ACCENT, BG_SURFACE, BORDER_SUBTLE};
+use iced::widget::{PaneGrid, container, pane_grid};
+use iced::{Background, Border, Color, Element, Length};
 
 pub struct PaneGridLayout<'a, T, Message> {
     panes: &'a pane_grid::State<T>,
@@ -24,18 +24,12 @@ pub fn pane_grid_layout<'a, T, Message>(
 }
 
 impl<'a, T, Message> PaneGridLayout<'a, T, Message> {
-    pub fn on_resize(
-        mut self,
-        on_resize: impl Fn(pane_grid::ResizeEvent) -> Message + 'a,
-    ) -> Self {
+    pub fn on_resize(mut self, on_resize: impl Fn(pane_grid::ResizeEvent) -> Message + 'a) -> Self {
         self.on_resize = Some(Box::new(on_resize));
         self
     }
 
-    pub fn on_drag(
-        mut self,
-        on_drag: impl Fn(pane_grid::DragEvent) -> Message + 'a,
-    ) -> Self {
+    pub fn on_drag(mut self, on_drag: impl Fn(pane_grid::DragEvent) -> Message + 'a) -> Self {
         self.on_drag = Some(Box::new(on_drag));
         self
     }
@@ -59,7 +53,9 @@ impl<'a, T, Message: 'a> From<PaneGridLayout<'a, T, Message>> for Element<'a, Me
             .spacing(0)
             .style(|_| pane_grid::Style {
                 hovered_region: pane_grid::Highlight {
-                    background: Background::Color(Color::from_rgba(ACCENT.r, ACCENT.g, ACCENT.b, 0.30)),
+                    background: Background::Color(Color::from_rgba(
+                        ACCENT.r, ACCENT.g, ACCENT.b, 0.30,
+                    )),
                     border: Border {
                         color: ACCENT,
                         width: 2.0,

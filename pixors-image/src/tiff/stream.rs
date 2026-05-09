@@ -5,10 +5,10 @@ use pixors_engine::data::scanline::ScanLine;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
 
-use ::tiff;
+use tiff;
 
-use crate::common::image::codec::PageStream;
-use crate::common::image::*;
+use crate::codec::PageStream;
+use crate::image::*;
 
 pub struct TiffPageStream {
     page_info: PageInfo,

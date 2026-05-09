@@ -245,7 +245,7 @@ impl TileToNeighborhoodProcessor {
                         let bpp = self.meta.unwrap().format.bytes_per_pixel() as u64;
                         let tile_px = gx * self.tile_size;
                         let tile_py = gy * self.tile_size;
-                        
+
                         let logical_px = logical_tx * self.tile_size as i32;
                         let logical_py = logical_ty * self.tile_size as i32;
 

@@ -1,5 +1,5 @@
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::state::{EditorState, TabId};
+use crate::{EditorState, TabId};
 
 #[derive(Debug)]
 pub struct BlurCancel {

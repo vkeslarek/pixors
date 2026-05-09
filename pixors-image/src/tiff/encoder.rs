@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
-use crate::common::image::codec::{
+use crate::codec::{
     EncoderConfig, EncoderDescriptor, ImageEncoder, TiffBitDepth, TiffLayout, TiffPredictor,
     TiffVariant,
 };
@@ -66,27 +66,19 @@ fn deflate_level(l: u8) -> tiff::encoder::DeflateLevel {
     }
 }
 
-fn tiff_compression(
-    c: &crate::common::image::codec::TiffCompression,
-) -> tiff::encoder::Compression {
+fn tiff_compression(c: &crate::codec::TiffCompression) -> tiff::encoder::Compression {
     match c {
-        crate::common::image::codec::TiffCompression::None => {
-            tiff::encoder::Compression::Uncompressed
-        }
-        crate::common::image::codec::TiffCompression::PackBits => {
-            tiff::encoder::Compression::Packbits
-        }
-        crate::common::image::codec::TiffCompression::Lzw { .. } => tiff::encoder::Compression::Lzw,
-        crate::common::image::codec::TiffCompression::Deflate { level, .. } => {
+        crate::codec::TiffCompression::None => tiff::encoder::Compression::Uncompressed,
+        crate::codec::TiffCompression::PackBits => tiff::encoder::Compression::Packbits,
+        crate::codec::TiffCompression::Lzw { .. } => tiff::encoder::Compression::Lzw,
+        crate::codec::TiffCompression::Deflate { level, .. } => {
             tiff::encoder::Compression::Deflate(deflate_level(*level))
         }
     }
 }
 
-fn tiff_predictor(
-    c: &crate::common::image::codec::TiffCompression,
-) -> Option<tiff::encoder::Predictor> {
-    use crate::common::image::codec::TiffCompression;
+fn tiff_predictor(c: &crate::codec::TiffCompression) -> Option<tiff::encoder::Predictor> {
+    use crate::codec::TiffCompression;
     let pred = match c {
         TiffCompression::Lzw { predictor } | TiffCompression::Deflate { predictor, .. } => {
             *predictor
@@ -104,7 +96,7 @@ fn encode_pixels<W: std::io::Write + std::io::Seek, K: tiff::encoder::TiffKind>(
     encoder: &mut tiff::encoder::TiffEncoder<W, K>,
     data: &[u8],
     desc: &EncoderDescriptor,
-    cfg: &crate::common::image::codec::TiffExportConfig,
+    cfg: &crate::codec::TiffExportConfig,
 ) -> Result<(), Error> {
     use pixors_engine::common::pixel::PixelFormat;
     use tiff::encoder::colortype;
@@ -176,7 +168,7 @@ fn encode<
     encoder: &mut tiff::encoder::TiffEncoder<W, K>,
     data: &[u8],
     desc: &EncoderDescriptor,
-    cfg: &crate::common::image::codec::TiffExportConfig,
+    cfg: &crate::codec::TiffExportConfig,
     extra: Option<&[tiff::tags::ExtraSamples]>,
 ) -> Result<(), Error>
 where
@@ -230,14 +222,14 @@ where
     }
 
     let orientation_val = match cfg.orientation {
-        crate::common::image::Orientation::Identity => 1u16,
-        crate::common::image::Orientation::FlipH => 2,
-        crate::common::image::Orientation::Rotate180 => 3,
-        crate::common::image::Orientation::FlipV => 4,
-        crate::common::image::Orientation::Transpose => 5,
-        crate::common::image::Orientation::Rotate90 => 6,
-        crate::common::image::Orientation::Transverse => 7,
-        crate::common::image::Orientation::Rotate270 => 8,
+        crate::image::Orientation::Identity => 1u16,
+        crate::image::Orientation::FlipH => 2,
+        crate::image::Orientation::Rotate180 => 3,
+        crate::image::Orientation::FlipV => 4,
+        crate::image::Orientation::Transpose => 5,
+        crate::image::Orientation::Rotate90 => 6,
+        crate::image::Orientation::Transverse => 7,
+        crate::image::Orientation::Rotate270 => 8,
     };
     image
         .encoder()
@@ -261,7 +253,7 @@ where
 
 fn write_meta_tags<W: std::io::Write + std::io::Seek, K: tiff::encoder::TiffKind>(
     dir: &mut tiff::encoder::DirectoryEncoder<W, K>,
-    tags: &crate::common::image::codec::TiffMetaTags,
+    tags: &crate::codec::TiffMetaTags,
 ) -> Result<(), Error> {
     use tiff::tags::Tag;
     macro_rules! opt {

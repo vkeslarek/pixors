@@ -1,5 +1,4 @@
 use crate::data::device::Device;
-use serde::{Deserialize, Serialize};
 
 use super::actors::{Consumer, Processor, Producer};
 use super::kinds::PortSpecification;

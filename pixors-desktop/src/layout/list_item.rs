@@ -1,6 +1,6 @@
+use crate::theme::{BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY};
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Background, Border, Element, Length, Padding};
-use crate::theme::{BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY};
 
 pub struct ListItem<'a, Message> {
     title: String,

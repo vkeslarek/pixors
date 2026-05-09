@@ -1,6 +1,6 @@
+use crate::theme::BORDER_SUBTLE;
 use iced::widget::container;
 use iced::{Background, Border, Element, Length};
-use crate::theme::BORDER_SUBTLE;
 
 pub struct Sidebar<'a, Message> {
     content: Element<'a, Message>,

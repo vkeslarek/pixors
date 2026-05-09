@@ -49,13 +49,13 @@ If your change would reverse an arrow, stop — you have a design problem.
 
 **New pixel format?** → See "How to add a new PixelFormat" in CLAUDE.md (10 steps across engine/color/shader/image).
 
-**New GPU operation (blur-like)?** → `pixors-ops/src/operation/`, shader in `pixors-shader/shaders/`.
+**New GPU operation (blur-like)?** → `pixors-ops/src/processor/`, shader in `pixors-shader/shaders/`.
 
-**New image codec?** → `pixors-image/src/common/image/`.
+**New image codec?** → `pixors-image/src/{png,tiff}/`.
 
 **New editor action (open, export, filter…)?** → `pixors-state/src/action/actions/`. Must implement `Action` trait. No Iced or wgpu imports.
 
-**New UI panel or widget?** → `pixors-desktop/src/components/` or `widgets/`. No `EditorState` mutation here — emit a `Msg::Action(…)` instead.
+**New UI panel or widget?** → `pixors-desktop/src/components/` or `panel/`. No `EditorState` mutation here — emit a `Msg::Action(…)` instead. See `UI.md` for component guidelines.
 
 **New MCP tool?** → `pixors-mcp/src/`, calls `Dispatcher::dispatch()` on `EditorState`.
 
@@ -71,7 +71,7 @@ If your change would reverse an arrow, stop — you have a design problem.
 
 ### Naming caveat
 
-Types in `pixors-state` have "viewport" in their names (`ViewportCache`, `ViewportCacheSource/Sink`, `ViewportState`). This is legacy naming — they are actually general tile-cache and tile-range types. They do NOT depend on any display library.
+Types in `pixors-state` have "viewport" in their names (`TileCache`, `TileCacheSource/Sink`, `ViewportState`). This is legacy naming — they are actually general tile-cache and tile-range types. They do NOT depend on any display library.
 
 ### Decision test
 
@@ -112,17 +112,17 @@ trait Action {
 ## Key files
 
 | File | Purpose |
-|---|---|
+|---|---|---|
 | `pixors-engine/src/stage/node.rs` | `Stage` trait, `StageHints` |
 | `pixors-engine/src/stage/actors.rs` | `Producer`, `Processor`, `Consumer` |
 | `pixors-engine/src/runtime/pipeline.rs` | `Pipeline::compile()`, device assignment, transfer insertion |
 | `pixors-engine/src/gpu/scheduler.rs` | GPU API for processors |
-| `pixors-state/src/state/editor.rs` | `EditorState` |
-| `pixors-state/src/state/tab.rs` | `Tab` |
-| `pixors-state/src/state/viewport_cache.rs` | `ViewportCache` (two-tier tile buffer) |
+| `pixors-state/src/editor.rs` | `EditorState` |
+| `pixors-state/src/tab.rs` | `Tab` |
+| `pixors-state/src/viewport/tile_cache.rs` | `TileCache` (two-tier tile buffer) |
 | `pixors-state/src/action/mod.rs` | `Action` trait, `PreparedAction` |
-| `pixors-state/src/action/dispatcher.rs` | `Dispatcher` |
-| `pixors-state/src/path_builder.rs` | `PathBuilder` — builds `ExecGraph` |
+| `pixors-state/src/action/actions/` | Concrete actions: `OpenFile`, `Export`, `BlurPreview`, … |
+| `pixors-engine/src/graph/path_builder.rs` | `PathBuilder` — builds `ExecGraph` |
 | `pixors-desktop/src/app.rs` | `App` struct (Iced) |
 | `pixors-desktop/src/controller.rs` | `App::update()` — message routing |
 | `pixors-desktop/src/viewport/tiled_texture.rs` | GPU texture atlas |

@@ -1,8 +1,8 @@
-use iced::widget::{column, container, row, text};
+use iced::widget::{column, row, text};
 use iced::{Element, Length};
 
-use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TEXT_SECONDARY};
 use crate::layout::panel;
+use crate::theme::TEXT_SECONDARY;
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -36,7 +36,9 @@ pub fn view<'a>(blur_radius: f32) -> Element<'a, Msg> {
     let body = body_view(blur_radius);
     panel("Filters", body)
         .header_controls(
-            crate::components::icon_button::icon_button(crate::icons::X).size(12).on_press(Msg::Close)
+            crate::components::icon_button::icon_button(crate::icons::X)
+                .size(12)
+                .on_press(Msg::Close),
         )
         .into()
 }

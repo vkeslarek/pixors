@@ -1,5 +1,5 @@
-use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TOOLBAR_W};
 use crate::layout::sidebar;
+use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TOOLBAR_W};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Element, Length};
 
@@ -88,7 +88,7 @@ fn tool_btn(t: Tool, active: bool) -> Element<'static, Msg> {
     crate::components::tooltip::tooltip(
         iced::widget::container(iced::widget::mouse_area(btn)).width(Length::Shrink),
         t.label(),
-        iced::widget::tooltip::Position::Right
+        iced::widget::tooltip::Position::Right,
     )
 }
 

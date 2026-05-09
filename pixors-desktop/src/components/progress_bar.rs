@@ -1,6 +1,6 @@
-use iced::widget::{container, row, Space};
-use iced::{Background, Color, Element, Length};
 use crate::theme::{BG_BASE, OK_GREEN};
+use iced::widget::{Space, container, row};
+use iced::{Background, Color, Element, Length};
 
 pub struct ProgressBar<'a, Message> {
     progress: f32,

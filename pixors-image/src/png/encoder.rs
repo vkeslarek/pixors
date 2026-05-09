@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
-use crate::common::image::codec::{
+use crate::codec::{
     EncoderConfig, EncoderDescriptor, ImageEncoder, PngBitDepth, PngColorType, PngCompression,
     PngFilter, PngTextEncoding,
 };
@@ -38,7 +38,7 @@ fn write_png(
     path: &Path,
     data: &[u8],
     desc: &EncoderDescriptor,
-    cfg: &crate::common::image::codec::PngExportConfig,
+    cfg: &crate::codec::PngExportConfig,
 ) -> Result<(), Error> {
     let file = File::create(path).map_err(Error::Io)?;
     let w = BufWriter::new(file);
@@ -110,17 +110,15 @@ fn write_png(
                 .map_err(|e| Error::Png(e.to_string()))?;
             encoder
                 .set_dispose_op(match frame.dispose_op {
-                    crate::common::image::codec::PngDisposeOp::None => png::DisposeOp::None,
-                    crate::common::image::codec::PngDisposeOp::Background => {
-                        png::DisposeOp::Background
-                    }
-                    crate::common::image::codec::PngDisposeOp::Previous => png::DisposeOp::Previous,
+                    crate::codec::PngDisposeOp::None => png::DisposeOp::None,
+                    crate::codec::PngDisposeOp::Background => png::DisposeOp::Background,
+                    crate::codec::PngDisposeOp::Previous => png::DisposeOp::Previous,
                 })
                 .map_err(|e| Error::Png(e.to_string()))?;
             encoder
                 .set_blend_op(match frame.blend_op {
-                    crate::common::image::codec::PngBlendOp::Source => png::BlendOp::Source,
-                    crate::common::image::codec::PngBlendOp::Over => png::BlendOp::Over,
+                    crate::codec::PngBlendOp::Source => png::BlendOp::Source,
+                    crate::codec::PngBlendOp::Over => png::BlendOp::Over,
                 })
                 .map_err(|e| Error::Png(e.to_string()))?;
         }
@@ -189,18 +187,14 @@ fn png_filter(f: PngFilter) -> png::Filter {
     }
 }
 
-fn png_srgb_intent(i: crate::common::image::codec::PngSrgbIntent) -> png::SrgbRenderingIntent {
+fn png_srgb_intent(i: crate::codec::PngSrgbIntent) -> png::SrgbRenderingIntent {
     match i {
-        crate::common::image::codec::PngSrgbIntent::Perceptual => {
-            png::SrgbRenderingIntent::Perceptual
-        }
-        crate::common::image::codec::PngSrgbIntent::RelativeColorimetric => {
+        crate::codec::PngSrgbIntent::Perceptual => png::SrgbRenderingIntent::Perceptual,
+        crate::codec::PngSrgbIntent::RelativeColorimetric => {
             png::SrgbRenderingIntent::RelativeColorimetric
         }
-        crate::common::image::codec::PngSrgbIntent::Saturation => {
-            png::SrgbRenderingIntent::Saturation
-        }
-        crate::common::image::codec::PngSrgbIntent::AbsoluteColorimetric => {
+        crate::codec::PngSrgbIntent::Saturation => png::SrgbRenderingIntent::Saturation,
+        crate::codec::PngSrgbIntent::AbsoluteColorimetric => {
             png::SrgbRenderingIntent::AbsoluteColorimetric
         }
     }

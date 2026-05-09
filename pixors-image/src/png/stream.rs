@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use ::png;
+use png;
 
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::PixelFormat;
@@ -11,8 +11,8 @@ use pixors_engine::data::scanline::ScanLine;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
 
-use crate::common::image::codec::PageStream;
-use crate::common::image::*;
+use crate::codec::PageStream;
+use crate::image::*;
 
 pub struct PngPageStream {
     reader: png::Reader<BufReader<File>>,

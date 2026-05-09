@@ -390,9 +390,7 @@ fn assign_devices(g: &Graph, gpu_ok: bool) -> HashMap<StageId, Device> {
                  remaining Either nodes will default to GPU"
             );
             for id in g.node_indices() {
-                if !devs.contains_key(&id) {
-                    devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu });
-                }
+                devs.entry(id).or_insert_with(|| if gpu_ok { Device::Gpu } else { Device::Cpu });
             }
             break;
         }

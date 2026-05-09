@@ -1,4 +1,4 @@
-use pixors_state::state::TabId;
+use pixors_state::TabId;
 use std::sync::Arc;
 
 use iced::keyboard::{self, Key};
@@ -7,9 +7,9 @@ use pixors_engine::runtime::event::PipelineEvent;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::app::{App, Msg, PaneKind};
+use crate::page::editor::tab_bar;
 use crate::page::editor::toolbar::Tool;
 use crate::page::menu_bar;
-use crate::page::editor::tab_bar;
 use crate::panel::{filter as filters_panel, layers as layers_panel};
 
 impl App {
@@ -313,18 +313,16 @@ impl App {
         match m {
             layers_panel::Msg::Close => self.toggle_pane(PaneKind::Layers),
             layers_panel::Msg::Select(i) => {
-                if let Some(tab) = self.state.active_tab_mut() {
-                    if let Some(layer) = tab.layers.get(i) {
+                if let Some(tab) = self.state.active_tab_mut()
+                    && let Some(layer) = tab.layers.get(i) {
                         tab.active_layer = Some(layer.id);
                     }
-                }
             }
             layers_panel::Msg::ToggleVisibility(i) => {
-                if let Some(tab) = self.state.active_tab_mut() {
-                    if let Some(layer) = tab.layers.get_mut(i) {
+                if let Some(tab) = self.state.active_tab_mut()
+                    && let Some(layer) = tab.layers.get_mut(i) {
                         layer.visible = !layer.visible;
                     }
-                }
             }
         }
     }
@@ -333,13 +331,12 @@ impl App {
         match m {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             filters_panel::Msg::SetBlur(v) => {
-                if let Some(tab) = self.state.active_tab_mut() {
-                    if tab.filter.blur_radius != v {
+                if let Some(tab) = self.state.active_tab_mut()
+                    && tab.filter.blur_radius != v {
                         tab.filter.blur_radius = v;
                         drop(tab);
                         self.dispatch_blur_preview(v as u32);
                     }
-                }
             }
             filters_panel::Msg::CancelPreview => {
                 self.dispatch_blur_cancel();

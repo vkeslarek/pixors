@@ -5,9 +5,9 @@ pub mod pane_grid;
 pub mod panel;
 pub mod sidebar;
 
-pub use dialog::{dialog, Dialog};
+pub use dialog::{Dialog, dialog};
 pub use ghost_width::GhostWidth;
-pub use list_item::{list_item, ListItem};
-pub use pane_grid::{pane_grid_layout, PaneGridLayout};
-pub use panel::{panel, title_bar as pane_title_bar, Panel};
-pub use sidebar::{sidebar, Sidebar};
+pub use list_item::{ListItem, list_item};
+pub use pane_grid::{PaneGridLayout, pane_grid_layout};
+pub use panel::{Panel, panel, title_bar as pane_title_bar};
+pub use sidebar::{Sidebar, sidebar};

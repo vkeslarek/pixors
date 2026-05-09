@@ -1,6 +1,6 @@
-use iced::widget::pick_list;
-use iced::{Background, Border, Color, Element};
 use crate::theme::{BG_BASE, BG_ELEVATED, BG_HOVER, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY};
+use iced::widget::pick_list;
+use iced::{Background, Border, Element};
 
 pub fn dropdown<'a, T, Message, L, V>(
     options: L,

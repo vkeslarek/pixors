@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
-use pixors_ops::source::cache_reader::TileRange;
 use pixors_engine::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, ProcessorContext, Producer, Stage,
 };
+use pixors_ops::source::cache_reader::TileRange;
 
 pub type TileReadFn = Box<dyn Fn(u64, u64, u32, Option<TileRange>) -> Vec<Item> + Send + Sync>;
 //                               key, gen,  mip, range
@@ -64,10 +64,7 @@ impl Stage for TileCacheSource {
     }
 
     fn producer(&self) -> Option<Box<dyn Producer>> {
-        let cb = TILE_READERS
-            .read()
-            .get(&self.routing_key)
-            .cloned()?;
+        let cb = TILE_READERS.read().get(&self.routing_key).cloned()?;
         Some(Box::new(TileCacheSourceProducer {
             cb,
             routing_key: self.routing_key,

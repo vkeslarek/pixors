@@ -14,14 +14,15 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use ::exif as exif_crate;
-use ::tiff;
+use exif as exif_crate;
+use tiff;
 
 use pixors_engine::common::pixel::AlphaPolicy;
 use pixors_engine::error::Error;
 
-use crate::common::image::codec::{ImageDecoder, PageStream};
-use crate::common::image::*;
+use crate::codec::{ImageDecoder, PageStream};
+use crate::exif::Metadata;
+use crate::image::*;
 
 pub struct TiffDecoder;
 
@@ -112,7 +113,7 @@ impl ImageDecoder for TiffDecoder {
         if let Some(exif_bytes) = read_exif_blob(&mut decoder)
             && let Ok((exif_fields, _le)) = exif_crate::parse_exif(&exif_bytes)
         {
-            metadata.extend(crate::common::image::exif::from_exif_fields(&exif_fields));
+            metadata.extend(crate::exif::from_exif_fields(&exif_fields));
         }
 
         let first_orientation = read_orientation(&mut decoder);

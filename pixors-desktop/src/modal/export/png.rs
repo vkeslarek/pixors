@@ -1,7 +1,7 @@
 use iced::Element;
 use iced::widget::Column;
 
-use pixors_image::common::image::codec::PngCompression;
+use pixors_image::codec::PngCompression;
 
 use super::components::*;
 use super::presets::*;

@@ -40,9 +40,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
                 container(text(format!("Loading… {pct}%")))
                     .padding([2, 8])
                     .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(
-                            0.0, 0.0, 0.0, 0.7,
-                        ))),
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
                         ..Default::default()
                     }),
             )
@@ -77,21 +75,18 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
         .into()
     };
 
-    let grid: Element<'_, Msg> = crate::layout::pane_grid_layout::<PaneKind, Msg>(&app.panes, |pane, kind, _| pane_content(
-        app, pane, *kind
-    ))
-    .on_resize(|e| Msg::PaneResized(e))
-    .on_drag(|e| Msg::PaneDragged(e))
-    .width(crate::theme::SIDEBAR_W)
-    .into();
+    let grid: Element<'_, Msg> =
+        crate::layout::pane_grid_layout::<PaneKind, Msg>(&app.panes, |pane, kind, _| {
+            pane_content(app, pane, *kind)
+        })
+        .on_resize(Msg::PaneResized)
+        .on_drag(Msg::PaneDragged)
+        .width(crate::theme::SIDEBAR_W)
+        .into();
 
-    row![
-        app.tools.view().map(Msg::Toolbar),
-        canvas,
-        grid,
-    ]
-    .height(Length::Fill)
-    .into()
+    row![app.tools.view().map(Msg::Toolbar), canvas, grid,]
+        .height(Length::Fill)
+        .into()
 }
 
 fn pane_content<'a>(
@@ -101,19 +96,29 @@ fn pane_content<'a>(
 ) -> pane_grid::Content<'a, Msg> {
     let body: Element<Msg> = match kind {
         PaneKind::Layers => {
-            let idx = app.state.active_tab()
+            let idx = app
+                .state
+                .active_tab()
                 .and_then(|t| t.active_layer)
                 .and_then(|active_id| {
-                    app.state.active_tab()?.layers.iter().position(|l| l.id == active_id)
+                    app.state
+                        .active_tab()?
+                        .layers
+                        .iter()
+                        .position(|l| l.id == active_id)
                 })
                 .unwrap_or(0);
-            let layers = app.state.active_tab()
+            let layers = app
+                .state
+                .active_tab()
                 .map(|t| t.layers.as_slice())
                 .unwrap_or(&[]);
             crate::panel::layers::view(layers, idx).map(Msg::LayersPanel)
         }
         PaneKind::Filters => {
-            let radius = app.state.active_tab()
+            let radius = app
+                .state
+                .active_tab()
                 .map(|t| t.filter.blur_radius)
                 .unwrap_or(3.0);
             crate::panel::filter::body_view(radius).map(Msg::FiltersPanel)

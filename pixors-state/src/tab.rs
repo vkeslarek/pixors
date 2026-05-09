@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
-use pixors_image::common::image::ImageDescriptor;
+use pixors_image::image::ImageDescriptor;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::viewport::state::ViewportState;

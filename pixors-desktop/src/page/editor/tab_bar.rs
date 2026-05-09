@@ -2,10 +2,10 @@ use iced::border::Radius;
 use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use pixors_state::state::{EditorState, TabId};
 use crate::theme::{
     ACCENT, BG_BASE, BORDER_SUBTLE, TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
+use pixors_state::{EditorState, TabId};
 
 #[derive(Debug, Clone)]
 pub enum Msg {

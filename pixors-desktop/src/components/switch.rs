@@ -1,6 +1,6 @@
+use crate::theme::TEXT_MUTED;
 use iced::widget::{column, container, text, toggler as iced_toggler};
 use iced::{Element, Padding};
-use crate::theme::TEXT_MUTED;
 
 pub struct Switch<'a, Message> {
     label: String,
@@ -42,8 +42,12 @@ impl<'a, Message: Clone + 'a> From<Switch<'a, Message>> for Element<'a, Message>
         if let Some(desc) = s.description {
             column![
                 t,
-                container(text(desc).size(11).color(TEXT_MUTED))
-                    .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 42.0 }) // Align with label text
+                container(text(desc).size(11).color(TEXT_MUTED)).padding(Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                    left: 42.0
+                }) // Align with label text
             ]
             .spacing(4)
             .into()

@@ -93,8 +93,8 @@ impl Processor for ViewportSinkProcessor {
         }
 
         let padded = ((tw * 4).div_ceil(256)) * 256;
-        let ctx =
-            pixors_engine::gpu::context::try_init().ok_or_else(|| Error::internal("GPU unavailable"))?;
+        let ctx = pixors_engine::gpu::context::try_init()
+            .ok_or_else(|| Error::internal("GPU unavailable"))?;
         let mut enc = ctx
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

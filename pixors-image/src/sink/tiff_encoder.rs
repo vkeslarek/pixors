@@ -4,15 +4,15 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::common::image::Dpi;
-use crate::common::image::codec::{
-    EncoderConfig, EncoderDescriptor, ImageEncoder, TiffExportConfig,
-};
+use crate::codec::{EncoderConfig, EncoderDescriptor, ImageEncoder, TiffExportConfig};
+use crate::image::Dpi;
 use pixors_engine::common::pixel::meta::PixelMeta;
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
+use pixors_engine::stage::{
+    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
+};
 
 static TE_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
@@ -145,7 +145,7 @@ impl Consumer for TiffEncoderConsumer {
             metadata: Vec::new(),
         };
 
-        let encoder = crate::common::image::tiff::TiffEncoder;
+        let encoder = crate::tiff::TiffEncoder;
         encoder.encode(
             &self.path,
             &buffer,

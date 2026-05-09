@@ -1,7 +1,7 @@
+use crate::icons::LUCIDE;
+use crate::theme::{ACCENT, ACCENT_DIM, ACCENT_GLOW, BG_HOVER, TEXT_MUTED, TEXT_PRIMARY};
 use iced::widget::{button as iced_button, container, text};
 use iced::{Background, Border, Color, Element, Length};
-use crate::theme::{ACCENT, ACCENT_DIM, ACCENT_GLOW, BG_HOVER, TEXT_MUTED, TEXT_PRIMARY};
-use crate::icons::LUCIDE;
 
 pub struct IconButton<'a, Message> {
     icon: String,
@@ -60,7 +60,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<'a, Message>> for Element<'a, Mess
                 .font(LUCIDE)
                 .size(b.size as f32)
                 .color(icon_color)
-                .center()
+                .center(),
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -73,7 +73,7 @@ impl<'a, Message: Clone + 'a> From<IconButton<'a, Message>> for Element<'a, Mess
             .height(b.height)
             .style(move |_, status| {
                 let hovered = matches!(status, iced::widget::button::Status::Hovered);
-                
+
                 let bg = if b.is_active {
                     Some(ACCENT_DIM)
                 } else if hovered {

@@ -1,6 +1,6 @@
+use crate::theme::{BG_BASE, BG_ELEVATED, BORDER, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY};
 use iced::widget::text_input;
 use iced::{Background, Border, Color, Element};
-use crate::theme::{BG_BASE, BG_ELEVATED, BORDER, BORDER_SUBTLE, TEXT_PRIMARY, TEXT_MUTED};
 
 pub fn custom_input<'a, Message: Clone + 'a>(
     placeholder: &str,

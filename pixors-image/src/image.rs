@@ -7,13 +7,10 @@ use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::AlphaPolicy;
 use pixors_engine::error::Error;
 
-pub mod codec;
-pub mod exif;
-pub mod png;
-pub mod tiff;
-
-pub use exif::Metadata;
-use codec::{ImageDecoder, PageStream};
+use crate::codec::{ImageDecoder, PageStream};
+use crate::exif::Metadata;
+use crate::png;
+use crate::tiff;
 
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
@@ -121,7 +118,11 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn new(desc: ImageDescriptor, decoder: Arc<dyn ImageDecoder>, path: std::path::PathBuf) -> Self {
+    pub fn new(
+        desc: ImageDescriptor,
+        decoder: Arc<dyn ImageDecoder>,
+        path: std::path::PathBuf,
+    ) -> Self {
         Self {
             desc,
             decoder,

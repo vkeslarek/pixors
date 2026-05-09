@@ -2,9 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use iced::widget::shader;
 
+use crate::viewport::tiled_texture::TiledTexture;
 use pixors_state::viewport::camera::CameraUniform;
 use pixors_state::viewport::tile_cache::TileCache;
-use crate::viewport::tiled_texture::TiledTexture;
 
 pub struct ViewportPipeline {
     pipeline: iced::wgpu::RenderPipeline,

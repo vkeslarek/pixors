@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage};
+use pixors_engine::stage::{
+    Consumer, DataKind, PortDeclaration, PortGroup, PortSpecification, Stage,
+};
 
 static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",

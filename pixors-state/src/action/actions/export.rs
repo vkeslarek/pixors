@@ -1,16 +1,16 @@
 use std::sync::{Arc, Mutex};
 
+use pixors_color::processor::ColorConvert;
 use pixors_engine::common::color::space::ColorSpace;
-use pixors_image::common::image::open_image;
-use pixors_image::common::image::codec::EncoderConfig;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::data_transform::to_tile::ScanLineToTile;
-use pixors_color::operation::color::ColorConvert;
+use pixors_image::codec::EncoderConfig;
+use pixors_image::image::open_image;
 use pixors_image::source::image_stream::ImageStreamSource;
 
-use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::PathBuilder;
-use crate::state::{EditorState, TabId};
+use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
+use crate::{EditorState, TabId};
 
 use crate::TILE_SIZE;
 
@@ -20,7 +20,7 @@ pub struct Export {
     pub source_path: std::path::PathBuf,
     pub save_path: std::path::PathBuf,
     pub config: EncoderConfig,
-    pub dpi: Option<pixors_image::common::image::Dpi>,
+    pub dpi: Option<pixors_image::image::Dpi>,
     pub icc_profile: Option<Vec<u8>>,
     pub image_height: u32,
 }
@@ -39,24 +39,25 @@ impl Action for Export {
             img.open_page(0).map_err(|e| e.to_string())?,
         )));
 
-        let encoder_sink: std::sync::Arc<dyn pixors_engine::stage::Stage + Send + Sync> = match &self.config {
-            EncoderConfig::Png(png_cfg) => {
-                Arc::new(pixors_image::sink::png_encoder_v2::PngEncoderV2 {
-                    path: self.save_path.clone(),
-                    config: png_cfg.clone(),
-                    dpi: self.dpi,
-                    icc_profile: self.icc_profile.clone(),
-                })
-            }
-            EncoderConfig::Tiff(tiff_cfg) => {
-                Arc::new(pixors_image::sink::tiff_encoder::TiffEncoderStage {
-                    path: self.save_path.clone(),
-                    config: tiff_cfg.clone(),
-                    dpi: self.dpi,
-                    icc_profile: self.icc_profile.clone(),
-                })
-            }
-        };
+        let encoder_sink: std::sync::Arc<dyn pixors_engine::stage::Stage + Send + Sync> =
+            match &self.config {
+                EncoderConfig::Png(png_cfg) => {
+                    Arc::new(pixors_image::sink::png_encoder_v2::PngEncoderV2 {
+                        path: self.save_path.clone(),
+                        config: png_cfg.clone(),
+                        dpi: self.dpi,
+                        icc_profile: self.icc_profile.clone(),
+                    })
+                }
+                EncoderConfig::Tiff(tiff_cfg) => {
+                    Arc::new(pixors_image::sink::tiff_encoder::TiffEncoderStage {
+                        path: self.save_path.clone(),
+                        config: tiff_cfg.clone(),
+                        dpi: self.dpi,
+                        icc_profile: self.icc_profile.clone(),
+                    })
+                }
+            };
 
         let graph = PathBuilder::new()
             .src(Arc::new(ImageStreamSource {

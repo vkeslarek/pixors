@@ -5,11 +5,11 @@ use iced::{Background, Color, Element, Length};
 
 use pixors_ops::source::cache_reader::TileRange;
 
-use pixors_state::state::TabId;
+use crate::components::pill::pill;
 use crate::viewport::program::ViewportProgram;
+use pixors_state::TabId;
 use pixors_state::viewport::state::ViewportState;
 use pixors_state::viewport::tile_cache::TileCache;
-use crate::components::pill::pill;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,

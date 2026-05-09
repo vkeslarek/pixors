@@ -7,13 +7,13 @@ use iced::{Background, Color, Element, Length, Subscription};
 use pixors_engine::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 
-use pixors_state::action::{Action, Dispatcher};
 use crate::page::{
-    menu_bar, status_bar, workspace_bar,
     editor::{tab_bar, toolbar},
+    menu_bar, status_bar, workspace_bar,
 };
 use crate::panel::{filter as filters_panel, layers as layers_panel};
-use pixors_state::state::EditorState;
+use pixors_state::EditorState;
+use pixors_state::action::{Action, Dispatcher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -102,8 +102,8 @@ impl Default for App {
 impl App {
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
         self.state.active_tab().and_then(|t| match &t.source {
-            pixors_state::state::TabSource::File { path } => Some(path.as_path()),
-            pixors_state::state::TabSource::NewBlank { .. } => None,
+            pixors_state::TabSource::File { path } => Some(path.as_path()),
+            pixors_state::TabSource::NewBlank { .. } => None,
         })
     }
 

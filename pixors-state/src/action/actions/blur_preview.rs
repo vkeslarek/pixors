@@ -1,5 +1,10 @@
 use std::sync::{Arc, Mutex};
 
+use crate::tile_cache_sink::TileCacheSink;
+use crate::tile_cache_source::{
+    TileCacheSource, install_tile_cache_reader, is_tile_cache_reader_installed,
+};
+use pixors_color::processor::ColorConvert;
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::meta::PixelMeta;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
@@ -8,17 +13,12 @@ use pixors_engine::data::tile::Tile;
 use pixors_engine::data::tile::TileCoord;
 use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
 use pixors_engine::graph::item::Item;
-use pixors_ops::operation::blur::Blur;
-use pixors_color::operation::color::ColorConvert;
-use crate::tile_cache_sink::TileCacheSink;
-use crate::tile_cache_source::{
-    TileCacheSource, install_tile_cache_reader, is_tile_cache_reader_installed,
-};
+use pixors_ops::processor::blur::Blur;
 
-use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::PathBuilder;
-use crate::state::{EditorState, TabId};
+use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::viewport::tile_cache::TileCache;
+use crate::{EditorState, TabId};
 
 use crate::TILE_SIZE;
 
@@ -118,10 +118,10 @@ impl Action for BlurPreview {
     }
 
     fn apply(&self, _state: &mut EditorState, status: PipelineStatus) {
-        if matches!(status, PipelineStatus::Cancelled | PipelineStatus::Error(_)) {
-            if let Ok(mut guard) = self.cache.lock() {
-                guard.clear_generation(self.generation);
-            }
+        if matches!(status, PipelineStatus::Cancelled | PipelineStatus::Error(_))
+            && let Ok(mut guard) = self.cache.lock()
+        {
+            guard.clear_generation(self.generation);
         }
     }
 

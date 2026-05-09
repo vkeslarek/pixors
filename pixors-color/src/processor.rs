@@ -133,7 +133,7 @@ impl Processor for ColorConvertProcessor {
             Buffer::Cpu(v) => v.as_slice(),
             Buffer::Gpu(_) => return Err(Error::internal("ColorConvert requires CPU tile")),
         };
-        let conv = crate::common::color::conversion::ColorConversion::new(src_cs, dst_cs)?;
+        let conv = crate::conversion::ColorConversion::new(src_cs, dst_cs)?;
         let dst_bytes = conv.convert_bytes(src, src_fmt, dst_fmt, src_alpha, dst_alpha)?;
 
         tile.meta.format = dst_fmt;
@@ -525,7 +525,7 @@ fn gpu_dispatch(
     let bpp = bytes_per_pixel(dst_fmt).ok_or_else(|| Error::internal("unknown dst fmt"))?;
     let out_size = cw as u64 * ch as u64 * bpp;
 
-    let conv = crate::common::color::conversion::ColorConversion::new(src_cs, dst_cs)?;
+    let conv = crate::conversion::ColorConversion::new(src_cs, dst_cs)?;
     let mat = conv.matrix();
 
     let params = ColorConvertParams {
@@ -616,7 +616,7 @@ fn gpu_dispatch_inplace(
         }
     };
 
-    let conv = crate::common::color::conversion::ColorConversion::new(src_cs, dst_cs)?;
+    let conv = crate::conversion::ColorConversion::new(src_cs, dst_cs)?;
     let mat = conv.matrix();
 
     let params = ColorConvertParams {

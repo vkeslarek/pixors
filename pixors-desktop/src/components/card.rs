@@ -1,6 +1,6 @@
+use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
 use iced::widget::{column, container, text};
 use iced::{Background, Border, Element, Length, Padding};
-use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
 
 pub struct Card<'a, Message> {
     title: Option<String>,
@@ -37,15 +37,11 @@ impl<'a, Message: 'a> From<Card<'a, Message>> for Element<'a, Message> {
                             radius: Default::default(),
                         },
                         ..Default::default()
-                    })
+                    }),
             );
         }
 
-        col = col.push(
-            container(c.content)
-                .padding(16)
-                .width(Length::Fill)
-        );
+        col = col.push(container(c.content).padding(16).width(Length::Fill));
 
         container(col)
             .style(|_| container::Style {

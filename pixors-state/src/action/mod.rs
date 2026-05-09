@@ -11,7 +11,7 @@ use pixors_engine::runtime::event::PipelineEvent;
 use pixors_engine::runtime::pipeline::{Pipeline, PipelineHandle};
 use tokio::sync::broadcast;
 
-use crate::state::{EditorState, TabId};
+use crate::{EditorState, TabId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineMode {
@@ -126,8 +126,9 @@ impl Dispatcher {
 
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-                let pipeline = Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone(), tag)
-                    .map_err(|e| e.to_string())?;
+                let pipeline =
+                    Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone(), tag)
+                        .map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
                 thread::spawn(move || {
@@ -160,7 +161,9 @@ impl Dispatcher {
     }
 
     pub fn on_pipeline_done(&mut self, state: &mut EditorState, tab_id: TabId) {
-        if let Some(action) = self.active_apply_actions.remove(&tab_id)
+        if let Some(action) = self
+            .active_apply_actions
+            .remove(&tab_id)
             .or_else(|| self.background_actions.remove(&tab_id))
         {
             action.apply(state, PipelineStatus::Done);
@@ -171,7 +174,9 @@ impl Dispatcher {
     }
 
     pub fn on_pipeline_error(&mut self, state: &mut EditorState, tab_id: TabId, error: String) {
-        if let Some(action) = self.active_apply_actions.remove(&tab_id)
+        if let Some(action) = self
+            .active_apply_actions
+            .remove(&tab_id)
             .or_else(|| self.background_actions.remove(&tab_id))
         {
             action.apply(state, PipelineStatus::Error(error));
@@ -205,9 +210,7 @@ impl Dispatcher {
     pub fn resync_locks(&mut self, state: &mut EditorState) {
         self.background_tasks.retain(|tab_id, handle| {
             let still_running = handle.is_running();
-            if !still_running
-                && let Some(tab) = state.tab_mut(*tab_id)
-            {
+            if !still_running && let Some(tab) = state.tab_mut(*tab_id) {
                 tab.view.loading = false;
                 tab.view.progress = 1.0;
             }

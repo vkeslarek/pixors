@@ -1,9 +1,8 @@
-use iced::widget::{Column, button, container, row, scrollable, text};
+use iced::widget::{Column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Padding};
 
 use crate::theme::{
-    ACCENT, BG_ELEVATED, BG_HOVER, BORDER, BORDER_SUBTLE, DANGER, TEXT_MUTED, TEXT_PRIMARY,
-    TEXT_SECONDARY,
+    BG_ELEVATED, BORDER, BORDER_SUBTLE, DANGER, TEXT_PRIMARY,
 };
 
 use super::components::*;
@@ -30,9 +29,11 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
     let header = row![
         text("Export Image").size(16).color(TEXT_PRIMARY),
         iced::widget::Space::new().width(Length::Fill),
-        Element::from(crate::components::icon_button(crate::icons::X)
-            .size(14)
-            .on_press(Msg::Cancel)),
+        Element::from(
+            crate::components::icon_button(crate::icons::X)
+                .size(14)
+                .on_press(Msg::Cancel)
+        ),
     ]
     .align_y(Alignment::Center);
 
@@ -74,8 +75,8 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
         .variant(crate::components::ButtonVariant::Secondary)
         .on_press(Msg::Cancel);
 
-    let mut export_btn = crate::components::button("Export")
-        .variant(crate::components::ButtonVariant::Primary);
+    let mut export_btn =
+        crate::components::button("Export").variant(crate::components::ButtonVariant::Primary);
 
     if dialog.error.is_none() {
         export_btn = export_btn.on_press(Msg::Export);

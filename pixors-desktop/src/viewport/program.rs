@@ -5,9 +5,9 @@ use iced::widget::shader;
 use iced::{Event, Rectangle};
 use pixors_ops::source::cache_reader::TileRange;
 
-use pixors_state::state::TabId;
-use pixors_state::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
+use pixors_state::TabId;
+use pixors_state::viewport::camera::Camera;
 use pixors_state::viewport::state::ViewportState;
 use pixors_state::viewport::tile_cache::TileCache;
 
@@ -205,7 +205,10 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                         mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
                     };
                     let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
-                    let pos = cursor.position_in(bounds).map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+                    let pos = cursor
+                        .position_in(bounds)
+                        .map(|p| (p.x, p.y))
+                        .unwrap_or((0.0, 0.0));
                     state.camera.zoom_at(factor, pos.0, pos.1);
                     Some(shader::Action::request_redraw().and_capture())
                 } else {

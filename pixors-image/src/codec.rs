@@ -1,5 +1,5 @@
+use crate::image::{Dpi, ImageDescriptor, Orientation, PageInfo};
 use pixors_engine::common::color::space::ColorSpace;
-use super::{Dpi, ImageDescriptor, Orientation, PageInfo};
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
@@ -38,7 +38,7 @@ pub struct EncoderDescriptor {
     pub alpha_policy: AlphaPolicy,
     pub dpi: Option<Dpi>,
     pub icc_profile: Option<Vec<u8>>,
-    pub metadata: Vec<super::exif::Metadata>,
+    pub metadata: Vec<crate::exif::Metadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

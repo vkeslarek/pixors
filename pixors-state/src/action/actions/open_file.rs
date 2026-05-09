@@ -1,22 +1,22 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use pixors_image::common::image::open_image;
+use crate::tile_cache_sink::{TileCacheSink, register_tile_cache};
+use pixors_color::processor::ColorConvert;
 use pixors_engine::common::pixel::AlphaPolicy;
 use pixors_engine::data::tile::TileGridPos;
 use pixors_engine::data_transform::to_tile::ScanLineToTile;
-use pixors_color::operation::color::ColorConvert;
-use pixors_ops::operation::mip_downsample::MipDownsample;
+use pixors_image::image::open_image;
 use pixors_image::sink::cache_writer::CacheWriter;
-use crate::tile_cache_sink::{TileCacheSink, register_tile_cache};
 use pixors_image::source::image_stream::ImageStreamSource;
+use pixors_ops::processor::mip_downsample::MipDownsample;
 
-use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::PathBuilder;
-use crate::state::tab::{BlendMode, FilterState, Layer, LayerSource};
-use crate::state::{EditorState, Tab, TabId, TabSource, TabView};
+use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
+use crate::tab::{BlendMode, FilterState, Layer, LayerSource};
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::{CachedTile, TileCache};
+use crate::{EditorState, Tab, TabId, TabSource, TabView};
 
 use crate::TILE_SIZE;
 
@@ -156,7 +156,9 @@ impl Action for OpenFile {
             if page == 0 {
                 active_layer = Some(layer_id);
             }
-            let name = desc.pages.get(page)
+            let name = desc
+                .pages
+                .get(page)
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| format!("Page {}", page + 1));
             layers.push(Layer {

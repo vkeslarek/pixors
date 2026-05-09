@@ -1,6 +1,6 @@
 use pixors_ops::source::cache_reader::TileRange;
 
-use crate::state::TabId;
+use crate::TabId;
 use crate::viewport::camera::Camera;
 
 pub struct ViewportState {

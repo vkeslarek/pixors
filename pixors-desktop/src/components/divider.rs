@@ -1,6 +1,6 @@
+use crate::theme::BORDER_SUBTLE;
 use iced::widget::{container, text};
 use iced::{Background, Element, Length};
-use crate::theme::BORDER_SUBTLE;
 
 pub fn divider<'a, Msg: 'a>() -> Element<'a, Msg> {
     container(text(""))

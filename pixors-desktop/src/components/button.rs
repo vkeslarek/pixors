@@ -1,9 +1,9 @@
+use crate::theme::{
+    ACCENT, ACCENT_GLOW, BG_BASE, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE, DANGER,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+};
 use iced::widget::{button as iced_button, text};
 use iced::{Background, Border, Color, Element, Length, Padding, alignment::Horizontal};
-use crate::theme::{
-    ACCENT, ACCENT_GLOW, BG_BASE, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER,
-    BORDER_SUBTLE, DANGER, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
-};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ButtonVariant {
@@ -79,21 +79,33 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
         };
 
         let variant = b.variant;
-        let style = move |_theme: &iced::Theme, state: iced::widget::button::Status| -> iced::widget::button::Style {
+        let style = move |_theme: &iced::Theme,
+                          state: iced::widget::button::Status|
+              -> iced::widget::button::Style {
             let (bg, text_color, border_color) = match variant {
                 ButtonVariant::Primary => match state {
-                    iced::widget::button::Status::Hovered => (Some(ACCENT_GLOW), TEXT_PRIMARY, ACCENT),
-                    iced::widget::button::Status::Disabled => (Some(BG_ELEVATED), TEXT_MUTED, BORDER_SUBTLE),
+                    iced::widget::button::Status::Hovered => {
+                        (Some(ACCENT_GLOW), TEXT_PRIMARY, ACCENT)
+                    }
+                    iced::widget::button::Status::Disabled => {
+                        (Some(BG_ELEVATED), TEXT_MUTED, BORDER_SUBTLE)
+                    }
                     _ => (Some(ACCENT), TEXT_PRIMARY, ACCENT),
                 },
                 ButtonVariant::Secondary => match state {
                     iced::widget::button::Status::Hovered => (Some(BG_HOVER), TEXT_PRIMARY, BORDER),
-                    iced::widget::button::Status::Disabled => (Some(BG_BASE), TEXT_MUTED, BORDER_SUBTLE),
+                    iced::widget::button::Status::Disabled => {
+                        (Some(BG_BASE), TEXT_MUTED, BORDER_SUBTLE)
+                    }
                     _ => (Some(BG_SURFACE), TEXT_PRIMARY, BORDER),
                 },
                 ButtonVariant::Ghost => match state {
-                    iced::widget::button::Status::Hovered => (Some(BG_HOVER), TEXT_PRIMARY, Color::TRANSPARENT),
-                    iced::widget::button::Status::Disabled => (None, TEXT_MUTED, Color::TRANSPARENT),
+                    iced::widget::button::Status::Hovered => {
+                        (Some(BG_HOVER), TEXT_PRIMARY, Color::TRANSPARENT)
+                    }
+                    iced::widget::button::Status::Disabled => {
+                        (None, TEXT_MUTED, Color::TRANSPARENT)
+                    }
                     _ => (None, TEXT_SECONDARY, Color::TRANSPARENT),
                 },
                 ButtonVariant::Danger => match state {
@@ -102,7 +114,9 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
                         TEXT_PRIMARY,
                         DANGER,
                     ),
-                    iced::widget::button::Status::Disabled => (Some(BG_BASE), TEXT_MUTED, BORDER_SUBTLE),
+                    iced::widget::button::Status::Disabled => {
+                        (Some(BG_BASE), TEXT_MUTED, BORDER_SUBTLE)
+                    }
                     _ => (Some(DANGER), TEXT_PRIMARY, DANGER),
                 },
             };
@@ -119,14 +133,10 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
             }
         };
 
-        let mut iced_btn = iced_button(
-            text(b.label)
-                .size(text_size)
-                .align_x(Horizontal::Center),
-        )
-        .style(style)
-        .padding(padding)
-        .width(b.width);
+        let mut iced_btn = iced_button(text(b.label).size(text_size).align_x(Horizontal::Center))
+            .style(style)
+            .padding(padding)
+            .width(b.width);
 
         if let Some(msg) = b.on_press {
             iced_btn = iced_btn.on_press(msg);

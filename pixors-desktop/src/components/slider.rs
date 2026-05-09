@@ -1,6 +1,6 @@
-use iced::widget::{column, row, text, slider as iced_slider};
-use iced::{Alignment, Element, Length};
 use crate::theme::{TEXT_MUTED, TEXT_PRIMARY};
+use iced::widget::{column, row, slider as iced_slider, text};
+use iced::{Alignment, Element, Length};
 use std::ops::RangeInclusive;
 
 pub struct Slider<'a, Message> {
@@ -39,10 +39,13 @@ impl<'a, Message: Clone + 'a> From<Slider<'a, Message>> for Element<'a, Message>
             row![
                 text(s.label).size(12).color(TEXT_PRIMARY),
                 iced::widget::Space::new().width(Length::Fill),
-                text((s.value_format)(s.value)).size(12).color(TEXT_MUTED).font(iced::Font {
-                    family: iced::font::Family::Monospace,
-                    ..Default::default()
-                }),
+                text((s.value_format)(s.value))
+                    .size(12)
+                    .color(TEXT_MUTED)
+                    .font(iced::Font {
+                        family: iced::font::Family::Monospace,
+                        ..Default::default()
+                    }),
             ]
             .align_y(Alignment::Center),
             iced_slider(s.range, s.value, s.on_change).step(1.0_f32),

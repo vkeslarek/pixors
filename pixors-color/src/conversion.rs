@@ -171,7 +171,7 @@ impl ColorConversion {
         src_alpha: AlphaPolicy,
         dst_alpha: AlphaPolicy,
     ) -> Result<Vec<u8>, Error> {
-        use crate::common::pixel::{Cmyk, CmykA, Gray, GrayAlpha, Lab, Rgb, Rgba, YCbCr};
+        use crate::{Cmyk, CmykA, Gray, GrayAlpha, Lab, Rgb, Rgba, YCbCr};
         use half::f16;
 
         match (src_fmt, dst_fmt) {
@@ -605,9 +605,9 @@ fn src_unpremul_one(r: f32, g: f32, b: f32, a: f32, src_alpha: AlphaPolicy) -> (
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixors_engine::common::pixel::AlphaPolicy;
-    use crate::common::pixel::Rgba;
+    use crate::Rgba;
     use half::f16;
+    use pixors_engine::common::pixel::AlphaPolicy;
 
     #[test]
     fn converter_has_dst_field() {
@@ -779,8 +779,7 @@ mod tests {
 
     #[test]
     fn convert_pixels_same_space_same_type_is_copy() {
-        let conv = ColorConversion::new(ColorSpace::ACES_CG, ColorSpace::ACES_CG)
-            .unwrap();
+        let conv = ColorConversion::new(ColorSpace::ACES_CG, ColorSpace::ACES_CG).unwrap();
 
         let src: Vec<Rgba<f16>> = (0..20)
             .map(|i| Rgba {
@@ -857,7 +856,7 @@ mod tests {
 
     #[test]
     fn convert_pixels_rgb_to_rgba_f16_preserves_values() {
-        use crate::common::pixel::Rgb;
+        use crate::Rgb;
         let conv = ColorConversion::new(ColorSpace::SRGB, ColorSpace::SRGB).unwrap();
 
         // sRGB green in Rgb<f16>: (0, 1, 0)

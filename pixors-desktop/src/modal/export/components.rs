@@ -1,10 +1,10 @@
-use iced::widget::{button, checkbox, pick_list, row, slider, text, text_input};
-use iced::{Alignment, Background, Border, Color, Element, Length};
+use iced::widget::{button, row, text};
+use iced::{Alignment, Background, Border, Color, Element};
 
 use super::presets::TiffLayoutKind;
 use super::{ExportFormat, Msg};
 use crate::theme::{
-    ACCENT, BG_HOVER, BG_SURFACE, BORDER, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    ACCENT, BG_HOVER, BG_SURFACE, BORDER, TEXT_MUTED, TEXT_SECONDARY,
 };
 
 pub fn section_label(label: &'static str) -> Element<'static, Msg> {
@@ -181,11 +181,9 @@ pub fn labeled_slider<'a>(
     value: f32,
     msg: impl Fn(f32) -> Msg + 'a,
 ) -> Element<'a, Msg> {
-    row![
-        crate::components::slider(label, value, range, msg).value_format(|v| format!("{:.0}", v))
-    ]
-    .align_y(Alignment::Center)
-    .into()
+    row![crate::components::slider(label, value, range, msg).value_format(|v| format!("{:.0}", v))]
+        .align_y(Alignment::Center)
+        .into()
 }
 
 pub fn labeled_text_input<'a>(

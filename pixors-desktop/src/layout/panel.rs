@@ -1,7 +1,9 @@
+use crate::layout::ghost_width::GhostWidth;
+use crate::theme::{
+    ACCENT, BG_BASE, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+};
 use iced::widget::{column, container, pane_grid, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Padding};
-use crate::theme::{ACCENT, BG_BASE, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY};
-use crate::layout::ghost_width::GhostWidth;
 
 pub struct Panel<'a, Message> {
     title: String,
@@ -36,12 +38,8 @@ impl<'a, Message> Panel<'a, Message> {
 
 impl<'a, Message: 'a> From<Panel<'a, Message>> for Element<'a, Message> {
     fn from(p: Panel<'a, Message>) -> Self {
-        let mut header_row = row![
-            text(p.title)
-                .size(13)
-                .color(TEXT_PRIMARY)
-        ]
-        .align_y(Alignment::Center);
+        let mut header_row =
+            row![text(p.title).size(13).color(TEXT_PRIMARY)].align_y(Alignment::Center);
 
         if let Some(controls) = p.header_controls {
             header_row = header_row.push(iced::widget::Space::new().width(Length::Fill));
@@ -62,12 +60,9 @@ impl<'a, Message: 'a> From<Panel<'a, Message>> for Element<'a, Message> {
 
         let mut col = column![
             header,
-            scrollable(
-                container(p.content)
-                    .width(Length::Fill)
-            )
-            .height(Length::Fill)
-            .width(Length::Fill)
+            scrollable(container(p.content).width(Length::Fill))
+                .height(Length::Fill)
+                .width(Length::Fill)
         ];
 
         if let Some(footer) = p.footer {
@@ -81,7 +76,7 @@ impl<'a, Message: 'a> From<Panel<'a, Message>> for Element<'a, Message> {
                             ..Border::default()
                         },
                         ..Default::default()
-                    })
+                    }),
             );
         }
 

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::common::image::codec::PageStream;
+use crate::codec::PageStream;
 use pixors_engine::error::Error;
 use pixors_engine::stage::{
     DataKind, PortDeclaration, PortGroup, PortSpecification, ProcessorContext, Producer, Stage,

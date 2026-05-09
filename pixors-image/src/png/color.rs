@@ -2,7 +2,7 @@ use pixors_engine::common::color::primaries::{RgbPrimaries, WhitePoint};
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::color::transfer::TransferFn;
 
-use ::png;
+use png;
 
 /// Detect the color space from a PNG's metadata chunks.
 /// Priority: cICP > iCCP > sRGB > gAMA+cHRM > gAMA alone > default sRGB.

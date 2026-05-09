@@ -1,9 +1,9 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use ::tiff;
+use tiff;
 
-use crate::common::image::Orientation;
+use crate::image::Orientation;
 use pixors_engine::common::color::space::ColorSpace;
 
 // ── Missing from tiff::tags::Tag enum ──────────────────────────────────────
@@ -104,7 +104,8 @@ pub fn detect_tiff_color_space(
     if let Some(icc) = icc_profile
         && !icc.is_empty()
     {
-        let classified = pixors_engine::common::color::detect::IccClassification::classify_icc_profile(icc);
+        let classified =
+            pixors_engine::common::color::detect::IccClassification::classify_icc_profile(icc);
         if let Some(cs) = classified.color_space {
             return cs;
         }

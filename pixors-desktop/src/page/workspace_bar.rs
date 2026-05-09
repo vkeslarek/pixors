@@ -1,10 +1,8 @@
 use iced::widget::{button, column, container, text};
 use iced::{Background, Border, Color, Element, Length};
 
-use crate::theme::{
-    self, ACCENT, BG_BASE, BG_HOVER, TEXT_MUTED, TEXT_SECONDARY, WORKSPACE_BAR_W,
-};
 use crate::layout::sidebar;
+use crate::theme::{self, ACCENT, BG_BASE, BG_HOVER, TEXT_SECONDARY, WORKSPACE_BAR_W};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -36,8 +34,12 @@ impl State {
             .collect();
 
         let footer_items: Vec<Element<Msg>> = vec![
-            crate::components::icon_button(crate::icons::SETTINGS).size(16).into(),
-            crate::components::icon_button(crate::icons::HELP).size(16).into(),
+            crate::components::icon_button(crate::icons::SETTINGS)
+                .size(16)
+                .into(),
+            crate::components::icon_button(crate::icons::HELP)
+                .size(16)
+                .into(),
         ];
 
         let layout = column![
@@ -104,7 +106,6 @@ fn ws_btn(ws: Workspace, is_active: bool) -> Element<'static, Msg> {
     }
     btn.into()
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Workspace {

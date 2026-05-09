@@ -1,13 +1,13 @@
 mod app;
+pub mod components;
 mod controller;
 mod icons;
-mod theme;
-mod viewport;
-pub mod components;
 pub mod layout;
 pub mod modal;
 pub mod page;
 pub mod panel;
+mod theme;
+mod viewport;
 
 use app::App;
 

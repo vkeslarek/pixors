@@ -1,19 +1,16 @@
 use iced::widget::{container, text};
 use iced::{Background, Border, Color, Element, Padding};
 
+#[derive(Default)]
 pub enum BadgeVariant {
     Info,
     Success,
     Warning,
     Danger,
+    #[default]
     Neutral,
 }
 
-impl Default for BadgeVariant {
-    fn default() -> Self {
-        Self::Neutral
-    }
-}
 
 pub struct Badge<'a, Message> {
     label: String,

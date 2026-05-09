@@ -1,2 +1,2 @@
-pub mod operation;
+pub mod processor;
 pub mod source;

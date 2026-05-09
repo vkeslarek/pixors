@@ -265,9 +265,9 @@ impl Runner for ChainRunner {
                                 routed.port
                             );
                         }
-            Self::run_item_streaming(
-                tag,
-                kernels,
+                        Self::run_item_streaming(
+                            tag,
+                            kernels,
                             &mut self.consumer,
                             device,
                             gpu,

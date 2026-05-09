@@ -1,6 +1,6 @@
-use pixors_engine::common::pixel::{Component, Pixel};
-use pixors_engine::common::pixel::AlphaPolicy;
 use half::f16;
+use pixors_engine::common::pixel::AlphaPolicy;
+use pixors_engine::common::pixel::{Component, Pixel};
 use wide::f32x4;
 
 #[repr(C)]

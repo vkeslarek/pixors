@@ -11,10 +11,7 @@ pub enum Msg {
     ToggleVisibility(usize),
 }
 
-pub fn view<'a>(
-    layers: &'a [pixors_state::state::tab::Layer],
-    active_idx: usize,
-) -> Element<'a, Msg> {
+pub fn view<'a>(layers: &'a [pixors_state::tab::Layer], active_idx: usize) -> Element<'a, Msg> {
     if layers.is_empty() {
         container(text("No layers yet.").size(12).color(TEXT_MUTED))
             .padding(16)
@@ -38,16 +35,17 @@ pub fn view<'a>(
 
 fn layer_row<'a>(
     i: usize,
-    layer: &'a pixors_state::state::tab::Layer,
+    layer: &'a pixors_state::tab::Layer,
     is_active: bool,
 ) -> Element<'a, Msg> {
     let color = match &layer.source {
-        pixors_state::state::tab::LayerSource::FilePage { .. } => {
-            Color::from_rgb(0.3, 0.5, 0.8)
-        }
-        pixors_state::state::tab::LayerSource::SolidColor { color } => {
-            Color::from_rgba(color[0] as f32 / 255.0, color[1] as f32 / 255.0, color[2] as f32 / 255.0, 1.0)
-        }
+        pixors_state::tab::LayerSource::FilePage { .. } => Color::from_rgb(0.3, 0.5, 0.8),
+        pixors_state::tab::LayerSource::SolidColor { color } => Color::from_rgba(
+            color[0] as f32 / 255.0,
+            color[1] as f32 / 255.0,
+            color[2] as f32 / 255.0,
+            1.0,
+        ),
     };
 
     let thumb = container(text(""))
@@ -69,8 +67,14 @@ fn layer_row<'a>(
 
     let name = text(layer.name.as_str()).size(11).color(TEXT_SECONDARY);
 
-    let eye_icon = if layer.visible { crate::icons::EYE } else { crate::icons::EYE_OFF };
-    let visibility_btn = crate::components::icon_button::icon_button(eye_icon).size(12).on_press(Msg::ToggleVisibility(i));
+    let eye_icon = if layer.visible {
+        crate::icons::EYE
+    } else {
+        crate::icons::EYE_OFF
+    };
+    let visibility_btn = crate::components::icon_button::icon_button(eye_icon)
+        .size(12)
+        .on_press(Msg::ToggleVisibility(i));
 
     let opacity_text = text(format!("{}%", (layer.opacity * 100.0) as u32))
         .size(9)

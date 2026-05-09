@@ -1,7 +1,7 @@
-use iced::widget::{column, container, row, text, Space};
-use iced::{Alignment, Background, Border, Element, Length, Padding};
+use crate::components::button::{ButtonSize, ButtonVariant, button};
 use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
-use crate::components::button::{button, ButtonVariant, ButtonSize};
+use iced::widget::{Space, column, container, row, text};
+use iced::{Alignment, Background, Border, Element, Length, Padding};
 
 pub struct Dialog<'a, Message> {
     title: String,
@@ -44,9 +44,7 @@ impl<'a, Message> Dialog<'a, Message> {
 impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>> for Element<'a, Message> {
     fn from(d: Dialog<'a, Message>) -> Self {
         let mut title_row = row![
-            text(d.title)
-                .size(16)
-                .color(TEXT_PRIMARY),
+            text(d.title).size(16).color(TEXT_PRIMARY),
             Space::new().width(Length::Fill),
         ]
         .align_y(Alignment::Center)
@@ -58,7 +56,7 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>> for Element<'a, Message>
                 button("Close")
                     .variant(ButtonVariant::Ghost)
                     .size(ButtonSize::Sm)
-                    .on_press(msg)
+                    .on_press(msg),
             );
         }
 
@@ -70,24 +68,18 @@ impl<'a, Message: Clone + 'a> From<Dialog<'a, Message>> for Element<'a, Message>
                 ..Default::default()
             });
 
-        container(
-            column![
-                title_row,
-                divider,
-                d.content,
-            ]
-        )
-        .width(Length::Fixed(d.width))
-        .height(Length::Fixed(d.height))
-        .style(|_| container::Style {
-            background: Some(Background::Color(BG_SURFACE)),
-            border: Border {
-                color: BORDER_SUBTLE,
-                width: 1.0,
-                radius: 8.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
+        container(column![title_row, divider, d.content,])
+            .width(Length::Fixed(d.width))
+            .height(Length::Fixed(d.height))
+            .style(|_| container::Style {
+                background: Some(Background::Color(BG_SURFACE)),
+                border: Border {
+                    color: BORDER_SUBTLE,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
     }
 }

@@ -1,9 +1,7 @@
 use iced::widget::{Column, row, text};
 use iced::{Alignment, Element};
 
-use pixors_image::common::image::codec::{
-    TiffBitDepth, TiffCompression, TiffPredictor, TiffVariant,
-};
+use pixors_image::codec::{TiffBitDepth, TiffCompression, TiffPredictor, TiffVariant};
 
 use crate::theme::TEXT_SECONDARY;
 

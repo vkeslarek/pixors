@@ -1,7 +1,7 @@
+use crate::theme::{BG_ELEVATED, BORDER, OK_GREEN, TEXT_SECONDARY};
 use iced::border::Radius;
-use iced::widget::{container, row, text, Space};
+use iced::widget::{Space, container, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Padding};
-use crate::theme::{BG_ELEVATED, BORDER, TEXT_SECONDARY, OK_GREEN};
 
 pub struct Pill<'a, Message> {
     label: String,
@@ -29,12 +29,16 @@ impl<'a, Message: 'a> From<Pill<'a, Message>> for Element<'a, Message> {
         let mut r = row![].spacing(6).align_y(Alignment::Center);
 
         if let Some(color) = p.dot_color {
-            let dot = container(Space::new().width(Length::Fixed(8.0)).height(Length::Fixed(8.0)))
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(color)),
-                    border: Border::default().rounded(999),
-                    ..Default::default()
-                });
+            let dot = container(
+                Space::new()
+                    .width(Length::Fixed(8.0))
+                    .height(Length::Fixed(8.0)),
+            )
+            .style(move |_| container::Style {
+                background: Some(Background::Color(color)),
+                border: Border::default().rounded(999),
+                ..Default::default()
+            });
             r = r.push(dot);
         }
 
