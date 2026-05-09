@@ -27,4 +27,3 @@ pub const STATUSBAR_H: f32 = 24.0;
 pub const WORKSPACE_BAR_W: f32 = 78.0;
 pub const TOOLBAR_W: f32 = 48.0;
 pub const SIDEBAR_W: f32 = 260.0;
-pub const PANEL_HEADER_H: f32 = 34.0;

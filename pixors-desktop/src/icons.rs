@@ -31,7 +31,4 @@ pub const EYE: &str = "\u{e0ba}";
 pub const EYE_OFF: &str = "\u{e0bb}";
 pub const TRASH: &str = "\u{e18d}";
 pub const INFO: &str = "\u{e0f9}";
-pub const UNDO: &str = "\u{e19b}";
-pub const SLIDERS_HORIZONTAL: &str = "\u{e29a}";
 pub const CHEVRON_DOWN: &str = "\u{e06d}";
-pub const CIRCLE_SLASH: &str = "\u{e402}";
