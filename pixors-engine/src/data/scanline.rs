@@ -1,0 +1,30 @@
+use crate::common::pixel::meta::PixelMeta;
+use crate::data::buffer::Buffer;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ScanLineCoord {
+    pub mip_level: u32,
+    pub width: u32,
+    pub y: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScanLine {
+    pub mip_level: u32,
+    pub y: u32,
+    pub width: u32,
+    pub meta: PixelMeta,
+    pub data: Buffer,
+}
+
+impl ScanLine {
+    pub fn new(mip_level: u32, y: u32, width: u32, meta: PixelMeta, data: Buffer) -> Self {
+        Self {
+            mip_level,
+            y,
+            width,
+            meta,
+            data,
+        }
+    }
+}

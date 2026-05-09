@@ -1,5 +1,4 @@
 use thiserror::Error;
-use png::DecodingError;
 
 /// Represents all possible errors in the pixors library.
 #[derive(Debug, Error)]
@@ -92,11 +91,5 @@ impl Error {
     /// Creates an internal error.
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::Internal(msg.into())
-    }
-}
-
-impl From<DecodingError> for Error {
-    fn from(err: DecodingError) -> Self {
-        Self::Png(err.to_string())
     }
 }

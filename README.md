@@ -8,28 +8,61 @@
 
 ```
 pixors/
-├── pixors-engine/     # Image processing engine (Rust library + WebSocket server)
-├── pixors-desktop/    # Native desktop shell (tao + wry, borderless window)
+├── pixors-engine/     # Framework: Stage trait, data types, GPU infra, runtime
+├── pixors-shader/     # All GPU shaders + compiled SPIR-V binaries
+├── pixors-color/      # Color science: ColorConvert, ColorConversion, pixel models
+├── pixors-image/      # Image I/O: codec traits, PNG/TIFF, image sources, encoder sinks
+├── pixors-ops/        # Operations: Blur, Compose, MipDownsample, MipFilter
+├── pixors-state/      # Editor state model: tabs, layers, actions, history, viewport state
+├── pixors-desktop/    # Native desktop app (iced, borderless window)
 ├── pixors-ui/         # React + TypeScript frontend (Vite)
 └── docs/              # Architecture docs, phase plans, known bugs
 ```
 
-### `pixors-engine` — The Engine
-Rust library that does all heavy lifting. Runs as a WebSocket server (axum). Communicates with the frontend via a binary protocol (MessagePack commands, raw tile frames).
+### Crate Dependency Graph
+
+```
+pixors-engine  ←  pixors-color  ←  pixors-image  ←  pixors-ops
+     ↑                ↑                              ↑
+pixors-shader  ───────┘                     pixors-state
+     ↑                                          ↑
+pixors-desktop  ─── pixors-image, pixors-ops, pixors-state
+```
+
+### `pixors-engine` — The Framework
+Rust library that defines all traits (`Stage`, `Producer`, `Processor`, `Consumer`, `Pixel`, `GpuKernel`) and provides the execution runtime. No internal dependencies.
 
 **Key subsystems:**
-- **Stream pipeline** — Tiles flow through pipes (source → color convert → MIP → sinks) in dedicated threads with bounded channels
-- **Color science** — ACEScg linear f16 working space, LUT-based conversion, SIMD 4-wide
-- **Tile storage** — RAM cache (ViewportSink) + disk persistence (WorkingSink, ACEScg f16)
-- **MIP pyramid** — Recursive 2×2 box-filter, generated eagerly in the stream pipeline
-- **Compositor** — Porter-Duff over blend, per-tile, stateless
-- **I/O** — PNG & TIFF readers via `ImageReader` trait
+- **Stage system** — `Stage` trait with dynamic dispatch, `Arc<dyn Stage>` in pipeline graphs
+- **Pipeline** — DAG of stages compiled by `Pipeline::compile()`, executed via `ChainRunner` threads
+- **GPU** — wgpu compute, SPIR‑V shaders, `Scheduler` owns encoder rotation + buffer pool + pipeline cache
+- **Data types** — `Tile`, `ScanLine`, `TileBlock`, `Neighborhood` flow through bounded channels
+- **Color types** — `ColorSpace`, `TransferFn`, `PixelFormat`, `AlphaPolicy`
 
-### `pixors-ui` — The Frontend
-React + TypeScript + Vite. Custom panel docking system (no external library). Zustand state management persisted to localStorage.
+### `pixors-shader` — GPU Shaders
+All `.slang` shader source + shared `lib/` modules + compiled SPIR-V binaries exported as `pub const`.
+
+### `pixors-color` — Color Science
+- `ColorConvert` stage (CPU + GPU, SIMD via `wide`)
+- `ColorConversion` engine (LUT‑based, matrix transforms)
+- Pixel model structs: `Rgba<T>`, `Rgb<T>`, `Gray<T>`, `Cmyk<T>`, `YCbCr<T>`, `Lab<T>`
+
+### `pixors-image` — Image I/O
+- `Image` struct, `ImageDescriptor`, `Dpi`, codec traits
+- PNG & TIFF decoders/encoders
+- `ImageStreamSource`, encoder sinks (`PngEncoderV2`, `TiffEncoderStage`), `CacheWriter`
+
+### `pixors-ops` — Operations
+- `Blur` — box blur (CPU + GPU)
+- `Compose` — layer compositing (Porter-Duff over blend)
+- `MipDownsample` — recursive 2×2 box-filter
+- `MipFilter` — pass‑through filter by mip level
 
 ### `pixors-desktop` — The Desktop Shell
-Borderless native window via **tao** + **wry**. IPC bridge (JS→Rust) for window controls. Cross-platform: Linux (GTK/WebKit), Windows (WebView2), macOS (WKWebView).
+Borderless native window via **iced 0.14**. Actions pattern (`prepare → apply → undo`). Viewport stages for GPU rendering.
+
+### `pixors-ui` — The Frontend
+React + TypeScript + Vite. Custom panel docking system. Zustand state management.
 
 ## Features
 
@@ -44,28 +77,21 @@ Borderless native window via **tao** + **wry**. IPC bridge (JS→Rust) for windo
 | Stream pipeline (parallel tile processing) | ✅ |
 | MIP pyramid generation (recursive 2×2) | ✅ |
 | Tile compositor (Porter-Duff over blend) | ✅ |
-| WebSocket server (tab/viewport/session services) | ✅ |
+| Box blur (CPU + GPU) | ✅ |
 | Custom panel docking (drag, resize, persist) | ✅ |
-| Borderless desktop window (tao + wry) | ✅ |
-| Window controls (min/max/close/drag/resize) | ✅ |
+| Borderless desktop window (iced) | ✅ |
 | Cross-compile Windows support | ✅ |
 
 ### Planned / In Progress
 
 | Feature | Status |
 |---|---|
-| Operations (blur, contrast, brightness) | 🚧 Phase 9 |
-| Job system with progress tracking | 🚧 Phase 9 |
-| Preview (MIP-aware, per-zoom-level) | 🚧 Phase 9 |
-| Component-per-service backend refactor | 🚧 Phase 9 |
+| Export (PNG, TIFF) | 🚧 |
+| Job system with progress tracking | 🚧 |
 | Library workspace (browse & organize) | 📋 |
 | Darkroom workspace (develop & adjust) | 📋 |
-| Error surface (typed errors, toasts) | 📋 Phase 9 |
-| Desktop shell distribution (single binary) | 📋 |
-| MCP integration (LLM-driven editing) | 📋 |
 | Layer adjustments (non-destructive) | 📋 |
 | Selection tools (marquee, lasso, wand) | 📋 |
-| Export (PNG, TIFF, JPEG, WebP) | 📋 |
 | macOS testing & support | 📋 |
 
 ## Getting Started
@@ -81,20 +107,20 @@ Borderless native window via **tao** + **wry**. IPC bridge (JS→Rust) for windo
 git clone https://github.com/vkeslarek/pixors.git
 cd pixors
 
-# Engine server
-cd pixors-engine && cargo run
+# Desktop app (main entry point)
+cargo run -p pixors-desktop
 
-# Frontend (separate terminal)
+# Frontend (separate terminal, for dev mode)
 cd pixors-ui && npm install && npm run dev
 
-# Desktop shell
-cd pixors-desktop && cargo run
+# Dev mode (desktop connects to Vite instead of embedded frontend)
+PIXORS_DEV=1 cargo run -p pixors-desktop
 ```
 
 ### Testing
 
 ```bash
-cd pixors-engine && cargo test --lib
+cargo test --workspace
 ```
 
 ## Documentation
@@ -102,7 +128,6 @@ cd pixors-engine && cargo test --lib
 | Doc | Description |
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full architecture reference |
-| [PHASE_9.md](docs/PHASE_9.md) | Current phase plan |
 | [KNOWN_BUGS.md](docs/KNOWN_BUGS.md) | Known issues |
 | [ROADMAP.md](docs/ROADMAP.md) | Future ideas |
 

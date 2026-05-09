@@ -15,6 +15,9 @@ pixors-ui/.env
 pixors-ui/.env.local
 pixors-ui/.env.*.local
 
+# Executor kernels
+pixors-executor/kernels/
+
 # Editor/IDE
 .vscode/
 .idea/

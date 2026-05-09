@@ -3,15 +3,25 @@ name = "pixors-desktop"
 version.workspace = true
 edition.workspace = true
 
+[dependencies]
+pixors-engine = { path = "../pixors-engine" }
+pixors-color = { path = "../pixors-color" }
+pixors-image = { path = "../pixors-image" }
+pixors-ops = { path = "../pixors-ops" }
+pixors-state = { path = "../pixors-state" }
+iced = { version = "0.14", features = ["advanced", "tokio"] }
+tokio = { version = "1", features = ["sync", "rt"] }
+iced_aw = { version = "0.13", default-features = false, features = ["menu"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
+half = { version = "2.7.1", features = ["bytemuck"] }
+wide = "1.3.0"
+rayon = "1.12.0"
+serde = { version = "1.0.228", features = ["derive"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+rfd = "0.17.2"
+wgpu = { version = "22.1", default-features = false, features = ["spirv"] }
+parking_lot = "0.12.5"
+
 [lints]
 workspace = true
-
-[dependencies]
-tao = "0.35"
-wry = "0.55.0"
-rust-embed = "8"
-mime_guess = "2"
-pixors-engine = { path = "../pixors-engine" }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18.2"
