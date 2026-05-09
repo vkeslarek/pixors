@@ -1,7 +1,7 @@
 use iced::widget::{Column, row, text};
 use iced::{Alignment, Element};
 
-use pixors_executor::common::image::codec::{
+use pixors_image::common::image::codec::{
     TiffBitDepth, TiffCompression, TiffPredictor, TiffVariant,
 };
 

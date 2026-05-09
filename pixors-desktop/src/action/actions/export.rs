@@ -1,13 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::common::color::space::ColorSpace;
-use pixors_executor::common::image::Image;
-use pixors_executor::common::image::codec::EncoderConfig;
-use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
-use pixors_executor::data_transform::to_tile::ScanLineToTile;
-use pixors_executor::operation::color::ColorConvert;
-use pixors_executor::sink::SinkNode;
-use pixors_executor::source::image_stream::ImageStreamSource;
+use pixors_engine::common::color::space::ColorSpace;
+use pixors_image::common::image::open_image;
+use pixors_image::common::image::codec::EncoderConfig;
+use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_engine::data_transform::to_tile::ScanLineToTile;
+use pixors_color::operation::color::ColorConvert;
+use pixors_image::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
@@ -21,7 +20,7 @@ pub struct Export {
     pub source_path: std::path::PathBuf,
     pub save_path: std::path::PathBuf,
     pub config: EncoderConfig,
-    pub dpi: Option<pixors_executor::common::image::Dpi>,
+    pub dpi: Option<pixors_image::common::image::Dpi>,
     pub icc_profile: Option<Vec<u8>>,
     pub image_height: u32,
 }
@@ -32,7 +31,7 @@ impl Action for Export {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        let img = Image::open(&self.source_path).map_err(|e| e.to_string())?;
+        let img = open_image(&self.source_path).map_err(|e| e.to_string())?;
         let w = img.desc.width;
         let h = img.desc.height;
 
@@ -40,9 +39,9 @@ impl Action for Export {
             img.open_page(0).map_err(|e| e.to_string())?,
         )));
 
-        let encoder_sink = match &self.config {
+        let encoder_sink: std::sync::Arc<dyn pixors_engine::stage::Stage + Send + Sync> = match &self.config {
             EncoderConfig::Png(png_cfg) => {
-                SinkNode::PngEncoderV2(pixors_executor::sink::png_encoder_v2::PngEncoderV2 {
+                Arc::new(pixors_image::sink::png_encoder_v2::PngEncoderV2 {
                     path: self.save_path.clone(),
                     config: png_cfg.clone(),
                     dpi: self.dpi,
@@ -50,7 +49,7 @@ impl Action for Export {
                 })
             }
             EncoderConfig::Tiff(tiff_cfg) => {
-                SinkNode::TiffEncoder(pixors_executor::sink::tiff_encoder::TiffEncoderStage {
+                Arc::new(pixors_image::sink::tiff_encoder::TiffEncoderStage {
                     path: self.save_path.clone(),
                     config: tiff_cfg.clone(),
                     dpi: self.dpi,
@@ -60,20 +59,20 @@ impl Action for Export {
         };
 
         let graph = PathBuilder::new()
-            .src(ImageStreamSource {
+            .src(Arc::new(ImageStreamSource {
                 stream,
                 image_height: self.image_height,
-            })
-            .data_xform(ScanLineToTile {
+            }))
+            .data_xform(Arc::new(ScanLineToTile {
                 tile_size: TILE_SIZE,
                 image_width: w,
                 image_height: h,
-            })
-            .op(ColorConvert {
+            }))
+            .op(Arc::new(ColorConvert {
                 target_format: PixelFormat::Rgba8,
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
-            })
+            }))
             .sink(encoder_sink)
             .compile();
 

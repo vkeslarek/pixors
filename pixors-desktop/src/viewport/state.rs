@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use iced::{Point, Size};
-use pixors_executor::source::cache_reader::TileRange;
+use pixors_ops::source::cache_reader::TileRange;
 
 use crate::state::TabId;
 use crate::viewport::camera::Camera;

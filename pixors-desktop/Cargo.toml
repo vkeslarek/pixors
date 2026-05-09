@@ -4,24 +4,23 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pixors-executor = { path = "../pixors-executor" }
+pixors-engine = { path = "../pixors-engine" }
+pixors-color = { path = "../pixors-color" }
+pixors-image = { path = "../pixors-image" }
+pixors-ops = { path = "../pixors-ops" }
 iced = { version = "0.14", features = ["advanced", "tokio"] }
 tokio = { version = "1", features = ["sync", "rt"] }
 iced_aw = { version = "0.13", default-features = false, features = ["menu"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 half = { version = "2.7.1", features = ["bytemuck"] }
 wide = "1.3.0"
-thiserror = "2.0.18"
-serde = { version = "1.0.228", features = ["derive"] }
 rayon = "1.12.0"
-png = "0.18.1"
-tiff = "0.11.3"
-uuid = { version = "1.23.1", features = ["serde", "v4"] }
-parking_lot = "0.12.5"
+serde = { version = "1.0.228", features = ["derive"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 rfd = "0.17.2"
-syn = "2.0.117"
+wgpu = { version = "22.1", default-features = false, features = ["spirv"] }
+parking_lot = "0.12.5"
 
 [lints]
 workspace = true

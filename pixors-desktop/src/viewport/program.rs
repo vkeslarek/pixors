@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use iced::mouse;
 use iced::widget::shader;
 use iced::{Event, Point, Rectangle, Size};
-use pixors_executor::source::cache_reader::TileRange;
+use pixors_ops::source::cache_reader::TileRange;
 
 use crate::state::TabId;
 use crate::viewport::camera::Camera;

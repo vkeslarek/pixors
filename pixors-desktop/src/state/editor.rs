@@ -1,5 +1,5 @@
-use pixors_executor::common::color::space::ColorSpace;
-use pixors_executor::common::pixel::PixelFormat;
+use pixors_engine::common::color::space::ColorSpace;
+use pixors_engine::common::pixel::PixelFormat;
 
 use super::tab::{LayerId, Tab, TabId};
 

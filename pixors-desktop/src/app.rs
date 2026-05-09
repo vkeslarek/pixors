@@ -4,7 +4,7 @@ use iced::keyboard::{self};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Color, Element, Length, Subscription};
-use pixors_executor::runtime::event::PipelineEvent;
+use pixors_engine::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 
 use crate::action::{Action, Dispatcher};

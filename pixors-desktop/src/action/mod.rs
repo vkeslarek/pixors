@@ -6,9 +6,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 
-use pixors_executor::graph::graph::ExecGraph;
-use pixors_executor::runtime::event::PipelineEvent;
-use pixors_executor::runtime::pipeline::{Pipeline, PipelineHandle};
+use pixors_engine::graph::graph::ExecGraph;
+use pixors_engine::runtime::event::PipelineEvent;
+use pixors_engine::runtime::pipeline::{Pipeline, PipelineHandle};
 use tokio::sync::broadcast;
 
 use crate::state::history::SnapshotId;

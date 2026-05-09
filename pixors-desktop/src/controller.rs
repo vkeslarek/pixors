@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid;
-use pixors_executor::runtime::event::PipelineEvent;
-use pixors_executor::source::cache_reader::TileRange;
+use pixors_engine::runtime::event::PipelineEvent;
+use pixors_ops::source::cache_reader::TileRange;
 
 use crate::app::{App, Msg, PaneKind};
 use crate::components::toolbar::Tool;
@@ -332,13 +332,6 @@ impl App {
             return;
         };
 
-        let old_gen = tab.view.preview_gen;
-        if old_gen > 0
-            && let Ok(mut cache) = tab.viewport_cache.lock()
-        {
-            cache.clear_generation(old_gen);
-        }
-
         // Cancel the previous background pipeline so it stops wasting resources
         self.dispatcher.cancel_background(tab.id);
 
@@ -370,6 +363,8 @@ impl App {
         };
         let generation = tab.view.preview_gen;
         tab.view.preview_gen = 0;
+
+        self.dispatcher.cancel_background(tab.id);
 
         let action = crate::action::actions::blur_cancel::BlurCancel {
             tab: tab.id,

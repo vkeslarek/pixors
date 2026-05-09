@@ -1,8 +1,10 @@
-use pixors_executor::common::color::space::ColorSpace;
-use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
-use pixors_executor::operation::color::ColorConvert;
-use pixors_executor::sink::viewport_cache_sink::ViewportCacheSink;
-use pixors_executor::source::cache_reader::{CacheReader, TileRange};
+use std::sync::Arc;
+
+use pixors_engine::common::color::space::ColorSpace;
+use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_color::operation::color::ColorConvert;
+use crate::viewport_cache_sink::ViewportCacheSink;
+use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
@@ -26,9 +28,8 @@ impl Action for RequestMipFetch {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        // CacheReader reads ACEScg f16 from disk; convert to sRGB for the viewport.
         let graph = PathBuilder::new()
-            .src(CacheReader {
+            .src(Arc::new(CacheReader {
                 cache_dir: self.cache_dir.clone(),
                 mip_level: self.mip,
                 tile_size: TILE_SIZE,
@@ -37,13 +38,13 @@ impl Action for RequestMipFetch {
                 tile_range: Some(self.range.clone()),
                 pixel_format: PixelFormat::RgbaF16,
                 color_space: ColorSpace::ACES_CG,
-            })
-            .op(ColorConvert {
+            }))
+            .op(Arc::new(ColorConvert {
                 target_format: PixelFormat::Rgba8,
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
-            })
-            .sink(ViewportCacheSink::new(self.tab.0, 0))
+            }))
+            .sink(Arc::new(ViewportCacheSink::new(self.tab.0, 0)))
             .compile();
 
         Ok(PreparedAction::Pipeline {

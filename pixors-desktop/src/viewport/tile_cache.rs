@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::data::tile::TileGridPos;
+use pixors_engine::data::tile::TileGridPos;
 
 #[derive(Debug)]
 pub struct CachedTile {
@@ -90,7 +90,7 @@ impl ViewportCache {
     pub fn tiles_in_range(
         &self,
         mip: u32,
-        range: &pixors_executor::source::cache_reader::TileRange,
+        range: &pixors_ops::source::cache_reader::TileRange,
     ) -> Vec<(TileGridPos, &CachedTile)> {
         let mut res = Vec::new();
         for ty in range.ty_start..range.ty_end {
@@ -116,7 +116,7 @@ impl ViewportCache {
     pub fn has_all_tiles(
         &self,
         mip: u32,
-        range: &pixors_executor::source::cache_reader::TileRange,
+        range: &pixors_ops::source::cache_reader::TileRange,
     ) -> bool {
         for ty in range.ty_start..range.ty_end {
             for tx in range.tx_start..range.tx_end {
@@ -151,10 +151,10 @@ impl ViewportCache {
         self.active_mip = 0;
     }
 
-    /// Remove all overlay tiles for a preview generation. Never touches base.
+    /// Remove all overlay tiles. Never touches base.
     pub fn clear_generation(&mut self, generation: u64) {
         if generation > 0 {
-            self.overlay.retain(|_, t| t.generation != generation);
+            self.overlay.clear();
         }
     }
 

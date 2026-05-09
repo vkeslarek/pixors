@@ -1,4 +1,4 @@
-use pixors_executor::common::image::codec::{
+use pixors_image::common::image::codec::{
     PngBitDepth, PngColorType, PngCompression, PngFilter, PngInterlace, TiffBitDepth,
     TiffByteOrder, TiffColorType, TiffCompression, TiffLayout, TiffPredictor,
 };

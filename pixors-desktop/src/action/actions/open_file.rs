@@ -2,15 +2,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::common::image::Image;
-use pixors_executor::common::pixel::AlphaPolicy;
-use pixors_executor::data::tile::TileGridPos;
-use pixors_executor::data_transform::to_tile::ScanLineToTile;
-use pixors_executor::operation::color::ColorConvert;
-use pixors_executor::operation::mip_downsample::MipDownsample;
-use pixors_executor::sink::cache_writer::CacheWriter;
-use pixors_executor::sink::viewport_cache_sink::{ViewportCacheSink, register_tab_cache};
-use pixors_executor::source::image_stream::ImageStreamSource;
+use pixors_image::common::image::open_image;
+use pixors_engine::common::pixel::AlphaPolicy;
+use pixors_engine::data::tile::TileGridPos;
+use pixors_engine::data_transform::to_tile::ScanLineToTile;
+use pixors_color::operation::color::ColorConvert;
+use pixors_ops::operation::mip_downsample::MipDownsample;
+use pixors_image::sink::cache_writer::CacheWriter;
+use crate::viewport_cache_sink::{ViewportCacheSink, register_tab_cache};
+use pixors_image::source::image_stream::ImageStreamSource;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::path_builder::PathBuilder;
@@ -42,7 +42,7 @@ impl Action for OpenFile {
     }
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
-        let img = Image::open(&self.path).map_err(|e| e.to_string())?;
+        let img = open_image(&self.path).map_err(|e| e.to_string())?;
         let desc = img.desc.clone();
         let w = desc.width;
         let h = desc.height;
@@ -97,40 +97,39 @@ impl Action for OpenFile {
         )));
 
         let pipe = PathBuilder::new()
-            .src(ImageStreamSource {
+            .src(Arc::new(ImageStreamSource {
                 stream,
                 image_height: desc.height,
-            })
-            .data_xform(ScanLineToTile {
+            }))
+            .data_xform(Arc::new(ScanLineToTile {
                 tile_size: TILE_SIZE,
                 image_width: w,
                 image_height: h,
-            })
-            .op(ColorConvert {
+            }))
+            .op(Arc::new(ColorConvert {
                 target_format: state.working_format,
                 target_color_space: state.working_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            })
-            .op(MipDownsample {
+            }))
+            .op(Arc::new(MipDownsample {
                 image_width: w,
                 image_height: h,
                 tile_size: TILE_SIZE,
-            });
+            }));
 
         let [pipe_cache, pipe_vp] = pipe.split();
 
-        pipe_cache.sink(CacheWriter {
+        pipe_cache.sink(Arc::new(CacheWriter {
             cache_dir: cache_dir.clone(),
-        });
+        }));
 
-        // Only the viewport path converts to sRGB; disk stores ACEScg f16
         let graph = pipe_vp
-            .op(ColorConvert {
+            .op(Arc::new(ColorConvert {
                 target_format: state.display_format,
                 target_color_space: state.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            })
-            .sink(ViewportCacheSink::new(tab_id.0, 0))
+            }))
+            .sink(Arc::new(ViewportCacheSink::new(tab_id.0, 0)))
             .compile();
         let title = self
             .path

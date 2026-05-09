@@ -1,4 +1,4 @@
-use pixors_executor::source::cache_reader::TileRange;
+use pixors_ops::source::cache_reader::TileRange;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

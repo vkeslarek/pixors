@@ -1,17 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use pixors_executor::data_transform::DataTransformNode;
-use pixors_executor::graph::graph::{EdgePorts, ExecGraph, StageId};
-use pixors_executor::operation::OperationNode;
-use pixors_executor::sink::SinkNode;
-use pixors_executor::source::SourceNode;
-use pixors_executor::stage::StageNode;
+use pixors_engine::graph::graph::{EdgePorts, ExecGraph, StageArc, StageId};
 
 #[derive(Clone)]
 struct Inner {
-    stages: Vec<StageNode>,
+    stages: Vec<StageArc>,
     edges: Vec<(usize, usize)>,
     outputs: Vec<(usize, u16)>,
 }
@@ -34,20 +30,20 @@ impl PathBuilder {
         }
     }
 
-    pub fn src(self, s: impl Into<SourceNode>) -> Self {
-        self.add(StageNode::Source(s.into()))
+    pub fn src(self, s: StageArc) -> Self {
+        self.add(s)
     }
 
-    pub fn data_xform(self, d: impl Into<DataTransformNode>) -> Self {
-        self.add(StageNode::DataTransform(d.into()))
+    pub fn data_xform(self, d: StageArc) -> Self {
+        self.add(d)
     }
 
-    pub fn op(self, o: impl Into<OperationNode>) -> Self {
-        self.add(StageNode::Operation(o.into()))
+    pub fn op(self, o: StageArc) -> Self {
+        self.add(o)
     }
 
-    pub fn sink(self, s: impl Into<SinkNode>) -> Self {
-        let next = self.add(StageNode::Sink(s.into()));
+    pub fn sink(self, s: StageArc) -> Self {
+        let next = self.add(s);
         {
             let mut inner = next.inner.borrow_mut();
             inner.outputs.push((next.anchors[0], 0));
@@ -55,7 +51,7 @@ impl PathBuilder {
         next
     }
 
-    fn add(self, stage: StageNode) -> Self {
+    fn add(self, stage: StageArc) -> Self {
         let idx = {
             let mut inner = self.inner.borrow_mut();
             let idx = inner.stages.len();
@@ -90,7 +86,7 @@ impl PathBuilder {
             let key = format!("{:?}", stage);
             let sid = *seen
                 .entry(key)
-                .or_insert_with(|| graph.add_stage(stage.clone()));
+                .or_insert_with(|| graph.add_stage(Arc::clone(stage)));
             remap[i] = Some(sid);
         }
 

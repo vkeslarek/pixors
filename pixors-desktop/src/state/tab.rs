@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::common::image::ImageDescriptor;
-use pixors_executor::source::cache_reader::TileRange;
+use pixors_image::common::image::ImageDescriptor;
+use pixors_ops::source::cache_reader::TileRange;
 
 use crate::viewport::state::ViewportState;
 use crate::viewport::tile_cache::ViewportCache;

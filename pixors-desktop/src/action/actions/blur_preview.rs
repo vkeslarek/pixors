@@ -1,17 +1,17 @@
 use std::sync::{Arc, Mutex};
 
-use pixors_executor::common::color::space::ColorSpace;
-use pixors_executor::common::pixel::meta::PixelMeta;
-use pixors_executor::common::pixel::{AlphaPolicy, PixelFormat};
-use pixors_executor::data::buffer::Buffer;
-use pixors_executor::data::tile::Tile;
-use pixors_executor::data::tile::TileCoord;
-use pixors_executor::data_transform::to_neighborhood::TileToNeighborhood;
-use pixors_executor::graph::item::Item;
-use pixors_executor::operation::blur::Blur;
-use pixors_executor::operation::color::ColorConvert;
-use pixors_executor::sink::viewport_cache_sink::ViewportCacheSink;
-use pixors_executor::source::viewport_cache_source::{
+use pixors_engine::common::color::space::ColorSpace;
+use pixors_engine::common::pixel::meta::PixelMeta;
+use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_engine::data::buffer::Buffer;
+use pixors_engine::data::tile::Tile;
+use pixors_engine::data::tile::TileCoord;
+use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
+use pixors_engine::graph::item::Item;
+use pixors_ops::operation::blur::Blur;
+use pixors_color::operation::color::ColorConvert;
+use crate::viewport_cache_sink::ViewportCacheSink;
+use crate::viewport_cache_source::{
     ViewportCacheSource, install_viewport_cache_reader,
 };
 
@@ -31,10 +31,8 @@ pub struct BlurPreview {
     pub image_width: u32,
     pub image_height: u32,
     pub cache: Arc<Mutex<ViewportCache>>,
-    /// Format/colorspace of tiles stored in the RAM cache (display space, e.g. sRGB Rgba8).
     pub display_format: PixelFormat,
     pub display_color_space: ColorSpace,
-    /// Working format/colorspace for blur (linear, e.g. ACEScg RgbaF16).
     pub working_format: PixelFormat,
     pub working_color_space: ColorSpace,
 }
@@ -51,8 +49,6 @@ impl Action for BlurPreview {
         let display_format = self.display_format;
         let display_color_space = self.display_color_space;
 
-        // Register the RAM-cache reader for this tab. Tiles are in display space
-        // (e.g. sRGB Rgba8) — label them honestly so downstream ColorConvert is correct.
         install_viewport_cache_reader(
             self.tab.0,
             Box::new(move |_key, generation, mip, _range| {
@@ -86,31 +82,30 @@ impl Action for BlurPreview {
             }),
         );
 
-        // Pipeline: decode display→working, blur in linear space, re-encode to display.
         let graph = PathBuilder::new()
-            .src(ViewportCacheSource {
+            .src(Arc::new(ViewportCacheSource {
                 routing_key: self.tab.0,
                 mip_level: self.mip,
                 generation: 0,
                 tile_range: None,
-            })
-            .op(ColorConvert {
+            }))
+            .op(Arc::new(ColorConvert {
                 target_format: self.working_format,
                 target_color_space: self.working_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            })
-            .data_xform(TileToNeighborhood {
+            }))
+            .data_xform(Arc::new(TileToNeighborhood {
                 radius: self.radius,
-            })
-            .op(Blur {
+            }))
+            .op(Arc::new(Blur {
                 radius: self.radius,
-            })
-            .op(ColorConvert {
+            }))
+            .op(Arc::new(ColorConvert {
                 target_format: self.display_format,
                 target_color_space: self.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            })
-            .sink(ViewportCacheSink::new(self.tab.0, self.generation))
+            }))
+            .sink(Arc::new(ViewportCacheSink::new(self.tab.0, self.generation)))
             .compile();
 
         Ok(PreparedAction::Pipeline {
