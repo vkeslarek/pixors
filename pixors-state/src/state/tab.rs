@@ -27,7 +27,6 @@ pub struct Tab {
     pub redraw_seq: u64,
     pub layers: Vec<Layer>,
     pub active_layer: Option<LayerId>,
-    pub chain: EditChain,
     pub history: History,
     pub view: TabView,
     pub filter: FilterState,

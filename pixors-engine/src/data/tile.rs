@@ -61,14 +61,6 @@ impl TileCoord {
             image_height,
         }
     }
-
-    pub fn pixel_count(&self) -> usize {
-        (self.width * self.height) as usize
-    }
-
-    pub fn bounds(&self) -> (u32, u32, u32, u32) {
-        (self.px, self.py, self.width, self.height)
-    }
 }
 
 #[derive(Debug, Clone)]

@@ -82,12 +82,3 @@ pub trait Stage: Send + Sync + std::fmt::Debug {
         0
     }
 }
-
-// ── StageRole ──────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum StageRole {
-    Source,
-    Operation,
-    Sink,
-}

@@ -11,7 +11,6 @@ use pixors_engine::runtime::event::PipelineEvent;
 use pixors_engine::runtime::pipeline::{Pipeline, PipelineHandle};
 use tokio::sync::broadcast;
 
-use crate::state::history::SnapshotId;
 use crate::state::{EditorState, TabId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,9 +33,6 @@ pub enum PreparedAction {
     Pipeline {
         mode: PipelineMode,
         graph: ExecGraph,
-        snapshot: Option<SnapshotId>,
-        /// Overrides `action.target_tab()` for event routing; set by actions that
-        /// allocate their TabId inside `prepare()` (e.g. OpenFile).
         routed_tab: Option<TabId>,
     },
 }

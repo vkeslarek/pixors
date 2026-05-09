@@ -59,7 +59,6 @@ impl Action for RequestMipFetch {
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Background,
             graph,
-            snapshot: None,
             routed_tab: None,
         })
     }

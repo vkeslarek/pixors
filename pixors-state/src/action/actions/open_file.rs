@@ -184,7 +184,6 @@ impl Action for OpenFile {
             redraw_seq: 0,
             layers,
             active_layer,
-            chain: Default::default(),
             history: Default::default(),
             view: TabView {
                 active_mip: 0,
@@ -199,7 +198,6 @@ impl Action for OpenFile {
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Background,
             graph,
-            snapshot: None,
             routed_tab: Some(tab_id),
         })
     }

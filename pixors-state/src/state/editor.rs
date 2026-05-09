@@ -8,7 +8,6 @@ pub struct EditorState {
     pub active: Option<TabId>,
     pub next_tab_id: u64,
     pub next_layer_id: u64,
-    pub pipeline_lock: Option<TabId>,
     pub working_format: PixelFormat,
     pub working_color_space: ColorSpace,
     pub display_format: PixelFormat,
@@ -22,7 +21,6 @@ impl EditorState {
             active: None,
             next_tab_id: 0,
             next_layer_id: 0,
-            pipeline_lock: None,
             working_format: PixelFormat::RgbaF16,
             working_color_space: ColorSpace::ACES_CG,
             display_format: PixelFormat::Rgba8,
@@ -117,9 +115,5 @@ impl EditorState {
 
     pub fn active_id(&self) -> Option<TabId> {
         self.active
-    }
-
-    pub fn is_locked(&self) -> bool {
-        self.pipeline_lock.is_some()
     }
 }

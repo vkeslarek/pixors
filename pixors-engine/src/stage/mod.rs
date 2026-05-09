@@ -6,4 +6,4 @@ pub mod node;
 pub use actors::{Consumer, Processor, Producer};
 pub use context::ProcessorContext;
 pub use kinds::{DataKind, PortDeclaration, PortGroup, PortSpecification};
-pub use node::{Stage, StageHints, StageRole};
+pub use node::{Stage, StageHints};

@@ -79,7 +79,6 @@ impl Action for Export {
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Apply,
             graph,
-            snapshot: None,
             routed_tab: None,
         })
     }
