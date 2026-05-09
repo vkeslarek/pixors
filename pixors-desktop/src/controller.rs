@@ -1,4 +1,4 @@
-use crate::state::TabId;
+use pixors_state::state::TabId;
 use std::sync::Arc;
 
 use iced::keyboard::{self, Key};
@@ -96,7 +96,7 @@ impl App {
             Msg::TabBar(m) => match m {
                 tab_bar::Msg::Select(id) => {
                     if let Err(e) = self.dispatcher.dispatch(
-                        Arc::new(crate::action::actions::switch_tab::SwitchTab(id)),
+                        Arc::new(pixors_state::action::actions::switch_tab::SwitchTab(id)),
                         &mut self.state,
                     ) {
                         self.push_error(e);
@@ -105,7 +105,7 @@ impl App {
                 }
                 tab_bar::Msg::Close(id) => {
                     if let Err(e) = self.dispatcher.dispatch(
-                        Arc::new(crate::action::actions::close_tab::CloseTab(id)),
+                        Arc::new(pixors_state::action::actions::close_tab::CloseTab(id)),
                         &mut self.state,
                     ) {
                         self.push_error(e);
@@ -179,7 +179,7 @@ impl App {
 
         if let Some(path) = path {
             if let Err(e) = self.dispatcher.dispatch(
-                Arc::new(crate::action::actions::open_file::OpenFile::new(path)),
+                Arc::new(pixors_state::action::actions::open_file::OpenFile::new(path)),
                 &mut self.state,
             ) {
                 self.push_error(e);
@@ -220,13 +220,14 @@ impl App {
             }
 
             let _ = self.dispatcher.dispatch(
-                Arc::new(crate::action::actions::mip_fetch::RequestMipFetch {
+                Arc::new(pixors_state::action::actions::mip_fetch::RequestMipFetch {
                     tab: tab_id,
                     mip,
                     range,
                     cache_dir,
                     img_w,
                     img_h,
+                    post_process: self.active_post_process.clone(),
                 }),
                 &mut self.state,
             );
@@ -277,7 +278,7 @@ impl App {
                         tab.view.loading = true;
                         tab.view.progress = 0.0;
 
-                        let action = Arc::new(crate::action::actions::export::Export {
+                        let action = Arc::new(pixors_state::action::actions::export::Export {
                             tab: tab_id,
                             source_path: path.clone(),
                             save_path: save_path.clone(),
@@ -328,50 +329,45 @@ impl App {
     }
 
     fn dispatch_blur_preview(&mut self, radius: u32) {
-        let Some(tab) = self.state.active_tab_mut() else {
-            return;
-        };
+        use std::sync::Arc;
+        use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
+        use pixors_engine::common::color::space::ColorSpace;
+        use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
+        use pixors_engine::graph::path::Path;
+        use pixors_color::operation::color::ColorConvert;
+        use pixors_ops::operation::blur::Blur;
 
-        // Cancel the previous background pipeline so it stops wasting resources
-        self.dispatcher.cancel_background(tab.id);
+        let path = Path::new()
+            .push(Arc::new(TileToNeighborhood { radius }))
+            .push(Arc::new(Blur { radius }))
+            .push(Arc::new(ColorConvert {
+                target_format: PixelFormat::Rgba8,
+                target_color_space: ColorSpace::SRGB,
+                target_alpha: AlphaPolicy::Straight,
+            }));
+        self.active_post_process = Some(path);
 
-        tab.view.preview_gen += 1;
-        let generation = tab.view.preview_gen;
-
+        let Some(tab) = self.state.active_tab() else { return; };
+        let tab_id = tab.id;
+        let (img_w, img_h) = (tab.desc.width, tab.desc.height);
         let mip = tab.viewport_state.borrow().current_mip;
-
-        let action = crate::action::actions::blur_preview::BlurPreview {
-            tab: tab.id,
-            radius,
-            generation,
-            mip,
-            image_width: tab.desc.width,
-            image_height: tab.desc.height,
-            cache: tab.viewport_cache.clone(),
-            display_format: self.state.display_format,
-            display_color_space: self.state.display_color_space,
-            working_format: self.state.working_format,
-            working_color_space: self.state.working_color_space,
-        };
-
-        let _ = self.dispatcher.dispatch(Arc::new(action), &mut self.state);
+        let cache_dir = tab.cache_dir.clone();
+        let range = tab.viewport_state.borrow().camera.padded_tile_range(mip, 256, 1);
+        if let Ok(mut sigs) = tab.mip_fetch_signal.lock() {
+            sigs.push((tab_id, mip, range));
+        }
     }
 
     fn dispatch_blur_cancel(&mut self) {
-        let Some(tab) = self.state.active_tab_mut() else {
-            return;
-        };
-        let generation = tab.view.preview_gen;
-        tab.view.preview_gen = 0;
+        self.active_post_process = None;
 
-        self.dispatcher.cancel_background(tab.id);
-
-        let action = crate::action::actions::blur_cancel::BlurCancel {
-            tab: tab.id,
-            generation,
-        };
-
-        let _ = self.dispatcher.dispatch(Arc::new(action), &mut self.state);
+        let Some(tab) = self.state.active_tab() else { return; };
+        let tab_id = tab.id;
+        let mip = tab.viewport_state.borrow().current_mip;
+        let range = tab.viewport_state.borrow().camera.padded_tile_range(mip, 256, 1);
+        if let Ok(mut sigs) = tab.mip_fetch_signal.lock() {
+            sigs.push((tab_id, mip, range));
+        }
     }
 
     pub(crate) fn push_error(&mut self, msg: String) {

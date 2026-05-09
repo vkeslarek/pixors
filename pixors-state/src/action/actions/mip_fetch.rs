@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
+use pixors_engine::graph::path::Path;
 use pixors_color::operation::color::ColorConvert;
 use crate::viewport_cache_sink::ViewportCacheSink;
 use pixors_ops::source::cache_reader::{CacheReader, TileRange};
@@ -20,6 +21,7 @@ pub struct RequestMipFetch {
     pub cache_dir: std::path::PathBuf,
     pub img_w: u32,
     pub img_h: u32,
+    pub post_process: Option<Path>,
 }
 
 impl Action for RequestMipFetch {
@@ -28,7 +30,7 @@ impl Action for RequestMipFetch {
     }
 
     fn prepare(&self, _state: &mut EditorState) -> Result<PreparedAction, String> {
-        let graph = PathBuilder::new()
+        let mut pipe = PathBuilder::new()
             .src(Arc::new(CacheReader {
                 cache_dir: self.cache_dir.clone(),
                 mip_level: self.mip,
@@ -38,12 +40,19 @@ impl Action for RequestMipFetch {
                 tile_range: Some(self.range.clone()),
                 pixel_format: PixelFormat::RgbaF16,
                 color_space: ColorSpace::ACES_CG,
-            }))
-            .op(Arc::new(ColorConvert {
+            }));
+
+        if let Some(ref path) = self.post_process {
+            pipe = pipe.attach(path);
+        } else {
+            pipe = pipe.op(Arc::new(ColorConvert {
                 target_format: PixelFormat::Rgba8,
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
-            }))
+            }));
+        }
+
+        let graph = pipe
             .sink(Arc::new(ViewportCacheSink::new(self.tab.0, 0)))
             .compile();
 

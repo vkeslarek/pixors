@@ -4,14 +4,14 @@ use std::sync::{Arc, Mutex};
 
 use iced::mouse;
 use iced::widget::shader;
-use iced::{Event, Point, Rectangle, Size};
+use iced::{Event, Rectangle};
 use pixors_ops::source::cache_reader::TileRange;
 
-use crate::state::TabId;
-use crate::viewport::camera::Camera;
+use pixors_state::state::TabId;
+use pixors_state::viewport::camera::Camera;
 use crate::viewport::pipeline::ViewportPrimitive;
-use crate::viewport::state::ViewportState;
-use crate::viewport::tile_cache::ViewportCache;
+use pixors_state::viewport::state::ViewportState;
+use pixors_state::viewport::tile_cache::ViewportCache;
 
 pub const TILE_SIZE: u32 = 256;
 
@@ -59,15 +59,15 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             state.current_mip = state.camera.visible_mip_level();
         }
 
-        let size = Size::new(bounds.width, bounds.height);
-        if state.last_bounds != Some(size) {
-            state.camera.resize(size.width, size.height);
+        let bounds_tuple = (bounds.width, bounds.height);
+        if state.last_bounds != Some(bounds_tuple) {
+            state.camera.resize(bounds_tuple.0, bounds_tuple.1);
             if !state.fitted {
                 state.camera.fit();
                 state.fitted = true;
                 state.current_mip = state.camera.visible_mip_level();
             }
-            state.last_bounds = Some(size);
+            state.last_bounds = Some(bounds_tuple);
         }
 
         let mut target_mip = state.camera.visible_mip_level();
@@ -104,7 +104,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                     .padded_tile_range(state.current_mip, TILE_SIZE, 3),
             ));
 
-            let max_mip = crate::viewport::camera::compute_max_mip(
+            let max_mip = pixors_state::viewport::camera::compute_max_mip(
                 state.camera.img_w as u32,
                 state.camera.img_h as u32,
             );
@@ -176,7 +176,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if cursor.position_in(bounds).is_some() {
                     state.dragging = true;
-                    state.last_pos = cursor.position_in(bounds);
+                    state.last_pos = cursor.position_in(bounds).map(|p| (p.x, p.y));
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
                     None
@@ -190,10 +190,10 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if state.dragging {
                     if let Some(curr) = cursor.position_in(bounds) {
-                        if let Some(last) = state.last_pos {
-                            state.camera.pan(curr.x - last.x, curr.y - last.y);
+                        if let Some((last_x, last_y)) = state.last_pos {
+                            state.camera.pan(curr.x - last_x, curr.y - last_y);
                         }
-                        state.last_pos = Some(curr);
+                        state.last_pos = Some((curr.x, curr.y));
                     }
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
@@ -207,8 +207,8 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                         mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
                     };
                     let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
-                    let pos = cursor.position_in(bounds).unwrap_or(Point::ORIGIN);
-                    state.camera.zoom_at(factor, pos.x, pos.y);
+                    let pos = cursor.position_in(bounds).map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+                    state.camera.zoom_at(factor, pos.0, pos.1);
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
                     None

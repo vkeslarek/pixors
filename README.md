@@ -13,6 +13,7 @@ pixors/
 ├── pixors-color/      # Color science: ColorConvert, ColorConversion, pixel models
 ├── pixors-image/      # Image I/O: codec traits, PNG/TIFF, image sources, encoder sinks
 ├── pixors-ops/        # Operations: Blur, Compose, MipDownsample, MipFilter
+├── pixors-state/      # Editor state model: tabs, layers, actions, history, viewport state
 ├── pixors-desktop/    # Native desktop app (iced, borderless window)
 ├── pixors-ui/         # React + TypeScript frontend (Vite)
 └── docs/              # Architecture docs, phase plans, known bugs
@@ -22,10 +23,10 @@ pixors/
 
 ```
 pixors-engine  ←  pixors-color  ←  pixors-image  ←  pixors-ops
-     ↑                ↑
-pixors-shader  ───────┘
-     ↑
-pixors-desktop  ─── pixors-image, pixors-ops
+     ↑                ↑                              ↑
+pixors-shader  ───────┘                     pixors-state
+     ↑                                          ↑
+pixors-desktop  ─── pixors-image, pixors-ops, pixors-state
 ```
 
 ### `pixors-engine` — The Framework

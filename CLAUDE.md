@@ -11,9 +11,10 @@ Pixors is an open-source image editor — Rust engine + React frontend, shipped 
 ├── Cargo.toml                 # Workspace root (shared version, edition, lints)
 ├── Makefile                   # Build tasks
 ├── CONTRIBUTING.md            # Coding guidelines
+├── AGENTS.md                  # Compact guide for AI agents
 ├── scripts/                   # build-linux.sh, build-windows.sh, build-macos.sh
 ├── .github/workflows/         # CI (main) + Release (release/*)
-├── pixors-engine/             # Framework: Stage trait, data types, GPU infra, runtime
+├── pixors-engine/             # Framework: Stage/Pipeline traits, data types, GPU infra, runtime
 │   └── src/                  # stage, data, data_transform, graph, gpu, runtime, operation/transfer, error, utils, common/{color,pixel}
 ├── pixors-shader/             # All GPU shaders + compiled SPIR-V binaries
 │   └── {shaders/, kernels/, src/lib.rs}
@@ -23,20 +24,27 @@ Pixors is an open-source image editor — Rust engine + React frontend, shipped 
 │   └── src/                  # common/image, source/image_stream, sink/{png_encoder*,tiff_encoder,cache_writer}
 ├── pixors-ops/                # Operations: Blur, Compose, MipDownsample, MipFilter, CacheReader
 │   └── src/                  # operation/{blur,compose,mip_*}, source/cache_reader
-├── pixors-desktop/            # Native desktop app (iced)
-│   └── src/                  # main.rs, app.rs, controller.rs, state/, action/, viewport/, components/, pages/, path_builder.rs
-│                             # + viewport/sink.rs, viewport_cache_sink.rs, viewport_cache_source.rs (local stages)
-└── pixors-ui/                 # React + TypeScript + Vite frontend
+├── pixors-state/              # Headless application state: EditorState, tabs, actions, dispatcher, tile cache
+│   └── src/                  # state/{editor,tab,history,viewport_cache,camera}, action/{mod,dispatcher,actions/*}, viewport_cache_{source,sink}.rs
+├── pixors-desktop/            # Desktop GUI (Iced): renders state, no business logic
+│   └── src/                  # main.rs, app.rs, controller.rs, components/, pages/, widgets/, dialog/, viewport/, icons.rs, theme.rs
+│                             # viewport/{pipeline,program,sink,tiled_texture}.rs (GPU atlas + screen render)
+├── pixors-mcp/                # MCP server (TypeScript/Node): drives pixors-state headlessly over stdio
+│   └── src/                  # MCP tool handlers → dispatch Actions against EditorState
+└── pixors-ui/                 # React + TypeScript + Vite frontend (future web UI)
 ```
 
 ## Crate Dependency Graph
 
 ```
 pixors-engine  ←  pixors-color  ←  pixors-image  ←  pixors-ops
-     ↑                ↑
-pixors-shader  ───────┘
+     ↑                ↑                                   ↑
+pixors-shader  ───────┘                                   │
+                                                          │
+pixors-state  ──────────────── pixors-engine, pixors-color, pixors-image, pixors-ops
      ↑
-pixors-desktop  ─── pixors-image, pixors-ops
+pixors-desktop  ─── pixors-state  (+ direct deps on engine/color/image/ops for viewport stages)
+pixors-mcp      ─── pixors-state  (headless, no GUI)
 ```
 
 - **`pixors-engine`** — No internal deps. Defines all traits (`Stage`, `Producer`, `Processor`, `Consumer`, `GpuKernel`, `Runner`, `Pixel`, `Component`, `ImageDecoder`, `PageStream`, `ImageEncoder`) and supporting types (`Device`, `Buffer`, `Tile`, `ScanLine`, `TileBlock`, `Neighborhood`, `PixelFormat`, `ColorSpace`, `TransferFn`, `PixelMeta`, `AlphaPolicy`, `DataKind`, `PortSpecification`, `StageHints`, `ProcessorContext`, `Item`, `ExecGraph`, `Pipeline`, `ChainRunner`, `Scheduler`, `GpuContext`, `Upload`, `Download`, `DataTransformNode` variants).
@@ -44,7 +52,9 @@ pixors-desktop  ─── pixors-image, pixors-ops
 - **`pixors-color`** — Depends on `pixors-engine`, `pixors-shader`. `ColorConvert` stage (CPU+GPU), `ColorConversion` engine, pixel model structs (`Rgba<T>`, `Rgb<T>`, `Gray<T>`, `Cmyk<T>`, `YCbCr<T>`, `Lab<T>`).
 - **`pixors-image`** — Depends on `pixors-engine`, `pixors-color`. `Image` struct, `ImageDescriptor`, `PageInfo`, `Dpi`, codec traits, PNG/TIFF codecs, `ImageStreamSource`, `PngEncoder`, `PngEncoderV2`, `TiffEncoderStage`, `CacheWriter`.
 - **`pixors-ops`** — Depends on `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-shader`. `Blur`, `Compose`, `MipDownsample`, `MipFilter`, `CacheReader`.
-- **`pixors-desktop`** — Depends on `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-ops`. `ViewportSink`, `ViewportCacheSink`, `ViewportCacheSource` (local), `PathBuilder`, actions, state.
+- **`pixors-state`** — Depends on `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-ops`. `EditorState`, `Tab`, `ViewportCache`, `Camera`, `Action` trait, `Dispatcher`, concrete actions (`OpenFile`, `BlurPreview`, `Export`, …), `ViewportCacheSource`/`ViewportCacheSink` pipeline stages. **No GUI deps (no iced, no wgpu, no rfd).** Designed to be driven headlessly by MCP or CLI.
+- **`pixors-desktop`** — Depends on `pixors-state` + direct deps on engine/color/image/ops for viewport-specific stages. Iced `App` struct, all UI components and widgets, `ViewportSink` (GPU→screen stage), `TiledTexture` (GPU atlas), wgpu render pipeline. Pure view layer — contains zero business logic.
+- **`pixors-mcp`** — TypeScript/Node MCP server. Calls into `pixors-state` (via FFI or subprocess) to dispatch `Action`s without a window.
 
 ## Code Style
 

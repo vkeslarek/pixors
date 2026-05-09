@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use pixors_engine::graph::graph::{EdgePorts, ExecGraph, StageArc, StageId};
+use pixors_engine::graph::path::Path;
 
 #[derive(Clone)]
 struct Inner {
@@ -72,6 +73,13 @@ impl PathBuilder {
             inner: Rc::clone(&self.inner),
             anchors: self.anchors.clone(),
         })
+    }
+
+    pub fn attach(mut self, path: &Path) -> Self {
+        for stage in path.stages() {
+            self = self.add(Arc::clone(stage));
+        }
+        self
     }
 
     pub fn compile(self) -> ExecGraph {

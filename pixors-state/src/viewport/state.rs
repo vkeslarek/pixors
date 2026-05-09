@@ -1,6 +1,5 @@
 use std::cell::Cell;
 
-use iced::{Point, Size};
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::state::TabId;
@@ -12,8 +11,8 @@ pub struct ViewportState {
     pub last_generation: Cell<u64>,
     pub dragging: bool,
     pub fitted: bool,
-    pub last_pos: Option<Point>,
-    pub last_bounds: Option<Size>,
+    pub last_pos: Option<(f32, f32)>,
+    pub last_bounds: Option<(f32, f32)>,
     pub last_reqs: Option<Vec<(TabId, u32, TileRange)>>,
 }
 

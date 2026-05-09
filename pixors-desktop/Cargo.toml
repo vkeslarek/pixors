@@ -8,6 +8,7 @@ pixors-engine = { path = "../pixors-engine" }
 pixors-color = { path = "../pixors-color" }
 pixors-image = { path = "../pixors-image" }
 pixors-ops = { path = "../pixors-ops" }
+pixors-state = { path = "../pixors-state" }
 iced = { version = "0.14", features = ["advanced", "tokio"] }
 tokio = { version = "1", features = ["sync", "rt"] }
 iced_aw = { version = "0.13", default-features = false, features = ["menu"] }

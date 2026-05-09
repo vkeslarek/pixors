@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use iced::widget::shader;
 
-use crate::viewport::camera::CameraUniform;
-use crate::viewport::tile_cache::ViewportCache;
+use pixors_state::viewport::camera::CameraUniform;
+use pixors_state::viewport::tile_cache::ViewportCache;
 use crate::viewport::tiled_texture::TiledTexture;
 
 pub struct ViewportPipeline {

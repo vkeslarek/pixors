@@ -1,16 +1,11 @@
-mod action;
 mod app;
 mod components;
 mod controller;
 mod dialog;
 mod icons;
 mod pages;
-mod path_builder;
-mod state;
 mod theme;
 mod viewport;
-mod viewport_cache_sink;
-mod viewport_cache_source;
 mod widgets;
 
 use app::App;
@@ -20,7 +15,7 @@ const SPACE_MONO_400: &[u8] = include_bytes!("../assets/space-mono-400-latin.ttf
 const SPACE_MONO_700: &[u8] = include_bytes!("../assets/space-mono-700-latin.ttf");
 
 fn main() -> iced::Result {
-    viewport_cache_sink::install_router();
+    pixors_state::viewport_cache_sink::install_router();
 
     tracing_subscriber::fmt::fmt()
         .with_env_filter(

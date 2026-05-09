@@ -7,11 +7,12 @@ use iced::{Background, Color, Element, Length, Subscription};
 use pixors_engine::runtime::event::PipelineEvent;
 use tokio::sync::broadcast;
 
-use crate::action::{Action, Dispatcher};
+use pixors_engine::graph::path::Path;
+use pixors_state::action::{Action, Dispatcher};
 use crate::components::{
     filters_panel, layers_panel, menu_bar, status_bar, tab_bar, toolbar, workspace_bar,
 };
-use crate::state::EditorState;
+use pixors_state::state::EditorState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -54,6 +55,7 @@ pub struct App {
     pub errors: Vec<(String, std::time::Instant)>,
     pub show_export_dialog: bool,
     pub export_dialog: crate::dialog::export::ExportDialog,
+    pub active_post_process: Option<Path>,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
@@ -89,6 +91,7 @@ impl Default for App {
             errors: Vec::new(),
             show_export_dialog: false,
             export_dialog: crate::dialog::export::ExportDialog::default(),
+            active_post_process: None,
         };
         app.update_status_from_active_tab();
         app
@@ -112,8 +115,8 @@ impl App {
 
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
         self.state.active_tab().and_then(|t| match &t.source {
-            crate::state::TabSource::File { path } => Some(path.as_path()),
-            crate::state::TabSource::NewBlank { .. } => None,
+            pixors_state::state::TabSource::File { path } => Some(path.as_path()),
+            pixors_state::state::TabSource::NewBlank { .. } => None,
         })
     }
 

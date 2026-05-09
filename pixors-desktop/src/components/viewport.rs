@@ -7,10 +7,10 @@ use iced::{Background, Color, Element, Length};
 
 use pixors_ops::source::cache_reader::TileRange;
 
-use crate::state::TabId;
+use pixors_state::state::TabId;
 use crate::viewport::program::ViewportProgram;
-use crate::viewport::state::ViewportState;
-use crate::viewport::tile_cache::ViewportCache;
+use pixors_state::viewport::state::ViewportState;
+use pixors_state::viewport::tile_cache::ViewportCache;
 use crate::widgets::pill;
 
 pub fn view<'a, Msg: 'a>(

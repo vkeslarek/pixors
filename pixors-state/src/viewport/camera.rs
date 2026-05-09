@@ -11,9 +11,7 @@ pub struct CameraUniform {
     pub pan_y: f32,
     pub zoom: f32,
     pub mip_level: f32,
-    /// MIP-0 (original) image width — needed for exact coordinate mapping.
     pub img_w0: f32,
-    /// MIP-0 (original) image height.
     pub img_h0: f32,
     pub _pad0: f32,
     pub _pad1: f32,
@@ -88,29 +86,17 @@ impl Camera {
         }
     }
 
-    /// Select a MIP level appropriate for the current zoom.
-    ///
-    /// Two constraints:
-    /// 1. Zoom-driven ideal: `mip = floor(-log₂(z))` — one texel ≈ one screen pixel.
-    /// 2. Texture cap:     texture dimension must stay ≤ 8192 px (wgpu + sane tile count).
-    ///
-    /// The higher of the two wins (lower quality), so enormous images never
-    /// create a multi-gigabyte texture at MIP 0, but smaller images degrade
-    /// gracefully to MIP 0 when the user zooms in.
     pub fn visible_mip_level(&self) -> u32 {
-        // ── Zoom-driven (standard graphics formula) ─────────────────────────
         let zoom_mip = if self.zoom >= 0.5 {
             0
         } else {
             (-(self.zoom as f64).log2().floor() as u32)
-                .saturating_sub(1) // bias toward higher quality
+                .saturating_sub(1)
                 .min(compute_max_mip(self.img_w as u32, self.img_h as u32))
         };
-
         zoom_mip.max(self.floor_mip())
     }
 
-    /// Tile indices visible at the given MIP level, with configurable tile padding.
     pub fn padded_tile_range(&self, mip: u32, tile_size: u32, padding: u32) -> TileRange {
         let mip_scale = (1u32 << mip) as f32;
         let ts = tile_size as f32;
