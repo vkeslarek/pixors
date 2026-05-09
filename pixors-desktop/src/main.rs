@@ -39,7 +39,7 @@ fn main() -> iced::Result {
         .font(SPACE_GROTESK)
         .font(SPACE_MONO_400)
         .font(SPACE_MONO_700)
-        .default_font(iced::Font::with_name("Space Grotesk"))
+        .default_font(iced::Font::with_name("Space Grotesk Light"))
         .theme(iced::Theme::Dark)
         .run()
 }
