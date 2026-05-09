@@ -1,4 +1,5 @@
 pub mod filters_panel;
+pub mod mock_filter_panel;
 pub mod layers_panel;
 pub mod menu_bar;
 pub mod panel;

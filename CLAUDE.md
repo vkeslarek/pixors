@@ -139,12 +139,47 @@ These are non-negotiable. Violations are bugs, not shortcuts.
 - `MipFilter` — pass‑through filter by mip level.
 - `CacheReader` — reads tiles from disk LZ4 cache.
 
-### pixors-desktop — Desktop App
+### pixors-state — Headless Application State
+
+**Why it exists**: MCP server and future CLI/automation need to open files, run pipelines, and mutate state without a window. `pixors-state` is the model layer — it knows nothing about Iced widgets, wgpu textures, GPU atlases, file dialogs, or rendering. Any consumer that can hold an `EditorState` and call `Dispatcher::dispatch()` is a valid frontend.
+
+- **`EditorState`** — owns `Vec<Tab>`, `active: Option<TabId>`, pipeline lock, working/display format+color space.
+- **`Tab`** — one open image: `ImageDescriptor`, `ViewportCache` (in-memory tile buffer), `Camera` (tile range / MIP math), layers, undo history, pipeline signals.
+- **`ViewportCache`** — two-tier in-memory tile cache: `base` (gen=0, source-of-truth, never overwritten by previews) + `overlay` (gen>0, preview results, dropped on cancel). Naming note: called "viewport" because the desktop reads it to render, but the cache itself has no display knowledge.
+- **`Camera`** — pure math: given zoom/pan and image dimensions, computes which MIP level to use and which `TileRange` to request. No wgpu, no rendering.
+- **`Action` trait** — `prepare(&mut EditorState) → PreparedAction`, `apply(…)`, `undo(…)`. All state mutations go through actions.
+- **`Dispatcher`** — action lifecycle: validate → prepare → spawn pipeline thread or apply immediately → route `PipelineEvent` back to caller. Per-tab locking prevents concurrent pipelines on the same tab.
+- **Concrete actions** (`action/actions/`): `OpenFile`, `BlurPreview`, `BlurCancel`, `Export`, `RequestMipFetch`, `SwitchTab`, `CloseTab`.
+- **`ViewportCacheSource` / `ViewportCacheSink`** — pipeline `Stage` impls for reading/writing the in-memory tile cache. Live in state (not desktop) because MCP pipelines also need tile I/O without a screen.
+
+**Do NOT add to pixors-state**: Iced types, wgpu handles, rfd dialogs, GPU texture atlases, window/event loop state.
+
+### pixors-desktop — Desktop GUI
+
+Pure view layer. No business logic. Renders `EditorState` via Iced, manages GPU texture atlas.
+
 - **Framework**: iced 0.14
-- **State**: `EditorState` owns tabs, pipeline lock, working/display format+color space.
-- **Actions**: `prepare → apply → undo` pattern, `Dispatcher` with per‑tab routing.
-- **Viewport stages** (local): `ViewportSink` (GPU render-to-screen), `ViewportCacheSink` (in‑memory tile cache), `ViewportCacheSource` (cache reader).
-- **Pipeline construction**: `PathBuilder` builds `ExecGraph` with `Arc<dyn Stage>`.
+- **`App` struct**: holds `Dispatcher` + `EditorState` (both from `pixors-state`) plus all UI component states (tab bar, toolbar, panels, dialogs).
+- **`Msg` enum**: all UI events — `Action(Arc<dyn Action>)`, `PipelineEvent`, component-specific messages.
+- **Update loop** (`controller.rs`): routes `Msg` → calls `dispatcher.dispatch()`, updates component state, triggers redraws.
+- **Viewport GPU** (`viewport/`): `ViewportSink` (GPU→screen stage), `TiledTexture` (wgpu texture atlas), `ViewportPipeline` (wgpu render pipeline, tiled fragment shader, `CameraUniform`).
+- **Components** (`components/`): `tab_bar`, `toolbar`, `filters_panel`, `layers_panel`, `status_bar`, `menu_bar`, `workspace_bar`, `viewport`.
+- **Dialogs** (`dialog/`): `ExportDialog` (format, bit depth, compression, DPI, ICC options).
+- **Widgets** (`widgets/`): Iced extensions (`LoadingBar`, `Tooltip`, `Pill`, …).
+
+**Do NOT add to pixors-desktop**: `EditorState` mutations, pipeline construction, action business logic, tile cache management. All of those belong in `pixors-state`.
+
+### State ↔ Desktop boundary rules
+
+| Lives in `pixors-state` | Lives in `pixors-desktop` |
+|---|---|
+| `EditorState`, `Tab`, `ViewportCache` | `App` struct, `Msg` enum |
+| `Action` trait + concrete actions | Iced widgets and component state |
+| `Dispatcher` | wgpu `TiledTexture`, `ViewportPipeline` |
+| `Camera` (tile range math) | Camera → `CameraUniform` GPU upload |
+| `ViewportCacheSource/Sink` (stages) | `ViewportSink` (screen-render stage) |
+| Pipeline graph construction (`PathBuilder`) | File dialogs (`rfd`) |
+| `PipelineEvent` enum | Progress bar / toast UI |
 
 ### Frontend (pixors-ui)
 - **Framework**: React + TypeScript + Vite
@@ -225,13 +260,24 @@ These are non-negotiable. Violations are bugs, not shortcuts.
 | `pixors-ops/src/operation/mip_downsample.rs` | `MipDownsample` stage (recursive 2×2) |
 | `pixors-ops/src/operation/mip_filter.rs` | `MipFilter` stage (pass‑through filter) |
 | `pixors-ops/src/source/cache_reader.rs` | `CacheReader` (reads tiles from disk LZ4 cache) |
-| `pixors-desktop/src/path_builder.rs` | `PathBuilder` — constructs `ExecGraph` from `Arc<dyn Stage>` |
-| `pixors-desktop/src/action/` | Action trait + Dispatcher + per‑action pipeline orchestration |
-| `pixors-desktop/src/state/` | `EditorState`, `Tab`, `History` multi‑tab editor model |
-| `pixors-desktop/src/viewport/sink.rs` | `ViewportSink` — renders tiles to screen via wgpu |
-| `pixors-desktop/src/viewport_cache_sink.rs` | `ViewportCacheSink` — writes tiles to in‑memory cache |
-| `pixors-desktop/src/viewport_cache_source.rs` | `ViewportCacheSource` — reads tiles from in‑memory cache |
+| `pixors-state/src/state/editor.rs` | `EditorState` — owns all tabs, pipeline lock, working/display format |
+| `pixors-state/src/state/tab.rs` | `Tab` — one open image: descriptor, cache, camera, layers, history |
+| `pixors-state/src/state/viewport_cache.rs` | `ViewportCache` — two-tier (base/overlay) in-memory tile cache |
+| `pixors-state/src/state/camera.rs` | `Camera` — tile range math (MIP level, visible tiles, zoom/pan) |
+| `pixors-state/src/state/history.rs` | `History` — undo/redo snapshot stack |
+| `pixors-state/src/action/mod.rs` | `Action` trait, `PreparedAction`, `PipelineMode` |
+| `pixors-state/src/action/dispatcher.rs` | `Dispatcher` — action lifecycle, pipeline dispatch, per-tab locking |
+| `pixors-state/src/action/actions/` | Concrete actions: `OpenFile`, `BlurPreview`, `BlurCancel`, `Export`, `RequestMipFetch`, `SwitchTab`, `CloseTab` |
+| `pixors-state/src/viewport_cache_sink.rs` | `ViewportCacheSink` — pipeline stage: writes tiles to in-memory cache |
+| `pixors-state/src/viewport_cache_source.rs` | `ViewportCacheSource` — pipeline stage: reads tiles from in-memory cache |
+| `pixors-state/src/path_builder.rs` | `PathBuilder` — constructs `ExecGraph` from `Arc<dyn Stage>` |
 | `pixors-desktop/src/main.rs` | App entry point, tracing config |
+| `pixors-desktop/src/app.rs` | `App` struct + subscriptions (tick, keyboard, pipeline events) |
+| `pixors-desktop/src/controller.rs` | `App::update()` — routes `Msg`, calls dispatcher |
+| `pixors-desktop/src/viewport/sink.rs` | `ViewportSink` — GPU→screen stage (wgpu texture copy) |
+| `pixors-desktop/src/viewport/tiled_texture.rs` | `TiledTexture` — wgpu GPU texture atlas (one atlas per MIP) |
+| `pixors-desktop/src/viewport/pipeline.rs` | `ViewportPipeline` — wgpu render pipeline, tiled fragment shader |
+| `pixors-desktop/src/components/viewport.rs` | Iced viewport widget — hosts wgpu surface, handles mouse/scroll |
 
 ## How to add a new PixelFormat
 

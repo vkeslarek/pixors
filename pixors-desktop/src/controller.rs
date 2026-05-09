@@ -211,8 +211,8 @@ impl App {
         }
 
         for (tab_id, mip, range, cache_dir, img_w, img_h) in mip_requests {
-            // Skip if all tiles already in cache
-            if let Some(tab) = self.state.tab(tab_id)
+            if self.active_post_process.is_none()
+                && let Some(tab) = self.state.tab(tab_id)
                 && let Ok(guard) = tab.viewport_cache.lock()
                 && guard.has_all_tiles(mip, &range)
             {

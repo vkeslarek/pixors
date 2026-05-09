@@ -5,6 +5,7 @@ use std::sync::Arc;
 pub struct BufferPool {
     device: Arc<wgpu::Device>,
     free: DashMap<(u64, wgpu::BufferUsages), SegQueue<wgpu::Buffer>>,
+    pending: SegQueue<(wgpu::Buffer, u64, wgpu::BufferUsages)>,
 }
 
 impl BufferPool {
@@ -12,6 +13,7 @@ impl BufferPool {
         Arc::new(Self {
             device,
             free: DashMap::new(),
+            pending: SegQueue::new(),
         })
     }
 
@@ -47,9 +49,17 @@ impl BufferPool {
         }
     }
 
-    pub fn return_buffer(&self, buf: wgpu::Buffer, size: u64, usage: wgpu::BufferUsages) {
+    fn return_buffer_free(&self, buf: wgpu::Buffer, size: u64, usage: wgpu::BufferUsages) {
         let key = (size, usage);
         self.free.entry(key).or_default().push(buf);
+    }
+
+    /// Only recycle pending buffers when GPU work is known to be done
+    /// (caller must have flushed/submitted+waited).
+    pub fn recycle_pending(&self) {
+        while let Some((buf, size, usage)) = self.pending.pop() {
+            self.return_buffer_free(buf, size, usage);
+        }
     }
 }
 
@@ -81,7 +91,8 @@ impl Drop for GpuBuffer {
     fn drop(&mut self) {
         if let Some(buf) = self.buffer.take() {
             self.pool
-                .return_buffer(buf, self.allocated_size, self.usage);
+                .pending
+                .push((buf, self.allocated_size, self.usage));
         }
     }
 }

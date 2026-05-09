@@ -145,6 +145,7 @@ impl Scheduler {
         for idx in 0..self.slots.len() {
             self.flush_slot(idx);
         }
+        self.pool.recycle_pending();
     }
 
     // ── Buffer ops ────────────────────────────────────────────────────────
@@ -296,6 +297,7 @@ impl Scheduler {
         enc.copy_buffer_to_buffer(src, offset, &staging, 0, size_aligned);
         self.queue.submit(std::iter::once(enc.finish()));
         self.device.poll(wgpu::Maintain::Wait);
+        self.pool.recycle_pending();
 
         let (tx, rx) = std::sync::mpsc::channel();
         staging
