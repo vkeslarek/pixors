@@ -195,6 +195,13 @@ impl Dispatcher {
         }
     }
 
+    pub fn mutate<F>(&mut self, state: &mut EditorState, f: F)
+    where
+        F: FnOnce(&mut EditorState),
+    {
+        f(state);
+    }
+
     pub fn resync_locks(&mut self, state: &mut EditorState) {
         self.background_tasks.retain(|tab_id, handle| {
             let still_running = handle.is_running();

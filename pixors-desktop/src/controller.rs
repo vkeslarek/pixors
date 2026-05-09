@@ -106,12 +106,7 @@ impl App {
             }
             Msg::TabBar(m) => match m {
                 tab_bar::Msg::Select(id) => {
-                    if let Err(e) = self.dispatcher.dispatch(
-                        Arc::new(pixors_state::action::actions::switch_tab::SwitchTab(id)),
-                        &mut self.state,
-                    ) {
-                        self.push_error(e);
-                    }
+                    self.dispatcher.mutate(&mut self.state, |s| s.switch(id));
                     self.update_status_from_active_tab();
                 }
                 tab_bar::Msg::Close(id) => {

@@ -84,12 +84,12 @@ impl PathBuilder {
         let inner = self.inner.lock().unwrap();
         let n = inner.stages.len();
 
-        let mut seen: HashMap<String, StageId> = HashMap::with_capacity(n);
+        let mut seen: HashMap<usize, StageId> = HashMap::with_capacity(n);
         let mut remap: Vec<Option<StageId>> = vec![None; n];
         let mut graph = ExecGraph::new();
 
         for (i, stage) in inner.stages.iter().enumerate() {
-            let key = format!("{:?}", stage);
+            let key = Arc::as_ptr(stage) as *const () as usize;
             let sid = *seen
                 .entry(key)
                 .or_insert_with(|| graph.add_stage(Arc::clone(stage)));
