@@ -59,14 +59,7 @@ impl Scheduler {
         dispatch_x: u32,
         dispatch_y: u32,
     ) -> Result<GpuBuffer, String> {
-        let input_bufs: Vec<&wgpu::Buffer> = inputs.iter().map(|b| b.buffer()).collect();
-        self.record_dispatch(
-            kernel,
-            &input_bufs,
-            out_buf.buffer(),
-            dispatch_x,
-            dispatch_y,
-        );
+        self.record_dispatch(kernel, inputs, out_buf.buffer(), dispatch_x, dispatch_y);
         Ok(out_buf)
     }
 
@@ -78,16 +71,17 @@ impl Scheduler {
         dispatch_x: u32,
         dispatch_y: u32,
     ) -> Result<(), String> {
-        self.record_dispatch(kernel, &[], buf.buffer(), dispatch_x, dispatch_y);
+        self.record_dispatch(kernel, &[buf], buf.buffer(), dispatch_x, dispatch_y);
         Ok(())
     }
 
     /// Shared dispatch logic — prepares pipeline + bind groups, records into
     /// a batched encoder slot, flushes when the batch is full.
+    /// Input Arcs are retained in the slot's keep_alive_gpu until after submit.
     fn record_dispatch(
         &self,
         kernel: &dyn GpuKernel,
-        inputs: &[&wgpu::Buffer],
+        inputs: &[&Arc<GpuBuffer>],
         output: &wgpu::Buffer,
         dispatch_x: u32,
         dispatch_y: u32,
@@ -96,8 +90,9 @@ impl Scheduler {
         let sig_hash = cache::hash_signature(sig);
         let cached = self.cache.get_or_build(sig_hash, sig, &self.device);
         let param_buf = cache::upload_params(&self.device, &self.queue, sig, kernel);
+        let input_bufs: Vec<&wgpu::Buffer> = inputs.iter().map(|b| b.buffer()).collect();
         let (bg0, bg1) =
-            cache::build_bind_groups(&self.device, &cached, inputs, &param_buf, output);
+            cache::build_bind_groups(&self.device, &cached, &input_bufs, &param_buf, output);
 
         let idx = self.slot_index();
         let slot = &self.slots[idx];
@@ -120,6 +115,9 @@ impl Scheduler {
             }
 
             state.keep_alive.push(param_buf);
+            for arc in inputs {
+                state.keep_alive_gpu.push(Arc::clone(arc));
+            }
             slot.inc_dispatch() >= BATCH_SIZE
         };
 
@@ -136,15 +134,21 @@ impl Scheduler {
         if let Some(encoder) = state.encoder.take() {
             self.queue.submit(std::iter::once(encoder.finish()));
         }
+        // Drop param buffers and input Arc refs only after submit so the GPU
+        // cannot finish and re-queue their memory before the encoder is done.
         state.keep_alive.clear();
+        state.keep_alive_gpu.clear();
         slot.reset_count();
     }
 
     /// Flush all slots — called by download stages before reading GPU buffers.
+    /// Polls until all submitted work is complete before recycling pending
+    /// pool buffers, preventing use-after-free on the GPU side.
     pub fn flush(&self) {
         for idx in 0..self.slots.len() {
             self.flush_slot(idx);
         }
+        self.device.poll(wgpu::Maintain::Wait);
         self.pool.recycle_pending();
     }
 

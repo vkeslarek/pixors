@@ -10,133 +10,23 @@ or scoped — phases exist to communicate intent and dependencies, not deadlines
 
 ---
 
-## In progress — Phase 9
+## ✓ Complete — Phase 9
 
-### A.1 · Service split (`tab.rs` → component-per-service)
-
-`tab.rs` is ~1 200 lines with mixed concerns. Phase 9 splits it into standalone
-services: `TabService`, `LayerService`, `LoaderService`, `ViewportService`,
-`JobService`, `PreviewService`, `OperationService`. Each owns its command/event
-enum and navigates session state directly. No service calls another.
-
-**Depends on:** nothing (pure refactor).
-
----
-
-### A.2 · Job system
-
-A `Job` wraps any pipeline execution — open, apply, export — and exposes uniform
-progress events (`JobStarted`, `JobProgress`, `JobDone`, `JobFailed`) and a
-cancellation flag (`Arc<AtomicBool>`) checked at the top of every pipe loop.
-
-**Depends on:** `ProgressSink` (already exists).
+Phase 9 delivered the core engine architecture:
+- `Action` trait + `Dispatcher` with per-tab pipeline locking
+- `ActionChain` typed wrapper; `Dispatcher::run_graph()` for viewport-only pipelines
+- `pixors-state` cleaned to headless model layer (no GUI deps, no viewport display code)
+- Viewport display state (TileCache, Camera, ViewportState, TileCacheSink, TileCacheSource) moved to `pixors-desktop`
+- GPU buffer race condition fixed: input `Arc<GpuBuffer>` retained in `EncoderSlot::keep_alive_gpu` until after `queue.submit()`; `pool.recycle_pending()` guarded by `device.poll(Wait)`
+- Export modal UI (PNG + TIFF, full config)
 
 ---
 
-### A.3 · Preview system
+## In progress — Phase 10
 
-A Preview is a Job constrained to the current viewport MIP level. At MIP-5 a blur
-preview may touch a single tile; at MIP-0 it would touch hundreds. Cancel-on-zoom
-is the Phase 9 behavior — see lock-zoom-during-preview in the unphased backlog.
+**Goal:** First complete editing loop — open → layer controls → per-layer filters → composite display → export.
 
-**Depends on:** Job system (A.2).
-
----
-
-### A.4 · BLUR operation (first `Operation` impl)
-
-Box-filter blur with configurable radius (1–32, implemented as separable H+V passes).
-`mip_aware = true` — works correctly at any MIP level so preview and full-apply
-produce consistent results at their respective resolutions.
-
-**Depends on:** Preview system (A.3).
-
----
-
-### B.1 · Error surface end-to-end
-
-Consistent error funnel: every mutating command emits `Ack { req_id, status }`.
-Failures produce `SystemEvent::Error { req_id, code: ErrorCode, detail }`. Frontend
-`engineClient` maps `req_id` to a pending promise and rejects on error. A Radix
-Toast toaster shows human-readable messages per `ErrorCode`. Per-tab error state
-prevents spinners hanging forever on a failed open.
-
-**Depends on:** nothing.
-
----
-
-### B.2 · Menu cleanup
-
-Switch `MenuBar` from `@radix-ui/react-dropdown-menu` to `@radix-ui/react-menubar`
-(fixes hover-switch between menus). Strip all menu items that do not call a real
-engine command or produce a visible client-side effect.
-
-**Depends on:** nothing.
-
----
-
-### B.3 · Panel cleanup
-
-Delete Histogram (fake `Math.random()` data), Properties (hardcoded `900/600/0/0`),
-and Adjustments panels (sliders update local store only, not the engine). Keep only
-the Layers panel, wired to `activeTab.layers` from the engine.
-
-**Depends on:** nothing (delete-only).
-
----
-
-### B.4 · Customizable panel layout
-
-Every panel can be resized, redocked (left / right / bottom / float / hidden), and
-the layout persists in `localStorage`. Resize via `react-resizable-panels`; redock
-via a per-panel context menu ("Move to → …"); no drag-and-drop framework. A Window
-menu lists all panels as checkboxes plus a Reset Layout entry.
-
-**Depends on:** panel cleanup (B.3).
-
----
-
-### B.5 · Desktop shell (wry, no Tauri)
-
-A `pixors-desktop` binary that starts the engine on a free port, serves the UI
-bundle over HTTP, and opens a native webview via `wry` + `tao`. ~40 lines of shell
-code. The webview talks to the engine over `ws://127.0.0.1:<port>` — no alternate
-IPC channel. The engine stays deployable headless (`pixors-server`) for MCP and
-mobile clients.
-
-**Depends on:** additive only (Cargo feature `desktop`).
-
----
-
-### B.6 · Docs pass
-
-`docs/PROTOCOL.md` — full command/event reference with `req_id` semantics, JSON
-examples, and `ErrorCode` table. `docs/MCP_INTEGRATION.md` — how to wrap
-`pixors-server` as an MCP tool. `ROADMAP.md` — this file. `CLAUDE.md` update.
-
-**Depends on:** B.1 (ErrorCode).
-
----
-
-## Phase 10 — First complete workflow
-
-**Goal:** open an image, apply blur, export. A usable application end-to-end.
-
-- Export pipeline — reuses `ColorConvertPipe` already in place; adds encode for
-  PNG, JPEG, and WEBP. AVIF encode included (modern default format, worth the
-  effort now that the pipe exists).
-- Export modal in the frontend — format selector, quality slider, destination
-  color space. Wired to the Job system from Phase 9.
-- EXR encode deferred — no HDR workflow yet, revisit when Darkroom lands.
-- Decode: PNG and TIFF only (what already exists). New format decoders enter in
-  Phase 11.
-- Checkerboard transparency pattern in the viewport — missing today, trivial to
-  add, blocks correct compositing display.
-- Blend modes in the compositor — currently only alpha is computed correctly.
-  Normal, Multiply, Screen, Overlay, Soft Light, Hard Light, Difference,
-  Luminosity, Color, Hue, Saturation — coherent subset first, expand later.
-
-**Deliverable:** the Phase 9 blur loop, closed. A real shipping loop.
+See `docs/PHASE_10.md` for the full refined spec.
 
 ---
 

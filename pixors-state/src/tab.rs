@@ -1,11 +1,6 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
 
 use pixors_image::image::ImageDescriptor;
-use pixors_ops::source::cache_reader::TileRange;
-
-use crate::viewport::state::ViewportState;
-use crate::viewport::tile_cache::TileCache;
 
 use super::history::History;
 
@@ -21,9 +16,6 @@ pub struct Tab {
     pub source: TabSource,
     pub desc: ImageDescriptor,
     pub cache_dir: PathBuf,
-    pub tile_cache: Arc<Mutex<TileCache>>,
-    pub viewport_state: Arc<RwLock<ViewportState>>,
-    pub mip_fetch_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
     pub redraw_seq: u64,
     pub layers: Vec<Layer>,
     pub active_layer: Option<LayerId>,
@@ -72,9 +64,4 @@ impl Default for FilterState {
     fn default() -> Self {
         Self { blur_radius: 3.0 }
     }
-}
-
-#[derive(Default)]
-pub struct EditChain {
-    pub ops: Vec<()>,
 }

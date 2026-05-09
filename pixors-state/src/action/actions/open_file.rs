@@ -1,11 +1,8 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::tile_cache_sink::{TileCacheSink, register_tile_cache};
 use pixors_color::processor::ColorConvert;
 use pixors_engine::common::pixel::AlphaPolicy;
-use pixors_engine::data::tile::TileGridPos;
-use pixors_engine::data_transform::to_tile::ScanLineToTile;
 use pixors_image::image::open_image;
 use pixors_image::sink::cache_writer::CacheWriter;
 use pixors_image::source::image_stream::ImageStreamSource;
@@ -14,8 +11,6 @@ use pixors_ops::processor::mip_downsample::MipDownsample;
 use crate::PathBuilder;
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::tab::{BlendMode, FilterState, Layer, LayerSource};
-use crate::viewport::state::ViewportState;
-use crate::viewport::tile_cache::{CachedTile, TileCache};
 use crate::{EditorState, Tab, TabId, TabSource, TabView};
 
 use crate::TILE_SIZE;
@@ -65,53 +60,24 @@ impl Action for OpenFile {
         }
 
         let cache_dir = self.path.with_extension("pixors_cache");
-        let vp_cache = TileCache::new();
-        vp_cache.lock().unwrap().clear_all();
-        vp_cache.lock().unwrap().signal_new_img(w, h);
-
         let tab_id = state.alloc_tab_id();
-
-        {
-            let c = vp_cache.clone();
-            register_tile_cache(
-                tab_id.0,
-                Box::new(move |generation, mip, tx, ty, px, py, tw, th, bytes| {
-                    if let Ok(mut guard) = c.lock() {
-                        guard.insert(
-                            generation,
-                            TileGridPos {
-                                mip_level: mip,
-                                tx,
-                                ty,
-                            },
-                            CachedTile {
-                                px,
-                                py,
-                                width: tw,
-                                height: th,
-                                bytes: Arc::new(bytes.to_vec()),
-                                layer: generation,
-                            },
-                        );
-                    }
-                }),
-            );
-        }
 
         let stream = Arc::new(Mutex::new(Some(
             img.open_page(0).map_err(|e| e.to_string())?,
         )));
 
-        let pipe = PathBuilder::new()
+        let graph = PathBuilder::new()
             .src(Arc::new(ImageStreamSource {
                 stream,
                 image_height: desc.height,
             }))
-            .data_xform(Arc::new(ScanLineToTile {
-                tile_size: TILE_SIZE,
-                image_width: w,
-                image_height: h,
-            }))
+            .data_xform(Arc::new(
+                pixors_engine::data_transform::to_tile::ScanLineToTile {
+                    tile_size: TILE_SIZE,
+                    image_width: w,
+                    image_height: h,
+                },
+            ))
             .op(Arc::new(ColorConvert {
                 target_format: state.working_format,
                 target_color_space: state.working_color_space,
@@ -121,32 +87,18 @@ impl Action for OpenFile {
                 image_width: w,
                 image_height: h,
                 tile_size: TILE_SIZE,
-            }));
-
-        let [pipe_cache, pipe_vp] = pipe.split();
-
-        pipe_cache.sink(Arc::new(CacheWriter {
-            cache_dir: cache_dir.clone(),
-        }));
-
-        let graph = pipe_vp
-            .op(Arc::new(ColorConvert {
-                target_format: state.display_format,
-                target_color_space: state.display_color_space,
-                target_alpha: AlphaPolicy::Straight,
             }))
-            .sink(Arc::new(TileCacheSink::new(tab_id.0, 0)))
+            .sink(Arc::new(CacheWriter {
+                cache_dir: cache_dir.clone(),
+            }))
             .compile();
+
         let title = self
             .path
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("untitled")
             .to_string();
-
-        let mut vs = ViewportState::default();
-        vs.camera.img_w = w as f32;
-        vs.camera.img_h = h as f32;
 
         let num_pages = img.page_count();
         let mut layers: Vec<Layer> = Vec::with_capacity(num_pages);
@@ -170,7 +122,6 @@ impl Action for OpenFile {
                 source: LayerSource::FilePage { page },
             });
         }
-        let active_layer = active_layer;
 
         let tab = Tab {
             id: tab_id,
@@ -180,9 +131,6 @@ impl Action for OpenFile {
             },
             desc,
             cache_dir,
-            tile_cache: vp_cache,
-            viewport_state: Arc::new(std::sync::RwLock::new(vs)),
-            mip_fetch_queue: Arc::new(Mutex::new(Vec::new())),
             redraw_seq: 0,
             layers,
             active_layer,

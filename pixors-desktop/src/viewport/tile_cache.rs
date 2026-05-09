@@ -15,16 +15,9 @@ pub struct CachedTile {
 
 /// Two-tier tile cache.
 ///
-/// `base` holds gen=0 tiles written by OpenFile / MipFetch — these are the
-/// source-of-truth pixels and are **never** evicted by preview pipelines.
-///
-/// `overlay` holds gen>0 tiles written by preview pipelines (e.g. blur
-/// preview). The viewport renders the overlay tile if one exists for a
-/// position, falling back to base. `clear_generation` removes overlay tiles;
-/// it never touches base.
-///
-/// This invariant ensures the blur-preview source always finds its gen=0
-/// input tiles regardless of how many preview cycles have run.
+/// `base` holds gen=0 tiles (source-of-truth, never overwritten by previews).
+/// `overlay` holds gen>0 tiles from preview pipelines (e.g. blur preview).
+/// Viewport renders overlay over base. `clear_generation` only touches overlay.
 #[derive(Debug)]
 pub struct TileCache {
     base: HashMap<TileGridPos, CachedTile>,
@@ -47,14 +40,6 @@ impl TileCache {
         }))
     }
 
-    /// Insert a tile.
-    ///
-    /// gen=0 → written to `base` (always; old base tiles are freely replaced
-    /// by fresher fetches of the same position).
-    ///
-    /// gen>0 → written to `overlay`. Silently dropped if an overlay tile with
-    /// a HIGHER generation already exists at that position (prevents a stale
-    /// pipeline from rolling back a newer preview).
     pub fn insert(&mut self, generation: u64, key: TileGridPos, tile: CachedTile) {
         if generation == 0 {
             self.base.insert(key, tile);
@@ -70,7 +55,6 @@ impl TileCache {
         }
     }
 
-    /// Drains pending keys for a MIP level (marks them as uploaded to GPU texture).
     pub fn take_pending_keys_for_mip(&mut self, mip: u32) -> Vec<TileGridPos> {
         let keys: Vec<TileGridPos> = self
             .pending
@@ -82,7 +66,6 @@ impl TileCache {
         keys
     }
 
-    /// Lookup a tile for display: overlay wins over base.
     pub fn get(&self, key: &TileGridPos) -> Option<&CachedTile> {
         self.overlay.get(key).or_else(|| self.base.get(key))
     }
@@ -141,7 +124,6 @@ impl TileCache {
         self.active_mip = mip;
     }
 
-    /// Clear everything — call before loading a new image.
     pub fn clear_all(&mut self) {
         self.base.clear();
         self.overlay.clear();
@@ -151,15 +133,12 @@ impl TileCache {
         self.active_mip = 0;
     }
 
-    /// Remove all overlay tiles. Never touches base.
     pub fn clear_generation(&mut self, generation: u64) {
         if generation > 0 {
             self.overlay.clear();
         }
     }
 
-    /// Return all base (gen=0) tiles at a mip level, used by the blur-preview
-    /// source to read the unmodified image pixels.
     pub fn tiles_at_mip(&self, mip: u32, generation: u64) -> Vec<(TileGridPos, &CachedTile)> {
         let map = if generation == 0 {
             &self.base

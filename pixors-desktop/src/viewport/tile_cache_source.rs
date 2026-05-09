@@ -18,17 +18,15 @@ pub type TileReadFn = Box<dyn Fn(u64, u64, u32, Option<TileRange>) -> Vec<Item> 
 static TILE_READERS: LazyLock<RwLock<HashMap<u64, Arc<TileReadFn>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
-/// Register a per-tab tile reader keyed by `tab_id`.
 pub fn install_tile_cache_reader(tab_id: u64, f: TileReadFn) {
     TILE_READERS.write().insert(tab_id, Arc::new(f));
 }
 
-/// Check if a tile reader is installed for the given `tab_id`.
+#[allow(dead_code)]
 pub fn is_tile_cache_reader_installed(tab_id: u64) -> bool {
     TILE_READERS.read().contains_key(&tab_id)
 }
 
-/// Remove the tile reader for `tab_id`.
 pub fn uninstall_tile_cache_reader(tab_id: u64) {
     TILE_READERS.write().remove(&tab_id);
 }
@@ -43,9 +41,7 @@ static VCS_PORTS: PortSpecification = PortSpecification {
     outputs: PortGroup::Fixed(VCS_OUTPUTS),
 };
 
-/// Reads tiles from an in-memory cache installed by the desktop layer.
-/// The desktop registers a global callback keyed by `routing_key` (TabId.0)
-/// so multiple tabs can use separate ViewportCaches.
+/// Reads tiles from the in-memory tile cache registered by the desktop layer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileCacheSource {
     pub routing_key: u64,

@@ -1,5 +1,7 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::gpu::pool::GpuBuffer;
 
 pub struct EncoderSlot {
     state: Mutex<SlotState>,
@@ -8,7 +10,12 @@ pub struct EncoderSlot {
 
 pub struct SlotState {
     pub encoder: Option<wgpu::CommandEncoder>,
+    /// Raw wgpu::Buffers kept alive for the duration of the encoder (param buffers).
     pub keep_alive: Vec<wgpu::Buffer>,
+    /// Arc<GpuBuffer> for every input buffer recorded into this encoder slot.
+    /// Held until after queue.submit() so the pool cannot recycle them before
+    /// the GPU finishes reading them.
+    pub keep_alive_gpu: Vec<Arc<GpuBuffer>>,
 }
 
 impl EncoderSlot {
@@ -17,6 +24,7 @@ impl EncoderSlot {
             state: Mutex::new(SlotState {
                 encoder: None,
                 keep_alive: Vec::new(),
+                keep_alive_gpu: Vec::new(),
             }),
             dispatch_count: AtomicUsize::new(0),
         }

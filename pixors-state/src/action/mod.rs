@@ -54,6 +54,40 @@ pub trait Action: std::fmt::Debug + Send + Sync + 'static {
     }
 }
 
+/// Typed chain of actions. Replaces raw `Vec<Arc<dyn Action>>` at callsites.
+pub struct ActionChain {
+    actions: Vec<Arc<dyn Action>>,
+}
+
+impl ActionChain {
+    pub fn single(a: impl Action + 'static) -> Self {
+        Self { actions: vec![Arc::new(a)] }
+    }
+
+    pub fn then(mut self, a: impl Action + 'static) -> Self {
+        self.actions.push(Arc::new(a));
+        self
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn Action>> {
+        self.actions.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.actions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.actions.is_empty()
+    }
+}
+
+impl From<Arc<dyn Action>> for ActionChain {
+    fn from(a: Arc<dyn Action>) -> Self {
+        Self { actions: vec![a] }
+    }
+}
+
 pub struct TabDispatcher {
     pub locked: bool,
 }
@@ -198,6 +232,57 @@ impl Dispatcher {
         if let Some(handle) = self.background_tasks.remove(&id) {
             handle.cancel();
         }
+    }
+
+    /// Run a pre-built graph without a state-mutating Action. Used by the
+    /// desktop layer for viewport-only pipelines (MipFetch, BlurPreview, etc.)
+    /// that have no state side-effects.
+    pub fn run_graph(
+        &mut self,
+        graph: ExecGraph,
+        mode: PipelineMode,
+        tab_id: Option<TabId>,
+    ) -> Result<(), String> {
+        let is_apply = mode == PipelineMode::Apply;
+        let tag = tab_id.map(|t| t.0).unwrap_or(0);
+
+        if is_apply && let Some(tid) = tab_id {
+            let td = self.tab_disp(tid);
+            if td.locked {
+                return Err("Pipeline running on tab, please wait".to_string());
+            }
+            td.locked = true;
+        }
+
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
+        let pipeline =
+            Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone(), tag)
+                .map_err(|e| e.to_string())?;
+
+        let broadcast_tx = self.event_tx.clone();
+        thread::spawn(move || {
+            while let Ok(event) = event_rx.recv() {
+                let tagged = match event {
+                    PipelineEvent::Error { message, .. } => PipelineEvent::Error { tag, message },
+                    PipelineEvent::Cancelled { .. } => PipelineEvent::Cancelled { tag },
+                    PipelineEvent::Progress { done, total, .. } => {
+                        PipelineEvent::Progress { tag, done, total }
+                    }
+                    other => other,
+                };
+                let _ = broadcast_tx.send(tagged);
+            }
+            let _ = broadcast_tx.send(PipelineEvent::Done { tag });
+        });
+
+        let handle = pipeline.run(Some(event_tx));
+
+        if !is_apply && let Some(tid) = tab_id {
+            self.background_tasks.insert(tid, handle);
+        }
+
+        Ok(())
     }
 
     pub fn mutate<F>(&mut self, state: &mut EditorState, f: F)

@@ -5,12 +5,11 @@ use iced::widget::shader;
 use iced::{Event, Rectangle};
 use pixors_ops::source::cache_reader::TileRange;
 
+use crate::viewport::camera::{Camera, compute_max_mip};
 use crate::viewport::pipeline::ViewportPrimitive;
+use crate::viewport::tile_cache::TileCache;
+use crate::viewport::viewport_state::ViewportState;
 use pixors_state::TabId;
-use pixors_state::viewport::camera::Camera;
-use pixors_state::viewport::state::ViewportState;
-use pixors_state::viewport::tile_cache::TileCache;
-
 use pixors_state::TILE_SIZE;
 
 pub struct ViewportProgram {
@@ -102,7 +101,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                     .padded_tile_range(state.current_mip, TILE_SIZE, 3),
             ));
 
-            let max_mip = pixors_state::viewport::camera::compute_max_mip(
+            let max_mip = compute_max_mip(
                 state.camera.img_w as u32,
                 state.camera.img_h as u32,
             );

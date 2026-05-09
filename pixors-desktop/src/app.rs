@@ -1,10 +1,12 @@
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use iced::keyboard::{self};
 use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Color, Element, Length, Subscription};
 use pixors_engine::runtime::event::PipelineEvent;
+use pixors_ops::source::cache_reader::TileRange;
 use tokio::sync::broadcast;
 
 use crate::page::{
@@ -12,6 +14,9 @@ use crate::page::{
     menu_bar, status_bar, workspace_bar,
 };
 use crate::panel::{filter as filters_panel, layers as layers_panel};
+use crate::viewport::tile_cache::TileCache;
+use crate::viewport::viewport_state::ViewportState;
+use pixors_state::TabId;
 use pixors_state::EditorState;
 use pixors_state::action::{Action, Dispatcher};
 
@@ -58,6 +63,12 @@ pub struct App {
     pub export_dialog: crate::modal::export::ExportDialog,
     pub show_ui_showcase: bool,
     pub ui_showcase: crate::modal::ui_showcase::UiShowcase,
+    /// Per-tab RAM tile cache (desktop display layer).
+    pub tile_caches: HashMap<TabId, Arc<Mutex<TileCache>>>,
+    /// Per-tab viewport/camera state.
+    pub viewport_states: HashMap<TabId, Arc<RwLock<ViewportState>>>,
+    /// Per-tab queue of tile requests from the viewport draw loop.
+    pub mip_queues: HashMap<TabId, Arc<Mutex<Vec<(TabId, u32, TileRange)>>>>,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
@@ -93,6 +104,9 @@ impl Default for App {
             export_dialog: crate::modal::export::ExportDialog::default(),
             show_ui_showcase: false,
             ui_showcase: crate::modal::ui_showcase::UiShowcase::default(),
+            tile_caches: HashMap::new(),
+            viewport_states: HashMap::new(),
+            mip_queues: HashMap::new(),
         };
         app.update_status_from_active_tab();
         app
@@ -123,17 +137,15 @@ impl App {
         Subscription::run_with("pipeline_progress", |_id| {
             let rx = pipeline_event_tx().subscribe();
             iced::futures::stream::unfold(rx, |mut rx| async move {
-                loop {
-                    match rx.recv().await {
-                        Ok(event) => return Some((Msg::PipelineEvent(event), rx)),
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                            tracing::warn!(
-                                "pipeline event channel lagged, skipped={skipped}; resyncing tab locks"
-                            );
-                            return Some((Msg::PipelineLagged(skipped), rx));
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                match rx.recv().await {
+                    Ok(event) => Some((Msg::PipelineEvent(event), rx)),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(
+                            "pipeline event channel lagged, skipped={skipped}; resyncing tab locks"
+                        );
+                        Some((Msg::PipelineLagged(skipped), rx))
                     }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
                 }
             })
         })

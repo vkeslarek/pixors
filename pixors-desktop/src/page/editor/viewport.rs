@@ -7,9 +7,9 @@ use pixors_ops::source::cache_reader::TileRange;
 
 use crate::components::pill::pill;
 use crate::viewport::program::ViewportProgram;
+use crate::viewport::tile_cache::TileCache;
+use crate::viewport::viewport_state::ViewportState;
 use pixors_state::TabId;
-use pixors_state::viewport::state::ViewportState;
-use pixors_state::viewport::tile_cache::TileCache;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,
