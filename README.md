@@ -82,17 +82,21 @@ React + TypeScript + Vite. Custom panel docking system. Zustand state management
 | Borderless desktop window (iced) | ✅ |
 | Cross-compile Windows support | ✅ |
 
-### Planned / In Progress
+### Roadmap
 
-| Feature | Status |
-|---|---|
-| Export (PNG, TIFF) | 🚧 |
-| Job system with progress tracking | 🚧 |
-| Library workspace (browse & organize) | 📋 |
-| Darkroom workspace (develop & adjust) | 📋 |
-| Layer adjustments (non-destructive) | 📋 |
-| Selection tools (marquee, lasso, wand) | 📋 |
-| macOS testing & support | 📋 |
+| Phase | Goal | Status |
+|---|---|---|
+| 9 · Engine foundation | Action/Dispatcher system, headless state layer, GPU buffer safety, viewport split desktop↔state | ✅ Done |
+| **10 · First complete loop** | Export fix, layer UX (select/visibility/opacity), per-layer blur filter + live preview, composite display pipeline, JPEG + WebP decode/encode, controller routing refactor | 🚧 In progress |
+| 11 · Formats + blend modes + Library | JPEG, WebP, AVIF decode; multi-layer TIFF; blend modes (Multiply, Screen, Overlay…); Library workspace v1 (thumbnails, ratings, EXIF) | 📋 |
+| 12 · RAW v1 | Canon CR3 decode, demosaicing, white balance, color matrix sensor→ACEScg | 📋 |
+| 13 · RAW v2 | NEF, ARW, DNG, camera profiles, HEIC/HEIF | 📋 |
+| 14 · Darkroom | Non-destructive op pipeline: tonal + color ops, Tone Curve, HSL, Color Grading | 📋 |
+| 15 · Masking | SAM integration, geometric selection tools, brush tools, matting | 📋 |
+| 16 · Selection engine | Quick select, magic wand, color range, luminance mask, Quick Mask mode | 📋 |
+| 17 · Layer Editor ops | Sharpen/USM, crop, rotate, flip, vignette, grain, color grading wheels | 📋 |
+
+Full detail: [ROADMAP.md](docs/ROADMAP.md)
 
 ## Getting Started
 
@@ -128,8 +132,9 @@ cargo test --workspace
 | Doc | Description |
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full architecture reference |
+| [ROADMAP.md](docs/ROADMAP.md) | Phase plan and backlog |
+| [PHASE_10.md](docs/PHASE_10.md) | Current phase — detailed implementation spec |
 | [KNOWN_BUGS.md](docs/KNOWN_BUGS.md) | Known issues |
-| [ROADMAP.md](docs/ROADMAP.md) | Future ideas |
 
 ## License
 
