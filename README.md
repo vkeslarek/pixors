@@ -1,21 +1,20 @@
 # Pixors
 
-**Open Source image editor — Rust engine + React frontend + Native desktop shell**
+**Open-source image editor — Rust engine + native desktop (iced)**
 
-> ⚠️ **Not production ready. Not even testing ready yet.** This entire project is under active development. APIs, architecture, and features change frequently. Use at your own risk.
+> ⚠️ **Not production ready.** Active development — APIs, architecture, and features change frequently.
 
 ## Architecture
 
 ```
 pixors/
 ├── pixors-engine/     # Framework: Stage trait, data types, GPU infra, runtime
-├── pixors-shader/     # All GPU shaders + compiled SPIR-V binaries
+├── pixors-shader/     # GPU shaders (Slang → SPIR-V) + compiled binaries
 ├── pixors-color/      # Color science: ColorConvert, ColorConversion, pixel models
-├── pixors-image/      # Image I/O: codec traits, PNG/TIFF, image sources, encoder sinks
+├── pixors-image/      # Image I/O: codec traits, PNG/TIFF, sources, encoder sinks
 ├── pixors-ops/        # Operations: Blur, Compose, MipDownsample, MipFilter
-├── pixors-state/      # Editor state model: tabs, layers, actions, history, viewport state
-├── pixors-desktop/    # Native desktop app (iced, borderless window)
-├── pixors-ui/         # React + TypeScript frontend (Vite)
+├── pixors-state/      # Headless editor state: tabs, layers, actions, dispatcher
+├── pixors-desktop/    # Native desktop app (iced 0.14, wgpu, borderless window)
 └── docs/              # Architecture docs, phase plans, known bugs
 ```
 
@@ -23,46 +22,38 @@ pixors/
 
 ```
 pixors-engine  ←  pixors-color  ←  pixors-image  ←  pixors-ops
-     ↑                ↑                              ↑
-pixors-shader  ───────┘                     pixors-state
-     ↑                                          ↑
-pixors-desktop  ─── pixors-image, pixors-ops, pixors-state
+     ↑                ↑                                   ↑
+pixors-shader  ───────┘                         pixors-state
+                                                     ↑
+                                             pixors-desktop
 ```
 
 ### `pixors-engine` — The Framework
-Rust library that defines all traits (`Stage`, `Producer`, `Processor`, `Consumer`, `Pixel`, `GpuKernel`) and provides the execution runtime. No internal dependencies.
+Defines all traits (`Stage`, `Producer`, `Processor`, `Consumer`, `Pixel`, `GpuKernel`) and provides the execution runtime.
 
-**Key subsystems:**
 - **Stage system** — `Stage` trait with dynamic dispatch, `Arc<dyn Stage>` in pipeline graphs
-- **Pipeline** — DAG of stages compiled by `Pipeline::compile()`, executed via `ChainRunner` threads
-- **GPU** — wgpu compute, SPIR‑V shaders, `Scheduler` owns encoder rotation + buffer pool + pipeline cache
+- **Pipeline** — DAG compiled by `Pipeline::compile()`, executed via `ChainRunner` threads
+- **GPU** — wgpu compute, SPIR-V shaders, lock-free `Scheduler` (encoder rotation + buffer pool + pipeline cache)
 - **Data types** — `Tile`, `ScanLine`, `TileBlock`, `Neighborhood` flow through bounded channels
-- **Color types** — `ColorSpace`, `TransferFn`, `PixelFormat`, `AlphaPolicy`
 
 ### `pixors-shader` — GPU Shaders
-All `.slang` shader source + shared `lib/` modules + compiled SPIR-V binaries exported as `pub const`.
+Slang source + `lib/` modules + compiled SPIR-V binaries checked into `kernels/`.
+`build.rs` recompiles when `slangc` is available; falls back to committed SPV otherwise.
 
 ### `pixors-color` — Color Science
-- `ColorConvert` stage (CPU + GPU, SIMD via `wide`)
-- `ColorConversion` engine (LUT‑based, matrix transforms)
-- Pixel model structs: `Rgba<T>`, `Rgb<T>`, `Gray<T>`, `Cmyk<T>`, `YCbCr<T>`, `Lab<T>`
+`ColorConvert` stage (CPU + GPU, SIMD via `wide`), `ColorConversion` engine, pixel model structs (`Rgba`, `Rgb`, `Gray`, `Cmyk`, `YCbCr`, `Lab`).
 
 ### `pixors-image` — Image I/O
-- `Image` struct, `ImageDescriptor`, `Dpi`, codec traits
-- PNG & TIFF decoders/encoders
-- `ImageStreamSource`, encoder sinks (`PngEncoderV2`, `TiffEncoderStage`), `CacheWriter`
+PNG & TIFF decoders/encoders, `ImageStreamSource`, encoder sinks, disk tile cache (`CacheWriter`).
 
 ### `pixors-ops` — Operations
-- `Blur` — box blur (CPU + GPU)
-- `Compose` — layer compositing (Porter-Duff over blend)
-- `MipDownsample` — recursive 2×2 box-filter
-- `MipFilter` — pass‑through filter by mip level
+`Blur` (CPU + GPU box blur), `Compose` (Porter-Duff over), `MipDownsample` (recursive 2×2), `MipFilter`.
 
-### `pixors-desktop` — The Desktop Shell
-Borderless native window via **iced 0.14**. Actions pattern (`prepare → apply → undo`). Viewport stages for GPU rendering.
+### `pixors-state` — Headless State
+`EditorState`, `Tab`, `Action` trait, `Dispatcher` — no GUI dependencies. Drives the desktop and MCP server alike.
 
-### `pixors-ui` — The Frontend
-React + TypeScript + Vite. Custom panel docking system. Zustand state management.
+### `pixors-desktop` — Native App
+Iced 0.14 desktop shell. Viewport rendered via wgpu into an iced custom widget. Per-tab GPU texture atlas, camera/pan/zoom, blur preview pipeline.
 
 ## Features
 
@@ -70,40 +61,47 @@ React + TypeScript + Vite. Custom panel docking system. Zustand state management
 
 | Feature | Status |
 |---|---|
-| PNG loading with color space detection | ✅ |
-| TIFF loading (single & multi-page) | ✅ |
-| Color space conversion (sRGB, Rec.709, P3, ACEScg, etc.) | ✅ |
+| PNG decode with color space detection | ✅ |
+| TIFF decode (single & multi-page) | ✅ |
+| PNG + TIFF encode with full config | ✅ |
+| Color space conversion (sRGB, Rec.709, P3, ACEScg, …) | ✅ |
 | ACEScg f16 linear working space | ✅ |
-| Stream pipeline (parallel tile processing) | ✅ |
+| Parallel tile pipeline (producer → processor → consumer) | ✅ |
 | MIP pyramid generation (recursive 2×2) | ✅ |
-| Tile compositor (Porter-Duff over blend) | ✅ |
-| Box blur (CPU + GPU) | ✅ |
-| Custom panel docking (drag, resize, persist) | ✅ |
-| Borderless desktop window (iced) | ✅ |
-| Cross-compile Windows support | ✅ |
+| Tile compositor (Porter-Duff alpha-over) | ✅ |
+| Box blur (CPU + GPU via wgpu compute) | ✅ |
+| Live blur preview (overlay tile cache) | ✅ |
+| Viewport: pan, zoom, MIP-aware tile fetch | ✅ |
+| Headless state layer (no GUI deps) | ✅ |
+| Export modal (PNG + TIFF, full config) | ✅ |
+| Windows cross-compile | ✅ |
 
 ### Roadmap
 
 | Phase | Goal | Status |
 |---|---|---|
-| 9 · Engine foundation | Action/Dispatcher system, headless state layer, GPU buffer safety, viewport split desktop↔state | ✅ Done |
-| **10 · First complete loop** | Export fix, layer UX (select/visibility/opacity), per-layer blur filter + live preview, composite display pipeline, JPEG + WebP decode/encode, controller routing refactor | 🚧 In progress |
-| 11 · Formats + blend modes + Library | JPEG, WebP, AVIF decode; multi-layer TIFF; blend modes (Multiply, Screen, Overlay…); Library workspace v1 (thumbnails, ratings, EXIF) | 📋 |
-| 12 · RAW v1 | Canon CR3 decode, demosaicing, white balance, color matrix sensor→ACEScg | 📋 |
+| 9 · Engine foundation | Action/Dispatcher, headless state, GPU buffer safety, viewport moved to desktop | ✅ Done |
+| **10 · First complete loop** | Export fix, layer UX (select/visibility/opacity), per-layer blur + preview, composite display, JPEG + WebP, controller routing | 🚧 In progress |
+| 11 · Formats + blend modes + Library | AVIF, multi-layer TIFF, blend modes (Multiply, Screen, Overlay…), Library workspace v1 | 📋 |
+| 12 · RAW v1 | Canon CR3, demosaicing, white balance, sensor→ACEScg color matrix | 📋 |
 | 13 · RAW v2 | NEF, ARW, DNG, camera profiles, HEIC/HEIF | 📋 |
-| 14 · Darkroom | Non-destructive op pipeline: tonal + color ops, Tone Curve, HSL, Color Grading | 📋 |
-| 15 · Masking | SAM integration, geometric selection tools, brush tools, matting | 📋 |
-| 16 · Selection engine | Quick select, magic wand, color range, luminance mask, Quick Mask mode | 📋 |
-| 17 · Layer Editor ops | Sharpen/USM, crop, rotate, flip, vignette, grain, color grading wheels | 📋 |
+| 14 · Darkroom | Non-destructive op pipeline: tonal + color ops, Tone Curve, HSL | 📋 |
+| 15 · Masking | SAM integration, geometric tools, brush tools, matting | 📋 |
+| 16 · Selection engine | Quick select, magic wand, color range, luminance mask | 📋 |
+| 17 · Layer Editor ops | Sharpen/USM, crop, rotate, flip, vignette, grain | 📋 |
 
 Full detail: [ROADMAP.md](docs/ROADMAP.md)
 
 ## Getting Started
 
 ### Prerequisites
+
 - Rust (latest stable)
-- Node.js 18+
-- Linux: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`
+- Linux: `libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev libfontconfig1-dev`
+- macOS / Windows: no extra deps
+
+Optional (shader recompilation only):
+- [Slang compiler](https://github.com/shader-slang/slang/releases) — only needed when modifying `.slang` files; pre-compiled SPIR-V is checked in
 
 ### Development
 
@@ -111,14 +109,12 @@ Full detail: [ROADMAP.md](docs/ROADMAP.md)
 git clone https://github.com/vkeslarek/pixors.git
 cd pixors
 
-# Desktop app (main entry point)
+# Run the desktop app
 cargo run -p pixors-desktop
 
-# Frontend (separate terminal, for dev mode)
-cd pixors-ui && npm install && npm run dev
-
-# Dev mode (desktop connects to Vite instead of embedded frontend)
-PIXORS_DEV=1 cargo run -p pixors-desktop
+# Full workspace check + lint
+cargo check --workspace
+cargo clippy --workspace
 ```
 
 ### Testing

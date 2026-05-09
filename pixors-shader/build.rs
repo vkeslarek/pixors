@@ -59,6 +59,18 @@ fn compile_dir(dir: &Path, include_dirs: &[&Path], kernels_dir: &Path, slangc: &
     }
 }
 
+fn find_slangc() -> Option<String> {
+    if Command::new("slangc").arg("--version").output().is_ok() {
+        return Some("slangc".to_string());
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let local = format!("{home}/.local/bin/slangc");
+    if Command::new(&local).arg("--version").output().is_ok() {
+        return Some(local);
+    }
+    None
+}
+
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let shaders_dir = Path::new(&manifest_dir).join("shaders");
@@ -76,14 +88,33 @@ fn main() {
         return;
     }
 
-    let home = std::env::var("HOME").unwrap_or_default();
-    let slangc = if Command::new("slangc").arg("--version").output().is_ok() {
-        "slangc".to_string()
-    } else {
-        format!("{home}/.local/bin/slangc")
+    let Some(slangc) = find_slangc() else {
+        // No slangc — fall back to pre-compiled SPV in kernels/ (checked into git).
+        // Verify they exist so the build fails loudly if someone forgets to commit them.
+        let missing: Vec<_> = std::fs::read_dir(&shaders_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "slang"))
+            .filter(|e| {
+                let stem = e.path().file_stem().unwrap().to_str().unwrap().to_owned();
+                !kernels_dir.join(format!("{stem}.spv")).exists()
+            })
+            .map(|e| e.path().display().to_string())
+            .collect();
+
+        if missing.is_empty() {
+            println!("cargo:warning=slangc not found — using pre-built SPIR-V from kernels/");
+        } else {
+            panic!(
+                "slangc not found and pre-built SPIR-V missing for: {}",
+                missing.join(", ")
+            );
+        }
+        println!("cargo:rustc-env=SHADER_OUT_DIR={}", kernels_dir.display());
+        return;
     };
 
     compile_dir(&shaders_dir, include_dirs, &kernels_dir, &slangc);
-
     println!("cargo:rustc-env=SHADER_OUT_DIR={}", kernels_dir.display());
 }
