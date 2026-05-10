@@ -9,6 +9,7 @@ pub enum Msg {
     SetBlur(f32),
     CancelPreview,
     Close,
+    OpenFilterSearch,
 }
 
 pub fn body_view<'a>(blur_radius: f32) -> Element<'a, Msg> {

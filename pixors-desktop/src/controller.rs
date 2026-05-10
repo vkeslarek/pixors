@@ -124,6 +124,10 @@ impl App {
                 crate::modal::ui_showcase::Msg::Close => self.show_ui_showcase = false,
                 other => self.ui_showcase.update(other),
             },
+            Msg::FilterSearch(m) => match m {
+                crate::modal::filter_search::Msg::Close => self.show_filter_search = false,
+                other => self.filter_search.update(other),
+            },
             Msg::MenuBar(m) => self.handle_menu_msg(m),
             Msg::WorkspaceBar(m) => self.workspace.update(m),
             Msg::Toolbar(m) => {
@@ -165,6 +169,11 @@ impl App {
             },
             Msg::LayersPanel(m) => self.handle_layers_msg(m),
             Msg::FiltersPanel(m) => self.handle_filters_msg(m),
+            Msg::NewFilterPanel(m) => {
+                if let Some(forwarded_msg) = self.new_filter.update(m) {
+                    self.handle_filters_msg(forwarded_msg);
+                }
+            }
             Msg::PaneResized(e) => self.panes.resize(e.split, e.ratio),
             Msg::PaneDragged(pane_grid::DragEvent::Dropped { pane, target }) => {
                 self.panes.drop(pane, target);
@@ -531,6 +540,9 @@ impl App {
             }
             filters_panel::Msg::CancelPreview => {
                 self.dispatch_blur_cancel();
+            }
+            filters_panel::Msg::OpenFilterSearch => {
+                self.show_filter_search = true;
             }
         }
     }

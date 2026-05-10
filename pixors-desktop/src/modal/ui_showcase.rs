@@ -1,5 +1,5 @@
 use crate::components::*;
-use crate::layout::dialog::dialog;
+use crate::modal::modal;
 use iced::widget::{column, row, scrollable};
 use iced::{Alignment, Element};
 
@@ -153,7 +153,7 @@ impl UiShowcase {
             .padding(20),
         );
 
-        dialog("UI Components Showcase", content)
+        modal("UI Components Showcase", content)
             .width(600.0)
             .height(500.0)
             .on_close(Msg::Close)

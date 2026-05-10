@@ -36,3 +36,5 @@ pub const CHEVRON_DOWN: &str = "\u{e06d}";
 pub const CIRCLE_SLASH: &str = "\u{e079}";
 #[allow(dead_code)]
 pub const UNDO: &str = "\u{e4b6}";
+pub const SEARCH: &str = "\u{e149}";
+pub const SPARKLES: &str = "\u{e48b}";

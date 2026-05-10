@@ -76,3 +76,17 @@ A progress bar existed previously but was lost in a refactor.
    still reads from `tab.view` and is included in the layout.
 
 **Priority:** High — first-run experience; every user hits this on every file open.
+
+---
+
+## BUG-04 · Viewport interactions remain active when modals are open
+
+**Symptom:** As interações com o viewport não cessam quando o modal está aberto. (Interactions with the canvas/viewport do not stop when a modal is open).
+
+**Root cause:** Event bubbling or lack of state check. When modals (like export or filter search) are open, they render as overlays, but the underlying viewport widget still receives and processes mouse/keyboard events (pan, zoom, shortcuts).
+
+**Fix direction:**
+- The overlay/modal container needs to capture interactions (e.g., via an opaque `mouse_area` on the backdrop) or the viewport needs a condition to ignore inputs if `app.show_export_dialog` or similar states are active.
+- To be addressed later.
+
+**Priority:** Medium — UX issue, but not critically breaking.

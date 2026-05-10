@@ -24,6 +24,7 @@ use pixors_state::action::{Action, Dispatcher};
 pub enum PaneKind {
     Layers,
     Filters,
+    NewFilter,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +37,7 @@ pub enum Msg {
     TabBar(tab_bar::Msg),
     LayersPanel(layers_panel::Msg),
     FiltersPanel(filters_panel::Msg),
+    NewFilterPanel(crate::panel::new_filter::Msg),
     PaneResized(pane_grid::ResizeEvent),
     PaneDragged(pane_grid::DragEvent),
     ClosePane(pane_grid::Pane),
@@ -47,6 +49,7 @@ pub enum Msg {
     PipelineLagged(u64),
     ExportDialog(crate::modal::export::Msg),
     UiShowcase(crate::modal::ui_showcase::Msg),
+    FilterSearch(crate::modal::filter_search::Msg),
 }
 
 pub struct App {
@@ -63,6 +66,9 @@ pub struct App {
     pub export_dialog: crate::modal::export::ExportDialog,
     pub show_ui_showcase: bool,
     pub ui_showcase: crate::modal::ui_showcase::UiShowcase,
+    pub show_filter_search: bool,
+    pub filter_search: crate::modal::filter_search::FilterSearch,
+    pub new_filter: crate::panel::new_filter::State,
     /// Per-tab RAM tile cache (desktop display layer).
     pub tile_caches: HashMap<TabId, Arc<Mutex<TileCache>>>,
     /// Per-tab viewport/camera state.
@@ -85,7 +91,12 @@ impl Default for App {
             axis: pane_grid::Axis::Horizontal,
             ratio: 0.55,
             a: Box::new(Configuration::Pane(PaneKind::Layers)),
-            b: Box::new(Configuration::Pane(PaneKind::Filters)),
+            b: Box::new(Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(Configuration::Pane(PaneKind::Filters)),
+                b: Box::new(Configuration::Pane(PaneKind::NewFilter)),
+            }),
         };
         let panes = pane_grid::State::with_configuration(cfg);
 
@@ -104,6 +115,9 @@ impl Default for App {
             export_dialog: crate::modal::export::ExportDialog::default(),
             show_ui_showcase: false,
             ui_showcase: crate::modal::ui_showcase::UiShowcase::default(),
+            show_filter_search: false,
+            filter_search: crate::modal::filter_search::FilterSearch::default(),
+            new_filter: crate::panel::new_filter::State::default(),
             tile_caches: HashMap::new(),
             viewport_states: HashMap::new(),
             mip_queues: HashMap::new(),
@@ -183,8 +197,15 @@ impl App {
                     ..Default::default()
                 });
             layers.push(
-                iced::widget::stack![backdrop, self.export_dialog.view().map(Msg::ExportDialog),]
-                    .into(),
+                iced::widget::stack![
+                    backdrop,
+                    container(self.export_dialog.view().map(Msg::ExportDialog))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .center_x(Length::Fill)
+                        .center_y(Length::Fill),
+                ]
+                .into(),
             );
         }
 
@@ -200,6 +221,27 @@ impl App {
                 iced::widget::stack![
                     backdrop,
                     container(self.ui_showcase.view().map(Msg::UiShowcase))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .center_x(Length::Fill)
+                        .center_y(Length::Fill),
+                ]
+                .into(),
+            );
+        }
+
+        if self.show_filter_search {
+            let backdrop = container(text(""))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.6))),
+                    ..Default::default()
+                });
+            layers.push(
+                iced::widget::stack![
+                    backdrop,
+                    container(self.filter_search.view().map(Msg::FilterSearch))
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .center_x(Length::Fill)

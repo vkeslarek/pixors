@@ -9,42 +9,16 @@ use super::components::*;
 use super::{ExportDialog, ExportFormat, Msg};
 
 pub fn view(dialog: &ExportDialog) -> Element<'_, Msg> {
-    let card = card_view(dialog);
+    let content = card_view(dialog);
 
-    container(scrollable(card))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .padding(Padding::new(40.0))
-        .style(|_| container::Style {
-            background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.65))),
-            ..Default::default()
-        })
+    crate::modal::modal("Export Image", content)
+        .width(520.0)
+        .height(800.0)
+        .on_close(Msg::Cancel)
         .into()
 }
 
 fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
-    // Header row
-    let header = row![
-        text("Export Image").size(16).color(TEXT_PRIMARY),
-        iced::widget::Space::new().width(Length::Fill),
-        Element::from(
-            crate::components::icon_button(crate::icons::X)
-                .size(14)
-                .on_press(Msg::Cancel)
-        ),
-    ]
-    .align_y(Alignment::Center);
-
-    let divider = container(text(""))
-        .width(Length::Fill)
-        .height(1)
-        .style(|_| container::Style {
-            background: Some(Background::Color(BORDER_SUBTLE)),
-            ..Default::default()
-        });
-
     // Format segmented toggle
     let fmt_section = Column::new()
         .spacing(12)
@@ -61,8 +35,6 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
     let mut body = Column::new()
         .spacing(20)
         .padding(Padding::new(24.0))
-        .push(header)
-        .push(divider)
         .push(fmt_section)
         .push(options);
 
@@ -92,17 +64,5 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
 
     body = body.push(btns);
 
-    container(body)
-        .style(|_| container::Style {
-            background: Some(Background::Color(BG_ELEVATED)),
-            border: Border {
-                color: BORDER,
-                width: 1.0,
-                radius: 12.0.into(),
-            },
-            ..Default::default()
-        })
-        .width(520)
-        .height(Length::Shrink)
-        .into()
+    scrollable(body).into()
 }

@@ -124,10 +124,14 @@ fn pane_content<'a>(
                 .unwrap_or(3.0);
             crate::panel::filter::body_view(radius).map(Msg::FiltersPanel)
         }
+        PaneKind::NewFilter => {
+            app.new_filter.view().map(Msg::NewFilterPanel)
+        }
     };
     let label = match kind {
         PaneKind::Layers => "LAYERS",
         PaneKind::Filters => "FILTERS",
+        PaneKind::NewFilter => "NEW FILTER",
     };
 
     let title_bar = crate::layout::pane_title_bar(label, Some(Msg::ClosePane(pane)));
