@@ -10,9 +10,10 @@ use pixors_engine::data::tile::{Tile, TileCoord};
 use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
 use pixors_engine::graph::item::Item;
 use pixors_engine::runtime::event::PipelineEvent;
+use pixors_engine::stage::Stage;
 use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
-use pixors_color::processor::ColorConvert;
+use pixors_ops::processor::color::ColorConvert;
 use pixors_engine::common::pixel::meta::PixelMeta;
 use pixors_state::action::PipelineMode;
 use pixors_state::PathBuilder;
@@ -375,7 +376,7 @@ impl App {
         img_h: u32,
     ) {
         let graph = PathBuilder::new()
-            .src(Arc::new(CacheReader {
+            .src(Stage::Producer(Box::new(CacheReader {
                 cache_dir,
                 mip_level: mip,
                 tile_size: TILE_SIZE,
@@ -384,13 +385,13 @@ impl App {
                 tile_range: Some(range),
                 pixel_format: PixelFormat::RgbaF16,
                 color_space: ColorSpace::ACES_CG,
-            }))
-            .op(Arc::new(ColorConvert {
+            })))
+            .op(Stage::Processor(Box::new(ColorConvert {
                 target_format: self.state.display_format,
                 target_color_space: self.state.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            }))
-            .sink(Arc::new(TileCacheSink::new(tab_id.0, 0)))
+            })))
+            .sink(Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0))))
             .compile();
 
         let _ = self
@@ -406,25 +407,25 @@ impl App {
             .unwrap_or((1, 1));
 
         let graph = PathBuilder::new()
-            .src(Arc::new(TileCacheSource {
+            .src(Stage::Producer(Box::new(TileCacheSource {
                 routing_key: tab_id.0,
                 mip_level: mip,
                 generation: 0,
                 tile_range: None,
-            }))
-            .op(Arc::new(ColorConvert {
+            })))
+            .op(Stage::Processor(Box::new(ColorConvert {
                 target_format: self.state.working_format,
                 target_color_space: self.state.working_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            }))
-            .data_xform(Arc::new(TileToNeighborhood { radius }))
-            .op(Arc::new(Blur { radius }))
-            .op(Arc::new(ColorConvert {
+            })))
+            .data_xform(Stage::Processor(Box::new(TileToNeighborhood::new(radius))))
+            .op(Stage::Processor(Box::new(Blur { radius })))
+            .op(Stage::Processor(Box::new(ColorConvert {
                 target_format: self.state.display_format,
                 target_color_space: self.state.display_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            }))
-            .sink(Arc::new(TileCacheSink::new(tab_id.0, generation)))
+            })))
+            .sink(Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, generation))))
             .compile();
 
         let _ = self

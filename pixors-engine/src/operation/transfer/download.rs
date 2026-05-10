@@ -1,12 +1,10 @@
-use serde::{Deserialize, Serialize};
-
 use crate::data::buffer::Buffer;
 use crate::data::neighborhood::{Neighborhood, NeighborhoodData};
 use crate::data::tile::Tile;
 use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
 };
 
 use crate::debug_stopwatch;
@@ -16,37 +14,29 @@ static DN_PORT_DECL: &PortDeclaration = &PortDeclaration {
     kind: DataKind::Tile,
 };
 
-static DN_PORTS: PortSpecification = PortSpecification {
+static DN_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Variable(DN_PORT_DECL),
     outputs: PortGroup::Variable(DN_PORT_DECL),
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Download;
 
-impl Stage for Download {
+impl Download {
+    pub fn stage() -> crate::stage::Stage {
+        crate::stage::Stage::Processor(Box::new(Self))
+    }
+}
+
+impl Processor for Download {
     fn kind(&self) -> &'static str {
         "download"
     }
 
-    fn ports(&self) -> &'static PortSpecification {
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
         &DN_PORTS
     }
 
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(DownloadProcessor::new()))
-    }
-}
-
-pub struct DownloadProcessor;
-
-impl DownloadProcessor {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Processor for DownloadProcessor {
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("download");
         match item {
@@ -60,7 +50,7 @@ impl Processor for DownloadProcessor {
                     .as_ref()
                     .ok_or_else(|| Error::internal("GPU unavailable for download"))?;
                 let scheduler = gpu.scheduler();
-                scheduler.flush(); // ensure pending GPU dispatches complete before reading
+                scheduler.flush();
                 let gbuf = tile.data.as_gpu().unwrap();
                 let bytes = scheduler.read_from_buffer(gbuf.buffer(), 0, gbuf.requested_size);
                 ctx.emit.emit(Item::Tile(Tile::new(
@@ -132,7 +122,6 @@ impl Processor for DownloadProcessor {
                     Ok(())
                 }
                 NeighborhoodData::Cpu { .. } => {
-                    // Already CPU — pass through
                     ctx.emit.emit(Item::Neighborhood(nbhd));
                     Ok(())
                 }

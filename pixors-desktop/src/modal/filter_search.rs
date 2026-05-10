@@ -2,7 +2,7 @@ use iced::widget::{column, container, row, scrollable, text, Space, button, mous
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use crate::icons::{LUCIDE, SEARCH, SPARKLES};
 use crate::theme::{
-    ACCENT, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY,
+    BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY,
     TEXT_SECONDARY,
 };
 use crate::modal::modal;

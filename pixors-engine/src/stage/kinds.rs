@@ -29,7 +29,7 @@ impl PortGroup {
     pub fn kind_at(&self, index: usize) -> Option<DataKind> {
         match self {
             PortGroup::Fixed(ports) => ports.get(index).map(|p| p.kind),
-            PortGroup::Variable(_) => None, // Variable ports accept any DataKind
+            PortGroup::Variable(_) => None,
         }
     }
 
@@ -41,7 +41,18 @@ impl PortGroup {
     }
 }
 
-pub struct PortSpecification {
+// ── Port specifications ──────────────────────────────────────────────────────
+
+pub struct InPortSpecification {
+    pub ports: PortGroup,
+}
+
+pub struct OutPortSpecification {
+    pub ports: PortGroup,
+}
+
+pub struct InOutPortSpecification {
     pub inputs: PortGroup,
     pub outputs: PortGroup,
 }
+

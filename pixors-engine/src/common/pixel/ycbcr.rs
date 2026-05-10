@@ -1,5 +1,5 @@
 use half::f16;
-use pixors_engine::common::pixel::{AlphaPolicy, Pixel};
+use crate::common::pixel::{AlphaPolicy, Pixel};
 use wide::f32x4;
 
 #[repr(C)]

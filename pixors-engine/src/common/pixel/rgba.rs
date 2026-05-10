@@ -1,6 +1,6 @@
 use half::f16;
-use pixors_engine::common::pixel::AlphaPolicy;
-use pixors_engine::common::pixel::{Component, Pixel};
+use crate::common::pixel::AlphaPolicy;
+use crate::common::pixel::{Component, Pixel};
 use wide::f32x4;
 
 #[repr(C)]
@@ -36,11 +36,9 @@ impl<T: Component> Rgba<T> {
     }
 }
 
-// bytemuck safety
 unsafe impl<T: Component> bytemuck::Pod for Rgba<T> {}
 unsafe impl<T: Component> bytemuck::Zeroable for Rgba<T> {}
 
-// Pixel impls
 impl Pixel for Rgba<f16> {
     fn unpack(self) -> [f32; 4] {
         let a = self.a.to_f32();

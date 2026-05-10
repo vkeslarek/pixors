@@ -1,12 +1,13 @@
 use std::sync::{Arc, Mutex};
 
-use pixors_color::processor::ColorConvert;
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::data_transform::to_tile::ScanLineToTile;
+use pixors_engine::stage::Stage;
 use pixors_image::codec::EncoderConfig;
 use pixors_image::image::open_image;
 use pixors_image::source::image_stream::ImageStreamSource;
+use pixors_ops::processor::color::ColorConvert;
 
 use crate::PathBuilder;
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
@@ -39,41 +40,36 @@ impl Action for Export {
             img.open_page(0).map_err(|e| e.to_string())?,
         )));
 
-        let encoder_sink: std::sync::Arc<dyn pixors_engine::stage::Stage + Send + Sync> =
-            match &self.config {
-                EncoderConfig::Png(png_cfg) => {
-                    Arc::new(pixors_image::sink::png_encoder_v2::PngEncoderV2 {
-                        path: self.save_path.clone(),
-                        config: png_cfg.clone(),
-                        dpi: self.dpi,
-                        icc_profile: self.icc_profile.clone(),
-                    })
-                }
-                EncoderConfig::Tiff(tiff_cfg) => {
-                    Arc::new(pixors_image::sink::tiff_encoder::TiffEncoderStage {
-                        path: self.save_path.clone(),
-                        config: tiff_cfg.clone(),
-                        dpi: self.dpi,
-                        icc_profile: self.icc_profile.clone(),
-                    })
-                }
-            };
+        let encoder_sink = match &self.config {
+            EncoderConfig::Png(png_cfg) => Stage::Consumer(Box::new(
+                pixors_image::sink::png_encoder_v2::PngEncoderV2::new(
+                    self.save_path.clone(),
+                    png_cfg.clone(),
+                    self.dpi,
+                    self.icc_profile.clone(),
+                ),
+            )),
+            EncoderConfig::Tiff(tiff_cfg) => Stage::Consumer(Box::new(
+                pixors_image::sink::tiff_encoder::TiffEncoderStage::new(
+                    self.save_path.clone(),
+                    tiff_cfg.clone(),
+                    self.dpi,
+                    self.icc_profile.clone(),
+                ),
+            )),
+        };
 
         let graph = PathBuilder::new()
-            .src(Arc::new(ImageStreamSource {
+            .src(Stage::Producer(Box::new(ImageStreamSource {
                 stream,
                 image_height: self.image_height,
-            }))
-            .data_xform(Arc::new(ScanLineToTile {
-                tile_size: TILE_SIZE,
-                image_width: w,
-                image_height: h,
-            }))
-            .op(Arc::new(ColorConvert {
+            })))
+            .data_xform(Stage::Processor(Box::new(ScanLineToTile::new(TILE_SIZE, w, h))))
+            .op(Stage::Processor(Box::new(ColorConvert {
                 target_format: PixelFormat::Rgba8,
                 target_color_space: ColorSpace::SRGB,
                 target_alpha: AlphaPolicy::Straight,
-            }))
+            })))
             .sink(encoder_sink)
             .compile();
 

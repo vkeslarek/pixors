@@ -1,22 +1,26 @@
 use crate::error::Error;
 
 use super::context::ProcessorContext;
+use super::kinds::{InOutPortSpecification, InPortSpecification, OutPortSpecification};
+use super::node::StageHints;
 
-// ── Producer ───────────────────────────────────────────────────────────────────
+// ── Producer ──────────────────────────────────────────────────────────────────
 
-/// Active producer — emits items without receiving any input.
-/// Used by source stages (image readers, cache loaders) that kickstart a pipeline.
-pub trait Producer: Send {
+pub trait Producer: Send + Sync + std::fmt::Debug {
+    fn kind(&self) -> &'static str;
+    fn out_ports(&self) -> &'static OutPortSpecification;
+    fn hints(&self) -> StageHints { StageHints::cpu() }
+    fn source_items(&self) -> usize { 0 }
     fn produce(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error>;
-    /// How many items this source emits total (for progress estimation).
-    fn source_items(&self) -> usize {
-        0
-    }
 }
 
-// ── Processor ──────────────────────────────────────────────────────────────────
+// ── Processor ─────────────────────────────────────────────────────────────────
 
-pub trait Processor: Send {
+pub trait Processor: Send + Sync + std::fmt::Debug {
+    fn kind(&self) -> &'static str;
+    fn in_out_ports(&self) -> &'static InOutPortSpecification;
+    fn hints(&self) -> StageHints { StageHints::cpu() }
+    fn work_multiplier(&self) -> f64 { 1.0 }
     fn process(
         &mut self,
         ctx: ProcessorContext<'_>,
@@ -27,11 +31,12 @@ pub trait Processor: Send {
     }
 }
 
-// ── Consumer ───────────────────────────────────────────────────────────────────
+// ── Consumer ──────────────────────────────────────────────────────────────────
 
-/// Terminal consumer — receives items but never emits.
-/// Used by sink stages (cache writers, tile sinks, viewport cache).
-pub trait Consumer: Send {
+pub trait Consumer: Send + Sync + std::fmt::Debug {
+    fn kind(&self) -> &'static str;
+    fn in_ports(&self) -> &'static InPortSpecification;
+    fn hints(&self) -> StageHints { StageHints::cpu() }
     fn consume(&mut self, item: crate::graph::item::Item) -> Result<(), Error>;
     fn finish(&mut self) -> Result<(), Error> {
         Ok(())

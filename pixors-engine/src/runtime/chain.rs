@@ -87,45 +87,20 @@ impl ChainRunner {
                     c.consume(item)?;
                     Self::bump_progress(tag, progress);
                 }
-                None => send_to_all(
-                    outputs,
-                    vec![RoutedItem {
-                        port,
-                        payload: item,
-                    }],
-                ),
+                None => send_to_all(outputs, vec![RoutedItem { port, payload: item }]),
             }
             return Ok(());
         }
 
         let mut emit = Emitter::new();
         let p = if kernel_idx == 0 { port } else { 0 };
-        let ctx = ProcessorContext {
-            port: p,
-            device,
-            emit: &mut emit,
-            gpu: gpu.clone(),
-        };
-
+        let ctx = ProcessorContext { port: p, device, emit: &mut emit, gpu: gpu.clone() };
         Self::bump_progress(tag, progress);
         kernels[kernel_idx].process(ctx, item)?;
         let items = emit.into_items();
-
         for next_item in items {
-            Self::run_item_streaming(
-                tag,
-                kernels,
-                consumer,
-                device,
-                gpu,
-                kernel_idx + 1,
-                next_item.port,
-                next_item.payload,
-                outputs,
-                progress,
-            )?;
+            Self::run_item_streaming(tag, kernels, consumer, device, gpu, kernel_idx + 1, next_item.port, next_item.payload, outputs, progress)?;
         }
-
         Ok(())
     }
 
@@ -140,49 +115,17 @@ impl ChainRunner {
         progress: &Option<Arc<ProgressState>>,
     ) -> Result<(), Error> {
         if kernel_idx >= kernels.len() {
-            if let Some(c) = consumer {
-                c.finish()?;
-            }
+            if let Some(c) = consumer { c.finish()?; }
             return Ok(());
         }
-
         let mut emit = Emitter::new();
-        let ctx = ProcessorContext {
-            port: 0,
-            device,
-            emit: &mut emit,
-            gpu: gpu.clone(),
-        };
-
+        let ctx = ProcessorContext { port: 0, device, emit: &mut emit, gpu: gpu.clone() };
         kernels[kernel_idx].finish(ctx)?;
         let items = emit.into_items();
-
         for next_item in items {
-            Self::run_item_streaming(
-                tag,
-                kernels,
-                consumer,
-                device,
-                gpu,
-                kernel_idx + 1,
-                next_item.port,
-                next_item.payload,
-                outputs,
-                progress,
-            )?;
+            Self::run_item_streaming(tag, kernels, consumer, device, gpu, kernel_idx + 1, next_item.port, next_item.payload, outputs, progress)?;
         }
-
-        Self::run_finish_streaming(
-            tag,
-            kernels,
-            consumer,
-            device,
-            gpu,
-            kernel_idx + 1,
-            outputs,
-            progress,
-        )?;
-
+        Self::run_finish_streaming(tag, kernels, consumer, device, gpu, kernel_idx + 1, outputs, progress)?;
         Ok(())
     }
 }
@@ -203,12 +146,7 @@ impl Runner for ChainRunner {
 
         if let Some(mut producer) = self.producer.take() {
             let mut emit = Emitter::new();
-            let ctx = ProcessorContext {
-                port: 0,
-                device,
-                gpu: gpu.clone(),
-                emit: &mut emit,
-            };
+            let ctx = ProcessorContext { port: 0, device, gpu: gpu.clone(), emit: &mut emit };
             producer.produce(ctx)?;
             let items = emit.into_items();
             for item in items {

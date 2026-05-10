@@ -4,79 +4,33 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
-};
-
+use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 use pixors_engine::error::Error;
-
 use pixors_engine::data::buffer::Buffer;
-
 use pixors_engine::debug_stopwatch;
 
-static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration {
-    name: "scanline",
-    kind: DataKind::ScanLine,
-}];
+static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
+static PE_IN_PORTS: InPortSpecification = InPortSpecification { ports: PortGroup::Fixed(PE_INPUTS) };
 
-static PE_OUTPUTS: &[PortDeclaration] = &[];
-
-static PE_PORTS: PortSpecification = PortSpecification {
-    inputs: PortGroup::Fixed(PE_INPUTS),
-    outputs: PortGroup::Fixed(PE_OUTPUTS),
-};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PngEncoder {
     pub path: PathBuf,
-}
-
-impl Stage for PngEncoder {
-    fn kind(&self) -> &'static str {
-        "png_encoder"
-    }
-
-    fn ports(&self) -> &'static PortSpecification {
-        &PE_PORTS
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(PngEncoderProcessor::new(self.path.clone())))
-    }
-}
-
-pub struct PngEncoderProcessor {
-    path: PathBuf,
     rows: HashMap<u32, Vec<u8>>,
     image_width: u32,
     image_height: u32,
     bpp: u8,
 }
 
-impl PngEncoderProcessor {
-    pub fn new(path: PathBuf) -> Self {
-        Self {
-            path,
-            rows: HashMap::new(),
-            image_width: 0,
-            image_height: 0,
-            bpp: 0,
-        }
-    }
-}
+impl Consumer for PngEncoder {
+    fn kind(&self) -> &'static str { "png_encoder" }
+    fn in_ports(&self) -> &'static InPortSpecification { &PE_IN_PORTS }
 
-impl Processor for PngEncoderProcessor {
-    fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+    fn consume(&mut self, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:consume");
-        let scanline = ProcessorContext::take_scanline(item)?;
+        let scanline = pixors_engine::stage::ProcessorContext::take_scanline(item)?;
         let data: Vec<u8> = match scanline.data {
-            Buffer::Cpu(v) => match Arc::try_unwrap(v) {
-                Ok(owned) => owned,
-                Err(shared) => (*shared).clone(),
-            },
+            Buffer::Cpu(v) => match Arc::try_unwrap(v) { Ok(o) => o, Err(s) => (*s).clone() },
             Buffer::Gpu(_) => return Err(Error::internal("GPU not supported")),
         };
         self.image_width = self.image_width.max(scanline.width);
@@ -86,16 +40,13 @@ impl Processor for PngEncoderProcessor {
         Ok(())
     }
 
-    fn finish(&mut self, _ctx: ProcessorContext<'_>) -> Result<(), Error> {
+    fn finish(&mut self) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:finish");
         let bpp = self.bpp as usize;
-        if bpp == 0 {
-            return Err(Error::internal("no data received"));
-        }
+        if bpp == 0 { return Err(Error::internal("no data received")); }
         let iw = self.image_width as usize;
         let ih = self.image_height as usize;
         let mut image = vec![0u8; iw * ih * bpp];
-
         for y in 0..self.image_height {
             if let Some(row) = self.rows.get(&y) {
                 let dst_start = y as usize * iw * bpp;
@@ -103,23 +54,13 @@ impl Processor for PngEncoderProcessor {
                 image[dst_start..dst_start + len].copy_from_slice(&row[..len]);
             }
         }
-
         let file = File::create(&self.path)?;
         let w = BufWriter::new(file);
         let mut encoder = png::Encoder::new(w, self.image_width, self.image_height);
-        encoder.set_color(match bpp {
-            1 => png::ColorType::Grayscale,
-            2 => png::ColorType::GrayscaleAlpha,
-            3 => png::ColorType::Rgb,
-            _ => png::ColorType::Rgba,
-        });
+        encoder.set_color(match bpp { 1 => png::ColorType::Grayscale, 2 => png::ColorType::GrayscaleAlpha, 3 => png::ColorType::Rgb, _ => png::ColorType::Rgba });
         encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder
-            .write_header()
-            .map_err(|e| Error::Png(e.to_string()))?;
-        writer
-            .write_image_data(&image)
-            .map_err(|e| Error::Png(e.to_string()))?;
+        let mut writer = encoder.write_header().map_err(|e| Error::Png(e.to_string()))?;
+        writer.write_image_data(&image).map_err(|e| Error::Png(e.to_string()))?;
         writer.finish().map_err(|e| Error::Png(e.to_string()))?;
         Ok(())
     }

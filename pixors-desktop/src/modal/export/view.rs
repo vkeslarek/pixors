@@ -1,9 +1,7 @@
-use iced::widget::{Column, container, row, scrollable, text};
-use iced::{Alignment, Background, Border, Color, Element, Length, Padding};
+use iced::widget::{Column, row, scrollable, text};
+use iced::{Alignment, Element, Length, Padding};
 
-use crate::theme::{
-    BG_ELEVATED, BORDER, BORDER_SUBTLE, DANGER, TEXT_PRIMARY,
-};
+use crate::theme::DANGER;
 
 use super::components::*;
 use super::{ExportDialog, ExportFormat, Msg};

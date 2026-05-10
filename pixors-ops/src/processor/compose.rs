@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::data::tile::{Tile, TileGridPos};
 use pixors_engine::error::Error;
 use pixors_engine::graph::emitter::Emitter;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
+    StageHints,
 };
 use pixors_image::image::BlendMode;
 
@@ -20,92 +19,23 @@ static COMPOSE_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "composed",
     kind: DataKind::Tile,
 }];
-static COMPOSE_PORTS: PortSpecification = PortSpecification {
+static COMPOSE_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Variable(&COMPOSE_INPUT),
     outputs: PortGroup::Fixed(COMPOSE_OUTPUTS),
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Compose {
     pub layer_count: u16,
     pub blend_modes: Vec<BlendMode>,
-}
-
-impl Stage for Compose {
-    fn kind(&self) -> &'static str {
-        "compose"
-    }
-
-    fn ports(&self) -> &'static PortSpecification {
-        &COMPOSE_PORTS
-    }
-
-    fn hints(&self) -> pixors_engine::stage::StageHints {
-        pixors_engine::stage::StageHints::prefer_gpu()
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(ComposeProcessor::new(
-            self.layer_count,
-            self.blend_modes.clone(),
-        )))
-    }
-}
-
-pub struct ComposeProcessor {
-    layer_count: u16,
-    blend_modes: Vec<BlendMode>,
     grid: HashMap<TileGridPos, Vec<Option<Tile>>>,
 }
 
-impl ComposeProcessor {
-    pub fn new(layer_count: u16, blend_modes: Vec<BlendMode>) -> Self {
-        Self {
-            layer_count,
-            blend_modes,
-            grid: HashMap::new(),
-        }
-    }
+impl Processor for Compose {
+    fn kind(&self) -> &'static str { "compose" }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification { &COMPOSE_PORTS }
+    fn hints(&self) -> StageHints { StageHints::prefer_gpu() }
 
-    fn try_compose(&mut self, mip: u32, tx: u32, ty: u32, emit: &mut Emitter<Item>) {
-        let key = TileGridPos {
-            mip_level: mip,
-            tx,
-            ty,
-        };
-        let Some(slots) = self.grid.get(&key) else {
-            return;
-        };
-        if slots.iter().any(|s| s.is_none()) {
-            return;
-        }
-
-        let tiles: Vec<(u16, Tile)> = self
-            .grid
-            .remove(&key)
-            .unwrap()
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
-            .collect();
-
-        compose_and_emit(tiles, &self.blend_modes, emit);
-    }
-
-    fn flush_slot(&mut self, key: TileGridPos, emit: &mut Emitter<Item>) {
-        let Some(slots) = self.grid.remove(&key) else {
-            return;
-        };
-        let tiles: Vec<(u16, Tile)> = slots
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
-            .collect();
-        compose_and_emit(tiles, &self.blend_modes, emit);
-    }
-}
-
-impl Processor for ComposeProcessor {
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let tile = ProcessorContext::take_tile(item)?;
 
@@ -140,6 +70,29 @@ impl Processor for ComposeProcessor {
             self.flush_slot(key, ctx.emit);
         }
         Ok(())
+    }
+}
+
+impl Compose {
+    fn try_compose(&mut self, mip: u32, tx: u32, ty: u32, emit: &mut Emitter<Item>) {
+        let key = TileGridPos { mip_level: mip, tx, ty };
+        let Some(slots) = self.grid.get(&key) else { return };
+        if slots.iter().any(|s| s.is_none()) { return; }
+
+        let tiles: Vec<(u16, Tile)> = self.grid.remove(&key).unwrap()
+            .into_iter().enumerate()
+            .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
+            .collect();
+
+        compose_and_emit(tiles, &self.blend_modes, emit);
+    }
+
+    fn flush_slot(&mut self, key: TileGridPos, emit: &mut Emitter<Item>) {
+        let Some(slots) = self.grid.remove(&key) else { return };
+        let tiles: Vec<(u16, Tile)> = slots.into_iter().enumerate()
+            .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
+            .collect();
+        compose_and_emit(tiles, &self.blend_modes, emit);
     }
 }
 

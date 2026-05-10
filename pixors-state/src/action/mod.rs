@@ -161,7 +161,7 @@ impl Dispatcher {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
                 let pipeline =
-                    Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone(), tag)
+                    Pipeline::compile(graph, Some(event_tx.clone()), cancelled.clone(), tag)
                         .map_err(|e| e.to_string())?;
 
                 let broadcast_tx = self.event_tx.clone();
@@ -257,7 +257,7 @@ impl Dispatcher {
         let cancelled = Arc::new(AtomicBool::new(false));
         let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
         let pipeline =
-            Pipeline::compile(&graph, Some(event_tx.clone()), cancelled.clone(), tag)
+            Pipeline::compile(graph, Some(event_tx.clone()), cancelled.clone(), tag)
                 .map_err(|e| e.to_string())?;
 
         let broadcast_tx = self.event_tx.clone();

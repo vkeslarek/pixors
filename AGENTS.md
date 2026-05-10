@@ -14,12 +14,12 @@ Open-source image editor. Rust workspace + TypeScript MCP server. Pipeline-based
 
 | Crate | Language | What it owns | What it does NOT own |
 |---|---|---|---|
-| `pixors-engine` | Rust | `Stage`/`Pipeline` traits, GPU scheduler, data types (`Tile`, `Buffer`, `Neighborhood`…), runtime | No operations, no color logic, no app state |
-| `pixors-shader` | Slang/Rust | `.slang` GPU shaders + compiled SPIR-V (`COLOR_SPV`, `BLUR_SPV`, `MIP_DOWNSAMPLE_SPV`) | No Rust logic, no runtime |
-| `pixors-color` | Rust | Color conversion, `ColorConvert` stage, pixel structs (`Rgba<T>`, `Rgb<T>`, `Gray<T>`…) | No image I/O, no app state |
-| `pixors-image` | Rust | Image codecs (PNG, TIFF), `Image` struct, `CacheWriter` | No color math, no operations |
-| `pixors-ops` | Rust | `Blur`, `Compose`, `MipDownsample`, `MipFilter`, `CacheReader` | No app state, no GUI |
-| `pixors-state` | Rust | `EditorState`, `Tab`, actions, `Dispatcher`, `ViewportCache`, `Camera`, `PathBuilder` | No GUI widgets, no wgpu textures, no file dialogs |
+| `pixors-engine` | Rust | `Stage` enum, `Producer`/`Processor`/`Consumer` traits, GPU scheduler, data types (`Tile`, `Buffer`, `Neighborhood`…), runtime, color science types (`ColorSpace`, `TransferFn`, `Matrix3x3`…) | No operations, no image I/O, no app state |
+| `pixors-shader` | Slang/Rust | `.slang` GPU shaders + `#[kernel]` proc-macro generated SPV + Rust kernel types | No runtime, no pipeline logic |
+| `pixors-shader-macro` | Rust (proc-macro) | `#[kernel]` attribute macro — reads annotation, calls slangc, generates SPV + `GpuKernel` impls | No runtime |
+| `pixors-image` | Rust | Image codecs (PNG, TIFF, JPEG), `Image` struct, `CacheWriter`, pixel types (`Rgba<T>`, `Rgb<T>`, `Gray<T>`…) | No color science, no operations |
+| `pixors-ops` | Rust | `Blur`, `Compose`, `MipDownsample`, `MipFilter`, `CacheReader`, `ColorConvert` | No app state, no GUI |
+| `pixors-state` | Rust | `EditorState`, `Tab`, actions, `Dispatcher`, `PathBuilder` | No GUI widgets, no wgpu textures, no file dialogs |
 | `pixors-desktop` | Rust | Iced GUI, wgpu GPU atlas (`TiledTexture`), screen render (`ViewportSink`), dialogs | No business logic, no pipeline construction |
 | `pixors-mcp` | TypeScript | MCP server — calls `pixors-state` headlessly over stdio | No GUI |
 
@@ -30,15 +30,15 @@ Open-source image editor. Rust workspace + TypeScript MCP server. Pipeline-based
 ```
 pixors-engine
     ↑
-pixors-shader ──→ pixors-color
-                      ↑
-                  pixors-image
-                      ↑
-                  pixors-ops
-                      ↑
-                  pixors-state
-                      ↑
-          pixors-desktop    pixors-mcp
+pixors-shader ──→ pixors-shader-macro
+    ↑
+pixors-image
+    ↑
+pixors-ops
+    ↑
+pixors-state
+    ↑
+pixors-desktop    pixors-mcp
 ```
 
 If your change would reverse an arrow, stop — you have a design problem.
@@ -113,16 +113,18 @@ trait Action {
 
 | File | Purpose |
 |---|---|---|
-| `pixors-engine/src/stage/node.rs` | `Stage` trait, `StageHints` |
-| `pixors-engine/src/stage/actors.rs` | `Producer`, `Processor`, `Consumer` |
+| `pixors-engine/src/stage/node.rs` | `Stage` enum (`Producer`, `Processor`, `Consumer`), `StageHints` |
+| `pixors-engine/src/stage/actors.rs` | `Producer`, `Processor`, `Consumer` traits |
 | `pixors-engine/src/runtime/pipeline.rs` | `Pipeline::compile()`, device assignment, transfer insertion |
 | `pixors-engine/src/gpu/scheduler.rs` | GPU API for processors |
+| `pixors-engine/src/graph/graph.rs` | `ExecGraph` — owned graph with toposort |
 | `pixors-state/src/editor.rs` | `EditorState` |
 | `pixors-state/src/tab.rs` | `Tab` |
-| `pixors-state/src/viewport/tile_cache.rs` | `TileCache` (two-tier tile buffer) |
 | `pixors-state/src/action/mod.rs` | `Action` trait, `PreparedAction` |
-| `pixors-state/src/action/actions/` | Concrete actions: `OpenFile`, `Export`, `BlurPreview`, … |
+| `pixors-state/src/action/actions/` | Concrete actions: `OpenFile`, `Export`, … |
 | `pixors-engine/src/graph/path_builder.rs` | `PathBuilder` — builds `ExecGraph` |
+| `pixors-shader/src/kernel/` | `#[kernel]` annotated params structs (compose, blur, color, mip_downsample) |
+| `pixors-shader-macro/src/lib.rs` | `#[kernel]` proc macro |
 | `pixors-desktop/src/app.rs` | `App` struct (Iced) |
 | `pixors-desktop/src/controller.rs` | `App::update()` — message routing |
 | `pixors-desktop/src/viewport/tiled_texture.rs` | GPU texture atlas |

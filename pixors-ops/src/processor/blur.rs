@@ -1,5 +1,3 @@
-use bytemuck::{Pod, Zeroable};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use pixors_engine::common::pixel::PixelFormat;
@@ -8,17 +6,12 @@ use pixors_engine::data::device::Device;
 use pixors_engine::data::neighborhood::{Neighborhood, NeighborhoodData};
 use pixors_engine::data::tile::Tile;
 use pixors_engine::error::Error;
-use pixors_engine::gpu;
 use pixors_engine::gpu::context::GpuContext;
-use pixors_engine::gpu::kernel::{
-    BindingAccess, BindingElement, DispatchShape, KernelClass, KernelSignature,
-    ParameterDeclaration, ParameterType, ResourceDeclaration,
-};
 use pixors_engine::gpu::pool::GpuBuffer;
 use pixors_engine::graph::emitter::Emitter;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
     StageHints,
 };
 
@@ -34,126 +27,30 @@ static BLUR_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
     kind: DataKind::Tile,
 }];
 
-static BLUR_PORTS: PortSpecification = PortSpecification {
+static BLUR_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Fixed(BLUR_INPUTS),
     outputs: PortGroup::Fixed(BLUR_OUTPUTS),
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Blur {
     pub radius: u32,
 }
 
-impl Stage for Blur {
-    fn kind(&self) -> &'static str {
-        "blur"
-    }
-    fn ports(&self) -> &'static PortSpecification {
-        &BLUR_PORTS
-    }
-    fn hints(&self) -> StageHints {
-        StageHints::prefer_gpu()
-    }
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(BlurProcessor::new(self.radius)))
-    }
-}
+impl Processor for Blur {
+    fn kind(&self) -> &'static str { "blur" }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification { &BLUR_PORTS }
+    fn hints(&self) -> StageHints { StageHints::prefer_gpu() }
 
-// ── Processor ─────────────────────────────────────────────────────────────────
-
-pub struct BlurProcessor {
-    radius: u32,
-}
-
-impl BlurProcessor {
-    pub fn new(radius: u32) -> Self {
-        Self { radius }
-    }
-}
-
-impl Processor for BlurProcessor {
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("blur");
         let nbhd = ProcessorContext::take_neighborhood(item)?;
         if ctx.device == Device::Gpu {
-            let gpu = ctx
-                .gpu
-                .as_ref()
-                .ok_or_else(|| Error::internal("blur: GPU context missing"))?;
+            let gpu = ctx.gpu.as_ref().ok_or_else(|| Error::internal("blur: GPU context missing"))?;
             gpu_blur_process(gpu, &nbhd, self.radius, ctx.emit)
         } else {
             cpu_blur_process(&nbhd, self.radius, ctx.emit)
         }
-    }
-}
-
-// ── GPU path ──────────────────────────────────────────────────────────────────
-
-const BLUR_SPV: &[u8] = pixors_shader::BLUR_SPV;
-
-static BLUR_RES_IN: &[ResourceDeclaration] = &[ResourceDeclaration {
-    name: "src",
-    element: BindingElement::PixelRgba8U32,
-    access: BindingAccess::Read,
-}];
-static BLUR_RES_OUT: &[ResourceDeclaration] = &[ResourceDeclaration {
-    name: "dst",
-    element: BindingElement::PixelRgba8U32,
-    access: BindingAccess::Write,
-}];
-static BLUR_PARAMS_DECL: &[ParameterDeclaration] = &[
-    ParameterDeclaration {
-        name: "width",
-        kind: ParameterType::U32,
-    },
-    ParameterDeclaration {
-        name: "height",
-        kind: ParameterType::U32,
-    },
-    ParameterDeclaration {
-        name: "radius",
-        kind: ParameterType::U32,
-    },
-    ParameterDeclaration {
-        name: "_pad",
-        kind: ParameterType::U32,
-    },
-];
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct BlurParams {
-    width: u32,
-    height: u32,
-    radius: u32,
-    _pad: u32,
-}
-
-struct BlurGpuKernel {
-    sig: KernelSignature,
-    params: BlurParams,
-}
-
-impl gpu::kernel::GpuKernel for BlurGpuKernel {
-    fn signature(&self) -> &KernelSignature {
-        &self.sig
-    }
-    fn write_params(&self, dst: &mut [u8]) {
-        let bytes = bytemuck::bytes_of(&self.params);
-        let n = bytes.len().min(dst.len());
-        dst[..n].copy_from_slice(&bytes[..n]);
-    }
-}
-
-fn blur_entry(fmt: PixelFormat) -> Option<&'static str> {
-    match fmt {
-        PixelFormat::Rgba8 | PixelFormat::Rgb8 | PixelFormat::Gray8 | PixelFormat::GrayA8 => {
-            Some("cs_blur_rgba8")
-        }
-        PixelFormat::Rgba16 | PixelFormat::Rgb16 => Some("cs_blur_rgba16"),
-        PixelFormat::RgbaF16 | PixelFormat::RgbF16 => Some("cs_blur_rgbaf16"),
-        PixelFormat::RgbaF32 | PixelFormat::RgbF32 => Some("cs_blur_rgbaf32"),
-        _ => None,
     }
 }
 
@@ -177,9 +74,6 @@ fn gpu_blur_process(
         "[blur gpu] r={r} center=({cx},{cy}) {cw}×{ch} fmt={fmt:?} bpp={bpp} data={}",
         if nbhd.data.is_gpu() { "gpu" } else { "cpu" }
     );
-
-    let entry = blur_entry(fmt)
-        .ok_or_else(|| Error::internal(format!("blur: unsupported format {:?}", fmt)))?;
 
     // r=0 passthrough: extract center tile via GPU copy, no CPU round-trip.
     if r == 0 {
@@ -252,27 +146,14 @@ fn gpu_blur_process(
     );
 
     let out_size = cw as u64 * ch as u64 * bpp as u64;
-    let params = BlurParams {
-        width: pad_w as u32,
-        height: pad_h as u32,
-        radius: r,
-        _pad: 0,
-    };
-
-    let kernel = BlurGpuKernel {
-        sig: KernelSignature {
-            name: entry,
-            entry,
-            inputs: BLUR_RES_IN,
-            outputs: BLUR_RES_OUT,
-            params: BLUR_PARAMS_DECL,
-            workgroup: (8, 8, 1),
-            dispatch: DispatchShape::PerPixel,
-            class: KernelClass::Custom,
-            body: BLUR_SPV,
+    let kernel = pixors_shader::kernel::blur::BlurParamsKernel::new(
+        pixors_shader::kernel::blur::BlurParams {
+            width: pad_w as u32,
+            height: pad_h as u32,
+            radius: r,
         },
-        params,
-    };
+        fmt,
+    );
 
     let out_gbuf = scheduler.allocate_buffer(out_size);
     let out_gbuf = scheduler

@@ -1,11 +1,11 @@
 //! Color conversion engine — precomputed LUTs for fast pixel conversion.
 
-use pixors_engine::common::color::matrix::Matrix3x3;
-use pixors_engine::common::color::space::ColorSpace;
-use pixors_engine::common::color::transfer::TransferFn;
-use pixors_engine::common::pixel::PixelFormat;
-use pixors_engine::common::pixel::{AlphaPolicy, Pixel};
-use pixors_engine::error::Error;
+use crate::common::color::matrix::Matrix3x3;
+use crate::common::color::space::ColorSpace;
+use crate::common::color::transfer::TransferFn;
+use crate::common::pixel::PixelFormat;
+use crate::common::pixel::{AlphaPolicy, Pixel};
+use crate::error::Error;
 use wide::f32x4;
 
 /// Precomputed converter between two color spaces.
@@ -171,7 +171,7 @@ impl ColorConversion {
         src_alpha: AlphaPolicy,
         dst_alpha: AlphaPolicy,
     ) -> Result<Vec<u8>, Error> {
-        use crate::{Cmyk, CmykA, Gray, GrayAlpha, Lab, Rgb, Rgba, YCbCr};
+        use crate::common::pixel::{Cmyk, CmykA, Gray, GrayAlpha, Lab, Rgb, Rgba, YCbCr};
         use half::f16;
 
         match (src_fmt, dst_fmt) {
@@ -511,7 +511,7 @@ impl ColorConversion {
 }
 
 #[inline]
-fn conv<S: pixors_engine::common::pixel::Pixel, D: pixors_engine::common::pixel::Pixel>(
+fn conv<S: crate::common::pixel::Pixel, D: crate::common::pixel::Pixel>(
     cc: &ColorConversion,
     src: &[u8],
     src_fmt: PixelFormat,
@@ -607,7 +607,7 @@ mod tests {
     use super::*;
     use crate::Rgba;
     use half::f16;
-    use pixors_engine::common::pixel::AlphaPolicy;
+    use crate::common::pixel::AlphaPolicy;
 
     #[test]
     fn converter_has_dst_field() {

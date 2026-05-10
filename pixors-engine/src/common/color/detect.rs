@@ -2,10 +2,6 @@
 //!
 //! Used by PNG and TIFF readers. Pure functions, no I/O.
 
-// ---------------------------------------------------------------------------
-// Chromaticity matching
-// ---------------------------------------------------------------------------
-
 use crate::common::color::primaries::{RgbPrimaries, WhitePoint};
 use crate::common::color::space::ColorSpace;
 
@@ -82,10 +78,6 @@ pub fn match_chromaticities(
     }
     None
 }
-
-// ---------------------------------------------------------------------------
-// ICC profile classification
-// ---------------------------------------------------------------------------
 
 /// Result of ICC profile classification.
 pub struct IccClassification {
@@ -205,10 +197,6 @@ impl IccClassification {
         String::new()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

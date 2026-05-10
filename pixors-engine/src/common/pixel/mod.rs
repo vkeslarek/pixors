@@ -61,12 +61,24 @@ pub trait Pixel: Copy + Pod {
 // Sub-modules
 // ---------------------------------------------------------------------------
 
+pub mod cmyk;
 pub mod format;
+pub mod gray;
+pub mod lab;
 pub mod meta;
 mod pack;
+pub mod rgb;
+pub mod rgba;
+pub mod ycbcr;
 
+pub use cmyk::{Cmyk, CmykA};
 pub use format::PixelFormat;
+pub use gray::{Gray, GrayAlpha};
+pub use lab::Lab;
 pub use meta::PixelMeta;
+pub use rgb::Rgb;
+pub use rgba::Rgba;
+pub use ycbcr::YCbCr;
 
 // ---------------------------------------------------------------------------
 // Tests

@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 pixors-engine = { path = "../pixors-engine" }
-pixors-color = { path = "../pixors-color" }
 pixors-image = { path = "../pixors-image" }
 pixors-shader = { path = "../pixors-shader" }
 bytemuck = { version = "1.25.0", features = ["derive"] }

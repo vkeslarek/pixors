@@ -3,5 +3,10 @@ name = "pixors-shader"
 version.workspace = true
 edition.workspace = true
 
+[dependencies]
+pixors-engine = { path = "../pixors-engine" }
+pixors-shader-macro = { path = "../pixors-shader-macro" }
+bytemuck = { version = "1.25.0", features = ["derive"] }
+
 [lints]
 workspace = true

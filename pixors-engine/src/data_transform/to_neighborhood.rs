@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::Arc;
 
 use crate::data::buffer::Buffer;
@@ -9,10 +10,8 @@ use crate::gpu::pool::GpuBuffer;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext, StageHints,
 };
-use serde::{Deserialize, Serialize};
-
 use crate::error::Error;
 
 use crate::debug_stopwatch;
@@ -27,36 +26,14 @@ static NA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
     kind: DataKind::Neighborhood,
 }];
 
-static NA_PORTS: PortSpecification = PortSpecification {
+static NA_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Fixed(NA_INPUTS),
     outputs: PortGroup::Fixed(NA_OUTPUTS),
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct TileToNeighborhood {
     pub radius: u32,
-}
-
-impl Stage for TileToNeighborhood {
-    fn kind(&self) -> &'static str {
-        "neighborhood_agg"
-    }
-
-    fn ports(&self) -> &'static PortSpecification {
-        &NA_PORTS
-    }
-
-    fn hints(&self) -> crate::stage::StageHints {
-        crate::stage::StageHints::prefer_cpu()
-    }
-
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(TileToNeighborhoodProcessor::new(self.radius)))
-    }
-}
-
-pub struct TileToNeighborhoodProcessor {
-    pixel_radius: u32,
     emitted: HashSet<TileGridPos>,
     tile_size: u32,
     image_width: u32,
@@ -64,39 +41,23 @@ pub struct TileToNeighborhoodProcessor {
     meta: Option<crate::common::pixel::meta::PixelMeta>,
     initialized: bool,
     is_gpu: Option<bool>,
-    // CPU path: pointer accumulation
     tile_cache: HashMap<TileGridPos, Tile>,
-    // GPU path: buffer accumulation + copy-to-consolidated
     gpu_buffers: HashMap<TileGridPos, Arc<GpuBuffer>>,
     gpu_tile_w: u32,
     gpu_tile_h: u32,
     gpu_ctx: Option<Arc<crate::gpu::context::GpuContext>>,
 }
 
-impl TileToNeighborhoodProcessor {
-    pub fn new(pixel_radius: u32) -> Self {
-        Self {
-            pixel_radius,
-            emitted: HashSet::new(),
-            tile_size: 0,
-            image_width: 0,
-            image_height: 0,
-            meta: None,
-            initialized: false,
-            is_gpu: None,
-            tile_cache: HashMap::new(),
-            gpu_buffers: HashMap::new(),
-            gpu_tile_w: 0,
-            gpu_tile_h: 0,
-            gpu_ctx: None,
-        }
+impl TileToNeighborhood {
+    pub fn new(radius: u32) -> Self {
+        Self { radius, emitted: HashSet::new(), tile_size: 0, image_width: 0, image_height: 0, meta: None, initialized: false, is_gpu: None, tile_cache: HashMap::new(), gpu_buffers: HashMap::new(), gpu_tile_w: 0, gpu_tile_h: 0, gpu_ctx: None }
     }
 
     fn tile_radius(&self) -> u32 {
         if self.tile_size == 0 {
             return 0;
         }
-        self.pixel_radius.div_ceil(self.tile_size)
+        self.radius.div_ceil(self.tile_size)
     }
 
     fn discover_bounds(&mut self, tile: &Tile) {
@@ -181,7 +142,7 @@ impl TileToNeighborhoodProcessor {
         });
 
         let nbhd = Neighborhood::new_cpu(
-            self.pixel_radius,
+            self.radius,
             center,
             nbhd_tiles,
             EdgeCondition::Clamp,
@@ -196,7 +157,7 @@ impl TileToNeighborhoodProcessor {
             center.py,
             center.width,
             center.height,
-            self.pixel_radius,
+            self.radius,
             nbhd.data.tiles_cpu().len(),
         );
         self.emitted.insert(key);
@@ -321,7 +282,7 @@ impl TileToNeighborhoodProcessor {
         };
 
         let nbhd = Neighborhood::new_gpu(
-            self.pixel_radius,
+            self.radius,
             center,
             consolidated,
             tile_infos,
@@ -336,7 +297,17 @@ impl TileToNeighborhoodProcessor {
     }
 }
 
-impl Processor for TileToNeighborhoodProcessor {
+impl fmt::Debug for TileToNeighborhood {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TileToNeighborhood").field("radius", &self.radius).finish()
+    }
+}
+
+impl Processor for TileToNeighborhood {
+    fn kind(&self) -> &'static str { "neighborhood_agg" }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification { &NA_PORTS }
+    fn hints(&self) -> StageHints { StageHints::prefer_cpu() }
+
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("neighborhood_agg");
         let tile = ProcessorContext::take_tile(item)?;

@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::data::buffer::Buffer;
@@ -8,7 +7,7 @@ use crate::error::Error;
 use crate::gpu::pool::GpuBuffer;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
 };
 
 use crate::debug_stopwatch;
@@ -18,37 +17,29 @@ static UP_PORT_DECL: &PortDeclaration = &PortDeclaration {
     kind: DataKind::Tile,
 };
 
-static UP_PORTS: PortSpecification = PortSpecification {
+static UP_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Variable(UP_PORT_DECL),
     outputs: PortGroup::Variable(UP_PORT_DECL),
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Upload;
 
-impl Stage for Upload {
+impl Upload {
+    pub fn stage() -> crate::stage::Stage {
+        crate::stage::Stage::Processor(Box::new(Self))
+    }
+}
+
+impl Processor for Upload {
     fn kind(&self) -> &'static str {
         "upload"
     }
 
-    fn ports(&self) -> &'static PortSpecification {
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
         &UP_PORTS
     }
 
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(UploadProcessor::new()))
-    }
-}
-
-pub struct UploadProcessor;
-
-impl UploadProcessor {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Processor for UploadProcessor {
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("upload");
         match item {
@@ -84,7 +75,6 @@ impl Processor for UploadProcessor {
                         nbhd.center.py,
                     );
 
-                    // Upload each CPU tile to GPU, track metadata for consolidation
                     let mut gpu_tiles: Vec<(Arc<GpuBuffer>, &Tile)> = Vec::new();
                     let mut total_bytes = 0u64;
                     for tile in &tiles {
@@ -101,7 +91,6 @@ impl Processor for UploadProcessor {
                         gpu_tiles.push((Arc::new(gbuf), tile));
                     }
 
-                    // Consolidate into single buffer
                     let consolidated = Arc::new(scheduler.allocate_buffer(total_bytes));
                     let mut tile_infos = Vec::new();
                     let mut offset = 0u64;
@@ -144,7 +133,6 @@ impl Processor for UploadProcessor {
                     Ok(())
                 }
                 NeighborhoodData::Gpu { .. } => {
-                    // Already GPU — pass through
                     ctx.emit.emit(Item::Neighborhood(nbhd));
                     Ok(())
                 }

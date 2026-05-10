@@ -1,6 +1,7 @@
+use std::fmt;
+
 use half::f16;
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,17 +10,12 @@ use pixors_engine::data::tile::{Tile, TileCoord, TileGridPos};
 use pixors_engine::data::tile_block::{TileBlock, TileBlockCoord};
 use pixors_engine::debug_stopwatch;
 use pixors_engine::error::Error;
-use pixors_engine::gpu::kernel::{
-    BindingAccess, BindingElement, DispatchShape, KernelClass, KernelSignature,
-    ParameterDeclaration, ParameterType, ResourceDeclaration,
-};
 use pixors_engine::graph::emitter::Emitter;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{
-    DataKind, PortDeclaration, PortGroup, PortSpecification, Processor, ProcessorContext, Stage,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
+    StageHints,
 };
-
-const MIP_DOWNSAMPLE_SPV: &[u8] = pixors_shader::MIP_DOWNSAMPLE_SPV;
 
 static IN: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
@@ -29,7 +25,7 @@ static OUT: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
     kind: DataKind::Tile,
 }];
-static PORTS: PortSpecification = PortSpecification {
+static PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Fixed(IN),
     outputs: PortGroup::Fixed(OUT),
 };
@@ -46,60 +42,72 @@ static PORTS: PortSpecification = PortSpecification {
 /// Tiles stay on their original device (GPU or CPU) throughout the chain.
 /// GPU-backed blocks are downsampled via compute shader; CPU-backed via
 /// software box-average.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct MipDownsample {
     pub image_width: u32,
     pub image_height: u32,
     pub tile_size: u32,
+    gpu: Option<Arc<pixors_engine::gpu::context::GpuContext>>,
+    grid: HashMap<TileGridPos, Tile>,
 }
 
-impl Stage for MipDownsample {
+impl fmt::Debug for MipDownsample {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MipDownsample")
+            .field("image_width", &self.image_width)
+            .field("image_height", &self.image_height)
+            .field("tile_size", &self.tile_size)
+            .field("grid", &self.grid)
+            .finish()
+    }
+}
+
+impl MipDownsample {
+    pub fn new(image_width: u32, image_height: u32, tile_size: u32) -> Self {
+        Self { image_width, image_height, tile_size, gpu: None, grid: HashMap::new() }
+    }
+}
+
+impl Processor for MipDownsample {
     fn kind(&self) -> &'static str {
         "mip_downsample"
     }
-    fn ports(&self) -> &'static PortSpecification {
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
         &PORTS
     }
-    fn hints(&self) -> pixors_engine::stage::StageHints {
-        pixors_engine::stage::StageHints::prefer_gpu()
-    }
-    fn processor(&self) -> Option<Box<dyn Processor>> {
-        Some(Box::new(MipDownsampleProcessor::new(
-            self.image_width,
-            self.image_height,
-            self.tile_size,
-        )))
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_gpu()
     }
     fn work_multiplier(&self) -> f64 {
         1.33
     }
-}
 
-// ── Runner ──────────────────────────────────────────────────────────────────
-
-pub struct MipDownsampleProcessor {
-    image_width: u32,
-    image_height: u32,
-    tile_size: u32,
-    gpu: Option<Arc<pixors_engine::gpu::context::GpuContext>>,
-    /// Tiles waiting for their 2×2 block partner, keyed by grid position.
-    grid: HashMap<TileGridPos, Tile>,
-}
-
-impl MipDownsampleProcessor {
-    pub fn new(image_width: u32, image_height: u32, tile_size: u32) -> Self {
-        Self {
-            image_width,
-            image_height,
-            tile_size,
-            gpu: None,
-            grid: HashMap::new(),
+    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
+        let _sw = debug_stopwatch!("mip_downsample");
+        if self.gpu.is_none() {
+            self.gpu = ctx.gpu.clone();
+        }
+        match item {
+            Item::Tile(tile) => {
+                ctx.emit.emit(Item::Tile(tile.clone()));
+                self.ingest(tile, ctx.emit);
+                Ok(())
+            }
+            Item::TileBlock(block) => {
+                self.downsample_block(block, ctx.emit);
+                Ok(())
+            }
+            _ => Err(Error::internal("MipDownsample expected Tile or TileBlock")),
         }
     }
 
-    /// Insert a tile into the grid and try to form a 2×2 block.
-    /// If a block is complete, downsample it and recursively insert the
-    /// resulting higher-level tile.
+    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
+        self.flush_remaining(ctx.emit);
+        Ok(())
+    }
+}
+
+impl MipDownsample {
     fn ingest(&mut self, tile: Tile, emit: &mut Emitter<Item>) {
         let mip = tile.coord.mip_level;
         let tx = tile.coord.tx;
@@ -313,34 +321,6 @@ impl MipDownsampleProcessor {
     }
 }
 
-impl Processor for MipDownsampleProcessor {
-    fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
-        let _sw = debug_stopwatch!("mip_downsample");
-        if self.gpu.is_none() {
-            self.gpu = ctx.gpu.clone();
-        }
-        match item {
-            Item::Tile(tile) => {
-                // Pass through the original tile.
-                ctx.emit.emit(Item::Tile(tile.clone()));
-                // Ingest it to build higher MIP levels.
-                self.ingest(tile, ctx.emit);
-                Ok(())
-            }
-            Item::TileBlock(block) => {
-                self.downsample_block(block, ctx.emit);
-                Ok(())
-            }
-            _ => Err(Error::internal("MipDownsample expected Tile or TileBlock")),
-        }
-    }
-
-    fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
-        self.flush_remaining(ctx.emit);
-        Ok(())
-    }
-}
-
 // ── GPU downsample ──────────────────────────────────────────────────────────
 
 /// Downsample a 2×2 block of GPU tiles via compute shader.
@@ -364,147 +344,27 @@ fn gpu_downsample_block(
         block.tiles[3].data.as_gpu().unwrap(),
     ];
     let coord = TileCoord::new(mip, tx, ty, tile_size, mip_w, mip_h);
-    let bpp = block.tiles[0].meta.format.bytes_per_pixel();
+    let fmt = block.tiles[0].meta.format;
+    let bpp = fmt.bytes_per_pixel();
     let out_w = coord.width;
     let out_h = coord.height;
     let out_size = (out_w * out_h * bpp as u32) as u64;
 
-    // Build kernel signature.
-    static MIP_INPUTS: &[ResourceDeclaration] = &[
-        ResourceDeclaration {
-            name: "src_tl",
-            element: BindingElement::PixelRgba8U32,
-            access: BindingAccess::Read,
+    let kernel = pixors_shader::kernel::mip_downsample::MipParamsKernel::new(
+        pixors_shader::kernel::mip_downsample::MipParams {
+            out_width: out_w,
+            out_height: out_h,
+            w0: block.tiles[0].coord.width,
+            h0: block.tiles[0].coord.height,
+            w1: block.tiles[1].coord.width,
+            h1: block.tiles[1].coord.height,
+            w2: block.tiles[2].coord.width,
+            h2: block.tiles[2].coord.height,
+            w3: block.tiles[3].coord.width,
+            h3: block.tiles[3].coord.height,
         },
-        ResourceDeclaration {
-            name: "src_tr",
-            element: BindingElement::PixelRgba8U32,
-            access: BindingAccess::Read,
-        },
-        ResourceDeclaration {
-            name: "src_bl",
-            element: BindingElement::PixelRgba8U32,
-            access: BindingAccess::Read,
-        },
-        ResourceDeclaration {
-            name: "src_br",
-            element: BindingElement::PixelRgba8U32,
-            access: BindingAccess::Read,
-        },
-    ];
-    static MIP_OUTPUTS: &[ResourceDeclaration] = &[ResourceDeclaration {
-        name: "dst",
-        element: BindingElement::PixelRgba8U32,
-        access: BindingAccess::Write,
-    }];
-    static MIP_PARAMS: &[ParameterDeclaration] = &[
-        ParameterDeclaration {
-            name: "out_width",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "out_height",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "w0",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "h0",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "w1",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "h1",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "w2",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "h2",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "w3",
-            kind: ParameterType::U32,
-        },
-        ParameterDeclaration {
-            name: "h3",
-            kind: ParameterType::U32,
-        },
-    ];
-
-    let sig = KernelSignature {
-        name: "cs_mip_downsample",
-        entry: match block.tiles[0].meta.format {
-            pixors_engine::common::pixel::PixelFormat::Rgba16 => "cs_mip_downsample_rgba16",
-            pixors_engine::common::pixel::PixelFormat::RgbaF16
-            | pixors_engine::common::pixel::PixelFormat::RgbF16 => "cs_mip_downsample_rgbaf16",
-            pixors_engine::common::pixel::PixelFormat::RgbaF32
-            | pixors_engine::common::pixel::PixelFormat::RgbF32 => "cs_mip_downsample_rgbaf32",
-            _ => "cs_mip_downsample_rgba8",
-        },
-        inputs: MIP_INPUTS,
-        outputs: MIP_OUTPUTS,
-        params: MIP_PARAMS,
-        workgroup: (8, 8, 1),
-        dispatch: DispatchShape::PerPixel,
-        class: KernelClass::Custom,
-        body: MIP_DOWNSAMPLE_SPV,
-    };
-
-    // Params: out dims + each tile's physical row stride (width × height).
-    //
-    // The shader's read_combined() splits the source space at (out_w, out_h):
-    //   - TL: local coords (sx, sy),           row stride = w0
-    //   - TR: local coords (sx-out_w, sy),     row stride = w1
-    //   - BL: local coords (sx, sy-out_h),     row stride = w2
-    //   - BR: local coords (sx-out_w, sy-out_h), row stride = w3
-    //
-    // Each tile's physical width is used as its row stride so the shader can
-    // compute the correct linear index within that tile's buffer.
-    let params_data: [u32; 10] = [
-        out_w,
-        out_h,
-        // w0/h0: TL tile physical stride (the actual tile buffer dimensions)
-        block.tiles[0].coord.width,
-        block.tiles[0].coord.height,
-        // w1/h1: TR tile physical stride
-        block.tiles[1].coord.width,
-        block.tiles[1].coord.height,
-        // w2/h2: BL tile physical stride
-        block.tiles[2].coord.width,
-        block.tiles[2].coord.height,
-        // w3/h3: BR tile physical stride
-        block.tiles[3].coord.width,
-        block.tiles[3].coord.height,
-    ];
-
-    struct MipKernel {
-        sig: KernelSignature,
-        params: [u32; 10],
-    }
-    impl pixors_engine::gpu::kernel::GpuKernel for MipKernel {
-        fn signature(&self) -> &KernelSignature {
-            &self.sig
-        }
-        fn write_params(&self, dst: &mut [u8]) {
-            let bytes = bytemuck::cast_slice::<u32, u8>(&self.params);
-            let len = bytes.len().min(dst.len());
-            dst[..len].copy_from_slice(&bytes[..len]);
-        }
-    }
-
-    let kernel = MipKernel {
-        sig,
-        params: params_data,
-    };
+        fmt,
+    );
     let dispatch_x = out_w.div_ceil(8);
     let dispatch_y = out_h.div_ceil(8);
 

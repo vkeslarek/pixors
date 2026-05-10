@@ -1,8 +1,9 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use pixors_color::processor::ColorConvert;
+use pixors_ops::processor::color::ColorConvert;
 use pixors_engine::common::pixel::AlphaPolicy;
+use pixors_engine::stage::Stage;
 use pixors_image::image::open_image;
 use pixors_image::sink::cache_writer::CacheWriter;
 use pixors_image::source::image_stream::ImageStreamSource;
@@ -67,30 +68,22 @@ impl Action for OpenFile {
         )));
 
         let graph = PathBuilder::new()
-            .src(Arc::new(ImageStreamSource {
+            .src(Stage::Producer(Box::new(ImageStreamSource {
                 stream,
                 image_height: desc.height,
-            }))
-            .data_xform(Arc::new(
-                pixors_engine::data_transform::to_tile::ScanLineToTile {
-                    tile_size: TILE_SIZE,
-                    image_width: w,
-                    image_height: h,
-                },
-            ))
-            .op(Arc::new(ColorConvert {
+            })))
+            .data_xform(Stage::Processor(Box::new(
+                pixors_engine::data_transform::to_tile::ScanLineToTile::new(TILE_SIZE, w, h),
+            )))
+            .op(Stage::Processor(Box::new(ColorConvert {
                 target_format: state.working_format,
                 target_color_space: state.working_color_space,
                 target_alpha: AlphaPolicy::Straight,
-            }))
-            .op(Arc::new(MipDownsample {
-                image_width: w,
-                image_height: h,
-                tile_size: TILE_SIZE,
-            }))
-            .sink(Arc::new(CacheWriter {
+            })))
+            .op(Stage::Processor(Box::new(MipDownsample::new(w, h, TILE_SIZE))))
+            .sink(Stage::Consumer(Box::new(CacheWriter {
                 cache_dir: cache_dir.clone(),
-            }))
+            })))
             .compile();
 
         let title = self

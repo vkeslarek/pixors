@@ -1,8 +1,8 @@
-use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, slider, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
 use crate::icons::{
-    CIRCLE_SLASH, EYE, EYE_OFF, GRIP_VERTICAL, INFO, LUCIDE, PLUS, SUN, TRASH, UNDO,
+    EYE, EYE_OFF, GRIP_VERTICAL, INFO, LUCIDE, PLUS, TRASH,
 };
 use crate::theme::{
     ACCENT, BG_BASE, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER_SUBTLE, TEXT_MUTED, TEXT_PRIMARY,
@@ -91,12 +91,11 @@ impl State {
                 }
             }
             Msg::DragDrop => {
-                if let (Some(from), Some(to)) = (self.drag_from, self.drag_over) {
-                    if from != to {
+                if let (Some(from), Some(to)) = (self.drag_from, self.drag_over)
+                    && from != to {
                         let f = self.filters.remove(from);
                         self.filters.insert(to, f);
                     }
-                }
                 self.drag_from = None;
                 self.drag_over = None;
             }
