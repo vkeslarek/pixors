@@ -61,7 +61,9 @@ pub struct ActionChain {
 
 impl ActionChain {
     pub fn single(a: impl Action + 'static) -> Self {
-        Self { actions: vec![Arc::new(a)] }
+        Self {
+            actions: vec![Arc::new(a)],
+        }
     }
 
     pub fn then(mut self, a: impl Action + 'static) -> Self {
@@ -256,9 +258,8 @@ impl Dispatcher {
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
-        let pipeline =
-            Pipeline::compile(graph, Some(event_tx.clone()), cancelled.clone(), tag)
-                .map_err(|e| e.to_string())?;
+        let pipeline = Pipeline::compile(graph, Some(event_tx.clone()), cancelled.clone(), tag)
+            .map_err(|e| e.to_string())?;
 
         let broadcast_tx = self.event_tx.clone();
         thread::spawn(move || {

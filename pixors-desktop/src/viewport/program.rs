@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, RwLock};
 
+use iced::keyboard;
 use iced::mouse;
 use iced::widget::shader;
 use iced::{Event, Rectangle};
@@ -9,8 +10,8 @@ use crate::viewport::camera::{Camera, compute_max_mip};
 use crate::viewport::pipeline::ViewportPrimitive;
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
-use pixors_document::TabId;
 use pixors_document::TILE_SIZE;
+use pixors_document::TabId;
 
 pub struct ViewportProgram {
     pub cache: Option<Arc<Mutex<TileCache>>>,
@@ -23,6 +24,87 @@ pub struct ViewportProgram {
 impl<Msg> shader::Program<Msg> for ViewportProgram {
     type State = ();
     type Primitive = ViewportPrimitive;
+
+    fn update(
+        &self,
+        _state_cell: &mut Self::State,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<shader::Action<Msg>> {
+        let vp_state = self.viewport_state.as_ref()?;
+        let mut state = vp_state.write().unwrap();
+
+        if self.redraw_seq != state.last_generation {
+            tracing::debug!(
+                "[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw",
+                state.last_generation,
+                self.redraw_seq
+            );
+            state.last_generation = self.redraw_seq;
+            return Some(shader::Action::request_redraw());
+        }
+
+        match event {
+            Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                state.ctrl_held = modifiers.contains(keyboard::Modifiers::CTRL);
+                None
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(btn)) => {
+                let is_pan = *btn == mouse::Button::Middle
+                    || (*btn == mouse::Button::Left && state.ctrl_held);
+                if is_pan && cursor.position_in(bounds).is_some() {
+                    state.dragging = true;
+                    state.pan_button = Some(*btn);
+                    state.last_pos = cursor.position_in(bounds).map(|p| (p.x, p.y));
+                    Some(shader::Action::request_redraw().and_capture())
+                } else {
+                    None
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(btn)) => {
+                if state.pan_button == Some(*btn) {
+                    state.dragging = false;
+                    state.pan_button = None;
+                    state.last_pos = None;
+                }
+                None
+            }
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                if state.dragging {
+                    if let Some(curr) = cursor.position_in(bounds) {
+                        if let Some((last_x, last_y)) = state.last_pos {
+                            state.camera.pan(curr.x - last_x, curr.y - last_y);
+                            state.user_interacted = true;
+                        }
+                        state.last_pos = Some((curr.x, curr.y));
+                    }
+                    Some(shader::Action::request_redraw().and_capture())
+                } else {
+                    None
+                }
+            }
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                if cursor.position_in(bounds).is_some() {
+                    let steps = match delta {
+                        mouse::ScrollDelta::Lines { y, .. } => *y,
+                        mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
+                    };
+                    let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
+                    let pos = cursor
+                        .position_in(bounds)
+                        .map(|p| (p.x, p.y))
+                        .unwrap_or((0.0, 0.0));
+                    state.camera.zoom_at(factor, pos.0, pos.1);
+                    state.user_interacted = true;
+                    Some(shader::Action::request_redraw().and_capture())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 
     fn draw(
         &self,
@@ -56,8 +138,12 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             state.current_mip = state.camera.visible_mip_level();
             tracing::info!(
                 "[viewport] new_img: img={}x{} vp={}x{} zoom={:.4} mip={}",
-                img_w, img_h, state.camera.vp_w, state.camera.vp_h,
-                state.camera.zoom, state.current_mip,
+                img_w,
+                img_h,
+                state.camera.vp_w,
+                state.camera.vp_h,
+                state.camera.zoom,
+                state.current_mip,
             );
         }
 
@@ -75,10 +161,15 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             state.last_bounds = Some(bounds_tuple);
             tracing::debug!(
                 "[viewport] bounds change: bounds={}x{} img={}x{} zoom={:.4} pan=({:.1},{:.1}) mip={} interacted={}",
-                bounds_tuple.0, bounds_tuple.1,
-                state.camera.img_w, state.camera.img_h,
-                state.camera.zoom, state.camera.pan_x, state.camera.pan_y,
-                state.current_mip, state.user_interacted,
+                bounds_tuple.0,
+                bounds_tuple.1,
+                state.camera.img_w,
+                state.camera.img_h,
+                state.camera.zoom,
+                state.camera.pan_x,
+                state.camera.pan_y,
+                state.current_mip,
+                state.user_interacted,
             );
         }
 
@@ -91,7 +182,8 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
                 tracing::info!(
                     "[viewport] mip fallback: target={} base={} (target not in cache, falling back)",
-                    target_mip, base_mip,
+                    target_mip,
+                    base_mip,
                 );
                 target_mip = base_mip;
             }
@@ -115,10 +207,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                     .padded_tile_range(state.current_mip, TILE_SIZE, 3),
             ));
 
-            let max_mip = compute_max_mip(
-                state.camera.img_w as u32,
-                state.camera.img_h as u32,
-            );
+            let max_mip = compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
             if state.current_mip < max_mip {
                 reqs.push((
                     tab_id,
@@ -160,77 +249,6 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             visible_range: state
                 .camera
                 .padded_tile_range(state.current_mip, TILE_SIZE, 3),
-        }
-    }
-
-    fn update(
-        &self,
-        _state_cell: &mut Self::State,
-        event: &Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<shader::Action<Msg>> {
-        let vp_state = self.viewport_state.as_ref()?;
-        let mut state = vp_state.write().unwrap();
-
-        if self.redraw_seq != state.last_generation {
-            tracing::debug!(
-                "[pixors] viewport: update() saw generation change ({} -> {}), requesting redraw",
-                state.last_generation,
-                self.redraw_seq
-            );
-            state.last_generation = self.redraw_seq;
-            return Some(shader::Action::request_redraw());
-        }
-
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if cursor.position_in(bounds).is_some() {
-                    state.dragging = true;
-                    state.last_pos = cursor.position_in(bounds).map(|p| (p.x, p.y));
-                    Some(shader::Action::request_redraw().and_capture())
-                } else {
-                    None
-                }
-            }
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                state.dragging = false;
-                state.last_pos = None;
-                None
-            }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if state.dragging {
-                    if let Some(curr) = cursor.position_in(bounds) {
-                        if let Some((last_x, last_y)) = state.last_pos {
-                            state.camera.pan(curr.x - last_x, curr.y - last_y);
-                            state.user_interacted = true;
-                        }
-                        state.last_pos = Some((curr.x, curr.y));
-                    }
-                    Some(shader::Action::request_redraw().and_capture())
-                } else {
-                    None
-                }
-            }
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                if cursor.position_in(bounds).is_some() {
-                    let steps = match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => *y,
-                        mouse::ScrollDelta::Pixels { y, .. } => y / 16.0,
-                    };
-                    let factor = 1.15_f32.powf(steps.clamp(-5.0, 5.0));
-                    let pos = cursor
-                        .position_in(bounds)
-                        .map(|p| (p.x, p.y))
-                        .unwrap_or((0.0, 0.0));
-                    state.camera.zoom_at(factor, pos.0, pos.1);
-                    state.user_interacted = true;
-                    Some(shader::Action::request_redraw().and_capture())
-                } else {
-                    None
-                }
-            }
-            _ => None,
         }
     }
 

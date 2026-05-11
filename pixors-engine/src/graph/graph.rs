@@ -1,6 +1,6 @@
 use crate::data::device::Device;
-use crate::stage::actors::{Consumer, Producer, Processor};
 use crate::stage::Stage;
+use crate::stage::actors::{Consumer, Processor, Producer};
 
 pub type StageId = usize;
 
@@ -38,7 +38,11 @@ pub struct ExecGraph {
 
 impl ExecGraph {
     pub fn new() -> Self {
-        Self { nodes: Vec::new(), edges: Vec::new(), outputs: Vec::new() }
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            outputs: Vec::new(),
+        }
     }
 
     pub fn add_stage(&mut self, stage: impl Into<Node>) -> StageId {
@@ -72,9 +76,13 @@ impl ExecGraph {
         }
     }
 
-    pub fn node_count(&self) -> usize { self.nodes.len() }
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
 
-    pub fn remove_edge(&mut self, edge_idx: usize) { self.edges.remove(edge_idx); }
+    pub fn remove_edge(&mut self, edge_idx: usize) {
+        self.edges.remove(edge_idx);
+    }
 
     pub fn find_edge(&self, from: StageId, to: StageId) -> Option<usize> {
         self.edges.iter().position(|e| e.from == from && e.to == to)
@@ -88,7 +96,9 @@ impl ExecGraph {
         self.edges.iter().filter(move |e| e.to == id)
     }
 
-    pub fn edge_indices(&self) -> impl Iterator<Item = usize> { 0..self.edges.len() }
+    pub fn edge_indices(&self) -> impl Iterator<Item = usize> {
+        0..self.edges.len()
+    }
 
     pub fn edge_endpoints(&self, ei: usize) -> Option<(StageId, StageId)> {
         self.edges.get(ei).map(|e| (e.from, e.to))
@@ -111,11 +121,14 @@ impl ExecGraph {
     }
 
     pub fn kind_names(&self) -> Vec<&'static str> {
-        self.nodes.iter().map(|n| match n {
-            Node::Stage(s) => s.kind(),
-            Node::Chain(_) => "chain",
-            Node::Dead => "dead",
-        }).collect()
+        self.nodes
+            .iter()
+            .map(|n| match n {
+                Node::Stage(s) => s.kind(),
+                Node::Chain(_) => "chain",
+                Node::Dead => "dead",
+            })
+            .collect()
     }
 
     pub fn toposort(&self) -> Result<Vec<StageId>, String> {
@@ -128,18 +141,25 @@ impl ExecGraph {
         let mut order = Vec::with_capacity(n);
         let mut qi = 0;
         while qi < queue.len() {
-            let u = queue[qi]; qi += 1;
+            let u = queue[qi];
+            qi += 1;
             order.push(u);
             for e in self.edges_out(u) {
                 in_degree[e.to] -= 1;
-                if in_degree[e.to] == 0 { queue.push(e.to); }
+                if in_degree[e.to] == 0 {
+                    queue.push(e.to);
+                }
             }
         }
-        if order.len() != n { return Err("pipeline graph has a cycle".into()); }
+        if order.len() != n {
+            return Err("pipeline graph has a cycle".into());
+        }
         Ok(order)
     }
 }
 
 impl From<Stage> for Node {
-    fn from(s: Stage) -> Self { Node::Stage(s) }
+    fn from(s: Stage) -> Self {
+        Node::Stage(s)
+    }
 }

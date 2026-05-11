@@ -31,8 +31,8 @@ impl<T: Component> GrayAlpha<T> {
 unsafe impl<T: Component> bytemuck::Pod for GrayAlpha<T> {}
 unsafe impl<T: Component> bytemuck::Zeroable for GrayAlpha<T> {}
 
-use half::f16;
 use crate::common::pixel::{AlphaPolicy, Pixel};
+use half::f16;
 use wide::f32x4;
 
 impl Pixel for Gray<u8> {

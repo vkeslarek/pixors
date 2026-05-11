@@ -38,15 +38,24 @@ pub struct Blur {
 }
 
 impl Processor for Blur {
-    fn kind(&self) -> &'static str { "blur" }
-    fn in_out_ports(&self) -> &'static InOutPortSpecification { &BLUR_PORTS }
-    fn hints(&self) -> StageHints { StageHints::prefer_gpu() }
+    fn kind(&self) -> &'static str {
+        "blur"
+    }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
+        &BLUR_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_gpu()
+    }
 
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("blur");
         let nbhd = ProcessorContext::take_neighborhood(item)?;
         if ctx.device == Device::Gpu {
-            let gpu = ctx.gpu.as_ref().ok_or_else(|| Error::internal("blur: GPU context missing"))?;
+            let gpu = ctx
+                .gpu
+                .as_ref()
+                .ok_or_else(|| Error::internal("blur: GPU context missing"))?;
             gpu_blur_process(gpu, &nbhd, self.radius, ctx.emit)
         } else {
             cpu_blur_process(&nbhd, self.radius, ctx.emit)

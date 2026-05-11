@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 use std::sync::{Arc, OnceLock};
 
-use pixors_engine::stage::{
-    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext, StageHints,
-};
+use pixors_engine::debug_stopwatch;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
-use pixors_engine::debug_stopwatch;
+use pixors_engine::stage::{
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
+    StageHints,
+};
 
 pub struct ViewportTarget {
     pub texture: Arc<wgpu::Texture>,
@@ -19,7 +20,10 @@ pub fn install_viewport(target: ViewportTarget) {
     let _ = TARGET.set(target);
 }
 
-static VS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static VS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 static VS_OUTPUTS: &[PortDeclaration] = &[];
 static VS_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Fixed(VS_INPUTS),
@@ -33,15 +37,23 @@ pub struct ViewportSink {
 }
 
 impl Processor for ViewportSink {
-    fn kind(&self) -> &'static str { "viewport_sink" }
-    fn in_out_ports(&self) -> &'static InOutPortSpecification { &VS_PORTS }
-    fn hints(&self) -> StageHints { StageHints::prefer_gpu() }
+    fn kind(&self) -> &'static str {
+        "viewport_sink"
+    }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
+        &VS_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_gpu()
+    }
 
     fn process(&mut self, _ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("viewport_sink");
         let tile = ProcessorContext::take_tile(item)?;
 
-        let target = TARGET.get().ok_or_else(|| Error::internal("viewport not installed"))?;
+        let target = TARGET
+            .get()
+            .ok_or_else(|| Error::internal("viewport not installed"))?;
 
         let (buf, _) = match &tile.data {
             pixors_engine::data::buffer::Buffer::Gpu(g) => (g.buffer(), g.requested_size),
@@ -52,16 +64,38 @@ impl Processor for ViewportSink {
         let th = tile.coord.height;
         let px = tile.coord.px;
         let py = tile.coord.py;
-        if px + tw > self.width || py + th > self.height { return Ok(()); }
+        if px + tw > self.width || py + th > self.height {
+            return Ok(());
+        }
 
         let padded = ((tw * 4).div_ceil(256)) * 256;
         let ctx = pixors_engine::gpu::context::try_init()
             .ok_or_else(|| Error::internal("GPU unavailable"))?;
-        let mut enc = ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("vpsink_copy") });
+        let mut enc = ctx
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("vpsink_copy"),
+            });
         enc.copy_buffer_to_texture(
-            wgpu::ImageCopyBuffer { buffer: buf, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: None } },
-            wgpu::ImageCopyTexture { texture: &target.texture, mip_level: 0, origin: wgpu::Origin3d { x: px, y: py, z: 0 }, aspect: wgpu::TextureAspect::All },
-            wgpu::Extent3d { width: tw, height: th, depth_or_array_layers: 1 },
+            wgpu::ImageCopyBuffer {
+                buffer: buf,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::ImageCopyTexture {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: px, y: py, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: tw,
+                height: th,
+                depth_or_array_layers: 1,
+            },
         );
         target.queue.submit(std::iter::once(enc.finish()));
         Ok(())

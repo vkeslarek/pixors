@@ -64,7 +64,9 @@ impl Action for Export {
                 stream,
                 image_height: self.image_height,
             })))
-            .data_xform(Stage::Processor(Box::new(ScanLineToTile::new(TILE_SIZE, w, h))))
+            .data_xform(Stage::Processor(Box::new(ScanLineToTile::new(
+                TILE_SIZE, w, h,
+            ))))
             .op(Stage::Processor(Box::new(ColorConvert {
                 target_format: PixelFormat::Rgba8,
                 target_color_space: ColorSpace::SRGB,

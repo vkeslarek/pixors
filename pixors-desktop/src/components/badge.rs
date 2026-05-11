@@ -11,7 +11,6 @@ pub enum BadgeVariant {
     Neutral,
 }
 
-
 pub struct Badge<'a, Message> {
     label: String,
     variant: BadgeVariant,

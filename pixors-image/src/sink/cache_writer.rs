@@ -5,8 +5,13 @@ use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
-static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-static CW_IN_PORTS: InPortSpecification = InPortSpecification { ports: PortGroup::Fixed(CW_INPUTS) };
+static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
+static CW_IN_PORTS: InPortSpecification = InPortSpecification {
+    ports: PortGroup::Fixed(CW_INPUTS),
+};
 
 /// Writes tiles to disk as raw bytes, organised by MIP level.
 #[derive(Debug, Clone)]
@@ -30,7 +35,9 @@ impl Consumer for CacheWriter {
         let ty = tile.coord.ty;
         let w = tile.coord.width;
         let h = tile.coord.height;
-        if w == 0 || h == 0 { return Ok(()); }
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
 
         let data = match &tile.data {
             Buffer::Cpu(v) => v.as_slice(),
@@ -40,7 +47,8 @@ impl Consumer for CacheWriter {
         let expected = w as usize * h as usize * bpp;
         if data.len() != expected {
             return Err(Error::internal(format!(
-                "CacheWriter tile size mismatch: expected {expected} bytes, got {}", data.len(),
+                "CacheWriter tile size mismatch: expected {expected} bytes, got {}",
+                data.len(),
             )));
         }
 
@@ -48,7 +56,10 @@ impl Consumer for CacheWriter {
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(format!("tile_{mip}_{tx}_{ty}.raw"));
         std::fs::write(&path, data)?;
-        tracing::debug!("[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {w}×{h} to {}", path.display());
+        tracing::debug!(
+            "[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {w}×{h} to {}",
+            path.display()
+        );
         Ok(())
     }
 }

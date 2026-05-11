@@ -606,8 +606,8 @@ fn src_unpremul_one(r: f32, g: f32, b: f32, a: f32, src_alpha: AlphaPolicy) -> (
 mod tests {
     use super::*;
     use crate::Rgba;
-    use half::f16;
     use crate::common::pixel::AlphaPolicy;
+    use half::f16;
 
     #[test]
     fn converter_has_dst_field() {

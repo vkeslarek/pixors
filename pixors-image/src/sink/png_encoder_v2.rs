@@ -10,8 +10,13 @@ use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
-static PGV2_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-static PGV2_IN_PORTS: InPortSpecification = InPortSpecification { ports: PortGroup::Fixed(PGV2_INPUTS) };
+static PGV2_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
+static PGV2_IN_PORTS: InPortSpecification = InPortSpecification {
+    ports: PortGroup::Fixed(PGV2_INPUTS),
+};
 
 #[derive(Debug, Clone)]
 pub struct PngEncoderV2 {
@@ -26,14 +31,32 @@ pub struct PngEncoderV2 {
 }
 
 impl PngEncoderV2 {
-    pub fn new(path: PathBuf, config: PngExportConfig, dpi: Option<Dpi>, icc_profile: Option<Vec<u8>>) -> Self {
-        Self { path, config, dpi, icc_profile, tiles: HashMap::new(), image_width: 0, image_height: 0, meta: None }
+    pub fn new(
+        path: PathBuf,
+        config: PngExportConfig,
+        dpi: Option<Dpi>,
+        icc_profile: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            path,
+            config,
+            dpi,
+            icc_profile,
+            tiles: HashMap::new(),
+            image_width: 0,
+            image_height: 0,
+            meta: None,
+        }
     }
 }
 
 impl Consumer for PngEncoderV2 {
-    fn kind(&self) -> &'static str { "png_encoder_v2" }
-    fn in_ports(&self) -> &'static InPortSpecification { &PGV2_IN_PORTS }
+    fn kind(&self) -> &'static str {
+        "png_encoder_v2"
+    }
+    fn in_ports(&self) -> &'static InPortSpecification {
+        &PGV2_IN_PORTS
+    }
 
     fn consume(&mut self, item: Item) -> Result<(), Error> {
         let tile = pixors_engine::stage::ProcessorContext::take_tile(item)?;
@@ -44,15 +67,23 @@ impl Consumer for PngEncoderV2 {
             },
             Buffer::Gpu(_) => return Err(Error::internal("PngEncoderV2 requires CPU tiles")),
         };
-        if self.meta.is_none() { self.meta = Some(tile.meta); }
+        if self.meta.is_none() {
+            self.meta = Some(tile.meta);
+        }
         self.image_width = self.image_width.max(tile.coord.px + tile.coord.width);
         self.image_height = self.image_height.max(tile.coord.py + tile.coord.height);
-        self.tiles.insert((tile.coord.px, tile.coord.py), (tile.coord.width, tile.coord.height, data));
+        self.tiles.insert(
+            (tile.coord.px, tile.coord.py),
+            (tile.coord.width, tile.coord.height, data),
+        );
         Ok(())
     }
 
     fn finish(&mut self) -> Result<(), Error> {
-        let meta = self.meta.take().ok_or_else(|| Error::internal("no pixel metadata received"))?;
+        let meta = self
+            .meta
+            .take()
+            .ok_or_else(|| Error::internal("no pixel metadata received"))?;
         let bpp = meta.format.bytes_per_pixel();
         let iw = self.image_width as usize;
         let ih = self.image_height as usize;
@@ -62,14 +93,32 @@ impl Consumer for PngEncoderV2 {
             for row in 0..*th as usize {
                 let src_start = row * row_bytes;
                 let src_end = src_start + row_bytes;
-                if src_end > data.len() { break; }
+                if src_end > data.len() {
+                    break;
+                }
                 let dst_start = (*py as usize + row) * iw * bpp + *px as usize * bpp;
                 let dst_end = dst_start + row_bytes;
-                if dst_end > buffer.len() { break; }
+                if dst_end > buffer.len() {
+                    break;
+                }
                 buffer[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
             }
         }
-        let desc = EncoderDescriptor { width: self.image_width, height: self.image_height, pixel_format: meta.format, color_space: meta.color_space, alpha_policy: meta.alpha_policy, dpi: self.dpi, icc_profile: self.icc_profile.clone(), metadata: Vec::new() };
-        crate::png::PngEncoder.encode(&self.path, &buffer, &desc, &EncoderConfig::Png(self.config.clone()))
+        let desc = EncoderDescriptor {
+            width: self.image_width,
+            height: self.image_height,
+            pixel_format: meta.format,
+            color_space: meta.color_space,
+            alpha_policy: meta.alpha_policy,
+            dpi: self.dpi,
+            icc_profile: self.icc_profile.clone(),
+            metadata: Vec::new(),
+        };
+        crate::png::PngEncoder.encode(
+            &self.path,
+            &buffer,
+            &desc,
+            &EncoderConfig::Png(self.config.clone()),
+        )
     }
 }

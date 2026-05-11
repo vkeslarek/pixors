@@ -1,6 +1,6 @@
-use half::f16;
 use crate::common::pixel::AlphaPolicy;
 use crate::common::pixel::{Component, Pixel};
+use half::f16;
 use wide::f32x4;
 
 #[repr(C)]

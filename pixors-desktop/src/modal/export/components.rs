@@ -3,9 +3,7 @@ use iced::{Alignment, Background, Border, Color, Element};
 
 use super::presets::TiffLayoutKind;
 use super::{ExportFormat, Msg};
-use crate::theme::{
-    ACCENT, BG_HOVER, BG_SURFACE, BORDER, TEXT_MUTED, TEXT_SECONDARY,
-};
+use crate::theme::{ACCENT, BG_HOVER, BG_SURFACE, BORDER, TEXT_MUTED, TEXT_SECONDARY};
 
 pub fn section_label(label: &'static str) -> Element<'static, Msg> {
     text(label).size(12).color(TEXT_MUTED).into()

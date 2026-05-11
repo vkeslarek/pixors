@@ -18,19 +18,49 @@ pub struct ParamSpec {
 
 #[derive(Debug, Clone)]
 pub enum ParamKind {
-    Float { value: f32, range: std::ops::RangeInclusive<f32> },
-    Int { value: i32, range: std::ops::RangeInclusive<i32> },
-    Bool { value: bool },
+    Float {
+        value: f32,
+        range: std::ops::RangeInclusive<f32>,
+    },
+    Int {
+        value: i32,
+        range: std::ops::RangeInclusive<i32>,
+    },
+    Bool {
+        value: bool,
+    },
 }
 
 impl ParamSpec {
-    pub fn float(name: &'static str, label: &'static str, value: f32, range: std::ops::RangeInclusive<f32>) -> Self {
-        Self { name, label, kind: ParamKind::Float { value, range } }
+    pub fn float(
+        name: &'static str,
+        label: &'static str,
+        value: f32,
+        range: std::ops::RangeInclusive<f32>,
+    ) -> Self {
+        Self {
+            name,
+            label,
+            kind: ParamKind::Float { value, range },
+        }
     }
-    pub fn int(name: &'static str, label: &'static str, value: i32, range: std::ops::RangeInclusive<i32>) -> Self {
-        Self { name, label, kind: ParamKind::Int { value, range } }
+    pub fn int(
+        name: &'static str,
+        label: &'static str,
+        value: i32,
+        range: std::ops::RangeInclusive<i32>,
+    ) -> Self {
+        Self {
+            name,
+            label,
+            kind: ParamKind::Int { value, range },
+        }
     }
     pub fn bool(name: &'static str, label: &'static str, value: bool) -> Self {
-        Self { name, label, kind: ParamKind::Bool { value } }
+        Self {
+            name,
+            label,
+            kind: ParamKind::Bool { value },
+        }
     }
 }

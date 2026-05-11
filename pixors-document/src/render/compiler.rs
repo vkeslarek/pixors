@@ -43,11 +43,23 @@ pub struct RenderRequest {
 ///
 /// Pure function — no mutation of `doc`, no side effects.
 /// `sink` is caller-provided (e.g. TileCacheSink from pixors-desktop).
-pub fn compile(doc: &Document, req: &RenderRequest, config: &CompileConfig, sink: Stage) -> ExecGraph {
+pub fn compile(
+    doc: &Document,
+    req: &RenderRequest,
+    config: &CompileConfig,
+    sink: Stage,
+) -> ExecGraph {
     let mut ctx = CompileCtx::new(doc, req, config);
     let color_out = compile_layer_stack(&doc.layers, &mut ctx);
     let sink_id = ctx.graph.add_stage(sink);
-    ctx.graph.add_edge(color_out, sink_id, EdgePorts { from_port: 0, to_port: 0 });
+    ctx.graph.add_edge(
+        color_out,
+        sink_id,
+        EdgePorts {
+            from_port: 0,
+            to_port: 0,
+        },
+    );
     ctx.finish()
 }
 
@@ -80,7 +92,14 @@ pub fn compile_preview(
     }
     let color_out = compile_layer_stack(&layers, &mut ctx);
     let sink_id = ctx.graph.add_stage(sink);
-    ctx.graph.add_edge(color_out, sink_id, EdgePorts { from_port: 0, to_port: 0 });
+    ctx.graph.add_edge(
+        color_out,
+        sink_id,
+        EdgePorts {
+            from_port: 0,
+            to_port: 0,
+        },
+    );
     ctx.finish()
 }
 
@@ -108,32 +127,47 @@ impl<'a> CompileCtx<'a> {
         }
     }
 
-    fn finish(self) -> ExecGraph { self.graph }
+    fn finish(self) -> ExecGraph {
+        self.graph
+    }
 
     fn layer_cache_dir(&self, layer_id: NodeId) -> PathBuf {
-        self.config.cache_dir.join(format!("layer_{:016x}", layer_id.0))
+        self.config
+            .cache_dir
+            .join(format!("layer_{:016x}", layer_id.0))
     }
 }
 
 // ── Layer stack ───────────────────────────────────────────────────────────────
 
 fn compile_layer_stack(layers: &[LayerNode], ctx: &mut CompileCtx) -> StageId {
-    let visible: Vec<&LayerNode> = layers.iter()
+    let visible: Vec<&LayerNode> = layers
+        .iter()
         .filter(|l| l.visible && ctx.layer_cache_dir(l.id).exists())
         .collect();
 
     let n = visible.len();
-    assert!(n > 0, "compile() called with no visible layers — guard in caller");
+    assert!(
+        n > 0,
+        "compile() called with no visible layers — guard in caller"
+    );
 
     let compose = ctx.graph.add_stage(Stage::Processor(Box::new(Compose::new(
         n as u16,
-        visible.iter().map(|l| l.blend.mode).collect(),
-        visible.iter().map(|l| l.blend.opacity).collect(),
+        visible.iter().map(|l| l.blend.mode).rev().collect(),
+        visible.iter().map(|l| l.blend.opacity).rev().collect(),
     ))));
 
     for (i, layer) in visible.iter().enumerate() {
         let layer_out = compile_layer(layer, ctx);
-        ctx.graph.add_edge(layer_out, compose, EdgePorts { from_port: 0, to_port: i as u16 });
+        ctx.graph.add_edge(
+            layer_out,
+            compose,
+            EdgePorts {
+                from_port: 0,
+                to_port: (n - 1 - i) as u16,
+            },
+        );
     }
 
     let color_out = ctx.graph.add_stage(Stage::Processor(Box::new(ColorConvert {
@@ -141,7 +175,14 @@ fn compile_layer_stack(layers: &[LayerNode], ctx: &mut CompileCtx) -> StageId {
         target_color_space: ctx.config.display_color_space,
         target_alpha: AlphaPolicy::Straight,
     })));
-    ctx.graph.add_edge(compose, color_out, EdgePorts { from_port: 0, to_port: 0 });
+    ctx.graph.add_edge(
+        compose,
+        color_out,
+        EdgePorts {
+            from_port: 0,
+            to_port: 0,
+        },
+    );
 
     color_out
 }
@@ -158,7 +199,7 @@ fn compile_layer(layer: &LayerNode, ctx: &mut CompileCtx) -> StageId {
     current
 }
 
-    fn compile_layer_content(layer: &LayerNode, ctx: &mut CompileCtx) -> StageId {
+fn compile_layer_content(layer: &LayerNode, ctx: &mut CompileCtx) -> StageId {
     use crate::document::PixelSource;
     match &layer.source {
         PixelSource::PrimaryAsset { .. } => {
@@ -195,7 +236,10 @@ fn compile_transform(
     let input = match &t.input {
         InputScope::Layer => layer_input,
         InputScope::Below => below_input.unwrap_or_else(|| {
-            tracing::warn!("Transform {:?}: InputScope::Below but no below available", t.id);
+            tracing::warn!(
+                "Transform {:?}: InputScope::Below but no below available",
+                t.id
+            );
             layer_input
         }),
         InputScope::Reference(other) => compile_reference(*other, ctx),
@@ -214,15 +258,31 @@ fn compile_transform(
 fn compile_operation(op: &Operation, input: StageId, ctx: &mut CompileCtx) -> StageId {
     match op {
         Operation::Blur { radius } => {
-            let ttn = ctx.graph.add_stage(Stage::Processor(Box::new(
-                TileToNeighborhood::new(*radius as u32),
-            )));
-            ctx.graph.add_edge(input, ttn, EdgePorts { from_port: 0, to_port: 0 });
+            let ttn = ctx
+                .graph
+                .add_stage(Stage::Processor(Box::new(TileToNeighborhood::new(
+                    *radius as u32,
+                ))));
+            ctx.graph.add_edge(
+                input,
+                ttn,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: 0,
+                },
+            );
 
             let blur = ctx.graph.add_stage(Stage::Processor(Box::new(Blur {
                 radius: *radius as u32,
             })));
-            ctx.graph.add_edge(ttn, blur, EdgePorts { from_port: 0, to_port: 0 });
+            ctx.graph.add_edge(
+                ttn,
+                blur,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: 0,
+                },
+            );
 
             blur
         }

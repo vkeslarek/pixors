@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use pixors_image::image::BlendMode;
 
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::document::{Document, LayerNode, NodeId};
 use crate::document::transform::{Operation, Transform};
+use crate::document::{Document, LayerNode, NodeId};
 use crate::{EditorState, TabId};
 
 use super::DocumentMutation;
@@ -16,18 +16,25 @@ use super::DocumentMutation;
 macro_rules! impl_document_action {
     ($ty:ty, $tab_field:ident) => {
         impl Action for $ty {
-            fn target_tab(&self) -> Option<TabId> { Some(self.$tab_field) }
-            fn prepare(&self, _: &mut EditorState) -> Result<PreparedAction, String> { Ok(PreparedAction::StateOnly) }
+            fn target_tab(&self) -> Option<TabId> {
+                Some(self.$tab_field)
+            }
+            fn prepare(&self, _: &mut EditorState) -> Result<PreparedAction, String> {
+                Ok(PreparedAction::StateOnly)
+            }
             fn apply(&self, state: &mut EditorState, _: PipelineStatus) {
                 if let Some(tab) = state.tab_mut(self.$tab_field) {
-                    tab.history.push(std::sync::Arc::new(self.clone()), &mut tab.document);
+                    tab.history
+                        .push(std::sync::Arc::new(self.clone()), &mut tab.document);
                     tab.session.redraw_seq += 1;
                 }
             }
             // Undo for document mutations is driven by UndoAction → History::undo,
             // not by Action::undo. This path should never be called directly.
             fn undo(&self, _: &mut EditorState) {}
-            fn record_in_history(&self) -> bool { false }
+            fn record_in_history(&self) -> bool {
+                false
+            }
         }
     };
 }
@@ -43,12 +50,18 @@ pub struct SetLayerName {
 #[typetag::serde]
 impl DocumentMutation for SetLayerName {
     fn apply(&self, doc: &mut Document) {
-        if let Some(l) = doc.find_layer_mut(self.layer) { l.name = self.after.clone(); }
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.name = self.after.clone();
+        }
     }
     fn undo(&self, doc: &mut Document) {
-        if let Some(l) = doc.find_layer_mut(self.layer) { l.name = self.before.clone(); }
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.name = self.before.clone();
+        }
     }
-    fn label(&self) -> &str { "Rename Layer" }
+    fn label(&self) -> &str {
+        "Rename Layer"
+    }
 }
 impl_document_action!(SetLayerName, tab);
 
@@ -61,9 +74,23 @@ pub struct SetLayerVisible {
 }
 #[typetag::serde]
 impl DocumentMutation for SetLayerVisible {
-    fn apply(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.visible = self.after; } }
-    fn undo(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.visible = self.before; } }
-    fn label(&self) -> &str { if self.after { "Show Layer" } else { "Hide Layer" } }
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.visible = self.after;
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.visible = self.before;
+        }
+    }
+    fn label(&self) -> &str {
+        if self.after {
+            "Show Layer"
+        } else {
+            "Hide Layer"
+        }
+    }
 }
 impl_document_action!(SetLayerVisible, tab);
 // SetLayerOpacity
@@ -76,9 +103,19 @@ pub struct SetLayerOpacity {
 }
 #[typetag::serde]
 impl DocumentMutation for SetLayerOpacity {
-    fn apply(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.blend.opacity = self.after; } }
-    fn undo(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.blend.opacity = self.before; } }
-    fn label(&self) -> &str { "Set Opacity" }
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.blend.opacity = self.after;
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.blend.opacity = self.before;
+        }
+    }
+    fn label(&self) -> &str {
+        "Set Opacity"
+    }
 }
 impl_document_action!(SetLayerOpacity, tab);
 // SetLayerBlend
@@ -91,9 +128,19 @@ pub struct SetLayerBlend {
 }
 #[typetag::serde]
 impl DocumentMutation for SetLayerBlend {
-    fn apply(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.blend.mode = self.after; } }
-    fn undo(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.blend.mode = self.before; } }
-    fn label(&self) -> &str { "Set Blend Mode" }
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.blend.mode = self.after;
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.blend.mode = self.before;
+        }
+    }
+    fn label(&self) -> &str {
+        "Set Blend Mode"
+    }
 }
 impl_document_action!(SetLayerBlend, tab);
 // AddLayer
@@ -114,7 +161,9 @@ impl DocumentMutation for AddLayer {
             doc.layers.remove(self.at_index);
         }
     }
-    fn label(&self) -> &str { "Add Layer" }
+    fn label(&self) -> &str {
+        "Add Layer"
+    }
 }
 impl_document_action!(AddLayer, tab);
 // RemoveLayer
@@ -135,7 +184,9 @@ impl DocumentMutation for RemoveLayer {
         let idx = self.index.min(doc.layers.len());
         doc.layers.insert(idx, self.layer.clone());
     }
-    fn label(&self) -> &str { "Remove Layer" }
+    fn label(&self) -> &str {
+        "Remove Layer"
+    }
 }
 impl_document_action!(RemoveLayer, tab);
 // SwapLayers
@@ -147,9 +198,15 @@ pub struct SwapLayers {
 }
 #[typetag::serde]
 impl DocumentMutation for SwapLayers {
-    fn apply(&self, doc: &mut Document) { doc.layers.swap(self.index_a, self.index_b); }
-    fn undo(&self, doc: &mut Document) { doc.layers.swap(self.index_a, self.index_b); }
-    fn label(&self) -> &str { "Reorder Layers" }
+    fn apply(&self, doc: &mut Document) {
+        doc.layers.swap(self.index_a, self.index_b);
+    }
+    fn undo(&self, doc: &mut Document) {
+        doc.layers.swap(self.index_a, self.index_b);
+    }
+    fn label(&self) -> &str {
+        "Reorder Layers"
+    }
 }
 impl_document_action!(SwapLayers, tab);
 // AddTransform
@@ -171,7 +228,9 @@ impl DocumentMutation for AddTransform {
             l.transforms.retain(|t| t.id != self.transform.id);
         }
     }
-    fn label(&self) -> &str { "Add Transform" }
+    fn label(&self) -> &str {
+        "Add Transform"
+    }
 }
 impl_document_action!(AddTransform, tab);
 // RemoveTransform
@@ -198,7 +257,9 @@ impl DocumentMutation for RemoveTransform {
             l.transforms.insert(idx, self.removed.clone());
         }
     }
-    fn label(&self) -> &str { "Remove Transform" }
+    fn label(&self) -> &str {
+        "Remove Transform"
+    }
 }
 impl_document_action!(RemoveTransform, tab);
 // UpdateTransformOp
@@ -226,6 +287,8 @@ impl DocumentMutation for UpdateTransformOp {
             t.op = self.before.clone();
         }
     }
-    fn label(&self) -> &str { "Update Transform" }
+    fn label(&self) -> &str {
+        "Update Transform"
+    }
 }
 impl_document_action!(UpdateTransformOp, tab);

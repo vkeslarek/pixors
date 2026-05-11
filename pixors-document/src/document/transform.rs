@@ -36,12 +36,17 @@ pub enum OutputMode {
     /// Output replaces (or alpha-blends over) the input.
     Replace { blend: BlendSpec },
     /// Output is composited alongside the original pixels (drop shadow, outer glow, etc.).
-    Composite { blend: BlendSpec, position: CompositePosition },
+    Composite {
+        blend: BlendSpec,
+        position: CompositePosition,
+    },
 }
 
 impl Default for OutputMode {
     fn default() -> Self {
-        Self::Replace { blend: BlendSpec::default() }
+        Self::Replace {
+            blend: BlendSpec::default(),
+        }
     }
 }
 

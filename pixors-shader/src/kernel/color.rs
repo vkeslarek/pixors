@@ -1,9 +1,9 @@
 use pixors_shader_macro::kernel;
 
 #[kernel(
-    source   = "shaders/color.slang",
-    entry    = "cs_cc",
-    body_fn  = "cs_cc",
+    source = "shaders/color.slang",
+    entry = "cs_cc",
+    body_fn = "cs_cc",
     includes("shaders"),
     specialize(U8Codec, U8Codec),
     specialize(U8Codec, U16Codec),
@@ -25,7 +25,7 @@ use pixors_shader_macro::kernel;
     output = "dst",
     workgroup(8, 8, 1),
     dispatch(PerPixel),
-    class(PerPixel),
+    class(PerPixel)
 )]
 #[repr(C)]
 pub struct ColorConvertParams {

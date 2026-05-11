@@ -16,15 +16,14 @@ use crate::page::{
 use crate::panel::{filter as filters_panel, layers as layers_panel};
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
-use pixors_document::TabId;
 use pixors_document::EditorState;
+use pixors_document::TabId;
 use pixors_document::action::{Action, Dispatcher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
     Layers,
     Filters,
-    NewFilter,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +36,6 @@ pub enum Msg {
     TabBar(tab_bar::Msg),
     LayersPanel(layers_panel::Msg),
     FiltersPanel(filters_panel::Msg),
-    NewFilterPanel(crate::panel::new_filter::Msg),
     PaneResized(pane_grid::ResizeEvent),
     PaneDragged(pane_grid::DragEvent),
     ClosePane(pane_grid::Pane),
@@ -68,7 +66,7 @@ pub struct App {
     pub ui_showcase: crate::modal::ui_showcase::UiShowcase,
     pub show_filter_search: bool,
     pub filter_search: crate::modal::filter_search::FilterSearch,
-    pub new_filter: crate::panel::new_filter::State,
+    pub filter_panel: crate::panel::filter::FilterPanelState,
     /// Per-tab RAM tile cache (desktop display layer).
     pub tile_caches: HashMap<TabId, Arc<Mutex<TileCache>>>,
     /// Per-tab viewport/camera state.
@@ -94,12 +92,7 @@ impl Default for App {
             axis: pane_grid::Axis::Horizontal,
             ratio: 0.55,
             a: Box::new(Configuration::Pane(PaneKind::Layers)),
-            b: Box::new(Configuration::Split {
-                axis: pane_grid::Axis::Vertical,
-                ratio: 0.5,
-                a: Box::new(Configuration::Pane(PaneKind::Filters)),
-                b: Box::new(Configuration::Pane(PaneKind::NewFilter)),
-            }),
+            b: Box::new(Configuration::Pane(PaneKind::Filters)),
         };
         let panes = pane_grid::State::with_configuration(cfg);
 
@@ -120,7 +113,7 @@ impl Default for App {
             ui_showcase: crate::modal::ui_showcase::UiShowcase::default(),
             show_filter_search: false,
             filter_search: crate::modal::filter_search::FilterSearch::default(),
-            new_filter: crate::panel::new_filter::State::default(),
+            filter_panel: crate::panel::filter::FilterPanelState::default(),
             tile_caches: HashMap::new(),
             viewport_states: HashMap::new(),
             mip_queues: HashMap::new(),
@@ -133,7 +126,9 @@ impl Default for App {
 
 impl App {
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
-        self.state.active_tab().and_then(|t| t.document.assets.primary_path.as_deref())
+        self.state
+            .active_tab()
+            .and_then(|t| t.document.assets.primary_path.as_deref())
     }
 
     pub fn subscription(&self) -> Subscription<Msg> {

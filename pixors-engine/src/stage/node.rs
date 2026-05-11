@@ -13,16 +13,44 @@ pub struct StageHints {
 
 impl Default for StageHints {
     fn default() -> Self {
-        Self { device: Device::Cpu, preference: None }
+        Self {
+            device: Device::Cpu,
+            preference: None,
+        }
     }
 }
 
 impl StageHints {
-    pub const fn cpu() -> Self { Self { device: Device::Cpu, preference: None } }
-    pub const fn gpu() -> Self { Self { device: Device::Gpu, preference: None } }
-    pub const fn either() -> Self { Self { device: Device::Either, preference: None } }
-    pub const fn prefer_cpu() -> Self { Self { device: Device::Either, preference: Some(Device::Cpu) } }
-    pub const fn prefer_gpu() -> Self { Self { device: Device::Either, preference: Some(Device::Gpu) } }
+    pub const fn cpu() -> Self {
+        Self {
+            device: Device::Cpu,
+            preference: None,
+        }
+    }
+    pub const fn gpu() -> Self {
+        Self {
+            device: Device::Gpu,
+            preference: None,
+        }
+    }
+    pub const fn either() -> Self {
+        Self {
+            device: Device::Either,
+            preference: None,
+        }
+    }
+    pub const fn prefer_cpu() -> Self {
+        Self {
+            device: Device::Either,
+            preference: Some(Device::Cpu),
+        }
+    }
+    pub const fn prefer_gpu() -> Self {
+        Self {
+            device: Device::Either,
+            preference: Some(Device::Gpu),
+        }
+    }
 }
 
 // ── Stage enum ───────────────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
 pub mod params;
 
+use crate::document::Document;
+use crate::document::NodeId;
 use crate::document::canvas::CanvasInfo;
 use crate::document::layer::{LayerNode, PixelSource};
 use crate::document::transform::Transform;
-use crate::document::Document;
-use crate::document::NodeId;
 use crate::session::SessionState;
 
 use params::ParamSpec;
@@ -48,24 +48,29 @@ impl<'a> DocumentView<'a> {
     }
 
     pub fn layers_panel(&self) -> Vec<LayerPanelItem> {
-        self.document.layers.iter().map(|l| LayerPanelItem {
-            id: l.id,
-            name: l.name.clone(),
-            visible: l.visible,
-            opacity: l.blend.opacity,
-            blend_mode: l.blend.mode,
-            kind: match &l.source {
-                PixelSource::PrimaryAsset { .. } => LayerKind::Pixel,
-                PixelSource::SolidColor { .. } => LayerKind::SolidColor,
-            },
-            depth: 0,
-            transform_count: l.transforms.len(),
-            has_mask: l.mask.is_some(),
-        }).collect()
+        self.document
+            .layers
+            .iter()
+            .map(|l| LayerPanelItem {
+                id: l.id,
+                name: l.name.clone(),
+                visible: l.visible,
+                opacity: l.blend.opacity,
+                blend_mode: l.blend.mode,
+                kind: match &l.source {
+                    PixelSource::PrimaryAsset { .. } => LayerKind::Pixel,
+                    PixelSource::SolidColor { .. } => LayerKind::SolidColor,
+                },
+                depth: 0,
+                transform_count: l.transforms.len(),
+                has_mask: l.mask.is_some(),
+            })
+            .collect()
     }
 
     pub fn active_layer(&self) -> Option<&LayerNode> {
-        self.session.active_node
+        self.session
+            .active_node
             .and_then(|id| self.document.find_layer(id))
     }
 
@@ -87,11 +92,11 @@ impl<'a> DocumentView<'a> {
 fn transform_params(t: &Transform) -> Vec<ParamSpec> {
     use crate::document::transform::Operation;
     match &t.op {
-        Operation::Blur { radius } => vec![
-            ParamSpec::float("radius", "Radius", *radius, 0.0..=64.0),
-        ],
-        Operation::Exposure { stops } => vec![
-            ParamSpec::float("stops", "Stops", *stops, -5.0..=5.0),
-        ],
+        Operation::Blur { radius } => {
+            vec![ParamSpec::float("radius", "Radius", *radius, 0.0..=64.0)]
+        }
+        Operation::Exposure { stops } => {
+            vec![ParamSpec::float("stops", "Stops", *stops, -5.0..=5.0)]
+        }
     }
 }

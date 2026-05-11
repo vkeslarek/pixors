@@ -4,14 +4,19 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
-use pixors_engine::error::Error;
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::debug_stopwatch;
+use pixors_engine::error::Error;
+use pixors_engine::graph::item::Item;
+use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
-static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
-static PE_IN_PORTS: InPortSpecification = InPortSpecification { ports: PortGroup::Fixed(PE_INPUTS) };
+static PE_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "scanline",
+    kind: DataKind::ScanLine,
+}];
+static PE_IN_PORTS: InPortSpecification = InPortSpecification {
+    ports: PortGroup::Fixed(PE_INPUTS),
+};
 
 #[derive(Debug, Clone)]
 pub struct PngEncoder {
@@ -23,14 +28,21 @@ pub struct PngEncoder {
 }
 
 impl Consumer for PngEncoder {
-    fn kind(&self) -> &'static str { "png_encoder" }
-    fn in_ports(&self) -> &'static InPortSpecification { &PE_IN_PORTS }
+    fn kind(&self) -> &'static str {
+        "png_encoder"
+    }
+    fn in_ports(&self) -> &'static InPortSpecification {
+        &PE_IN_PORTS
+    }
 
     fn consume(&mut self, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:consume");
         let scanline = pixors_engine::stage::ProcessorContext::take_scanline(item)?;
         let data: Vec<u8> = match scanline.data {
-            Buffer::Cpu(v) => match Arc::try_unwrap(v) { Ok(o) => o, Err(s) => (*s).clone() },
+            Buffer::Cpu(v) => match Arc::try_unwrap(v) {
+                Ok(o) => o,
+                Err(s) => (*s).clone(),
+            },
             Buffer::Gpu(_) => return Err(Error::internal("GPU not supported")),
         };
         self.image_width = self.image_width.max(scanline.width);
@@ -43,7 +55,9 @@ impl Consumer for PngEncoder {
     fn finish(&mut self) -> Result<(), Error> {
         let _sw = debug_stopwatch!("png_encoder:finish");
         let bpp = self.bpp as usize;
-        if bpp == 0 { return Err(Error::internal("no data received")); }
+        if bpp == 0 {
+            return Err(Error::internal("no data received"));
+        }
         let iw = self.image_width as usize;
         let ih = self.image_height as usize;
         let mut image = vec![0u8; iw * ih * bpp];
@@ -57,10 +71,19 @@ impl Consumer for PngEncoder {
         let file = File::create(&self.path)?;
         let w = BufWriter::new(file);
         let mut encoder = png::Encoder::new(w, self.image_width, self.image_height);
-        encoder.set_color(match bpp { 1 => png::ColorType::Grayscale, 2 => png::ColorType::GrayscaleAlpha, 3 => png::ColorType::Rgb, _ => png::ColorType::Rgba });
+        encoder.set_color(match bpp {
+            1 => png::ColorType::Grayscale,
+            2 => png::ColorType::GrayscaleAlpha,
+            3 => png::ColorType::Rgb,
+            _ => png::ColorType::Rgba,
+        });
         encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().map_err(|e| Error::Png(e.to_string()))?;
-        writer.write_image_data(&image).map_err(|e| Error::Png(e.to_string()))?;
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| Error::Png(e.to_string()))?;
+        writer
+            .write_image_data(&image)
+            .map_err(|e| Error::Png(e.to_string()))?;
         writer.finish().map_err(|e| Error::Png(e.to_string()))?;
         Ok(())
     }

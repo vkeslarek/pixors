@@ -99,37 +99,32 @@ fn pane_content<'a>(
         PaneKind::Layers => {
             // Iced needs the data to outlive the Element tree.
             // Use the tab's layers directly (they live in EditorState which is pinned).
-            let layers = app.state.active_tab()
+            let layers = app
+                .state
+                .active_tab()
                 .map(|t| t.document.layers.as_slice())
                 .unwrap_or(&[]);
-            let active_id = app.state.active_tab()
-                .and_then(|t| t.session.active_node);
+            let active_id = app.state.active_tab().and_then(|t| t.session.active_node);
             crate::panel::layers::view_slice(layers, active_id).map(Msg::LayersPanel)
         }
         PaneKind::Filters => {
-            let doc_radius = app
+            let transforms = app
                 .state
                 .active_tab()
                 .and_then(|t| {
-                    t.session.active_node
+                    t.session
+                        .active_node
                         .and_then(|id| t.document.layers.iter().find(|l| l.id == id))
-                        .and_then(|l| l.transforms.iter().find_map(|t| match &t.op {
-                            pixors_document::Operation::Blur { radius } => Some(*radius),
-                            _ => None,
-                        }))
+                        .map(|l| l.transforms.as_slice())
                 })
-                .unwrap_or(3.0);
-            let radius = app.blur_preview_radius.unwrap_or(doc_radius);
-            crate::panel::filter::body_view(radius).map(Msg::FiltersPanel)
-        }
-        PaneKind::NewFilter => {
-            app.new_filter.view().map(Msg::NewFilterPanel)
+                .unwrap_or(&[]);
+            crate::panel::filter::view(transforms, app.blur_preview_radius, &app.filter_panel)
+                .map(Msg::FiltersPanel)
         }
     };
     let label = match kind {
         PaneKind::Layers => "LAYERS",
         PaneKind::Filters => "FILTERS",
-        PaneKind::NewFilter => "NEW FILTER",
     };
 
     let title_bar = crate::layout::pane_title_bar(label, Some(Msg::ClosePane(pane)));

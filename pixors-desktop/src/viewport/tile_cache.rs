@@ -46,10 +46,17 @@ impl TileCache {
             self.base.insert(key, tile);
             self.pending.insert(key);
             if is_new {
-                let mip_count = self.base.keys().filter(|k| k.mip_level == key.mip_level).count();
+                let mip_count = self
+                    .base
+                    .keys()
+                    .filter(|k| k.mip_level == key.mip_level)
+                    .count();
                 tracing::debug!(
                     "[tile_cache] insert gen=0 mip={} tx={} ty={} → {} total at this mip",
-                    key.mip_level, key.tx, key.ty, mip_count,
+                    key.mip_level,
+                    key.tx,
+                    key.ty,
+                    mip_count,
                 );
             }
         } else {
@@ -149,14 +156,18 @@ impl TileCache {
 
     pub fn tiles_at_mip(&self, mip: u32, generation: u64) -> Vec<(TileGridPos, &CachedTile)> {
         if generation == 0 {
-            return self.base.iter()
+            return self
+                .base
+                .iter()
                 .filter(|(k, v)| k.mip_level == mip && v.layer == generation)
                 .map(|(k, v)| (*k, v))
                 .collect();
         }
         // Overlay generation: return overlay tiles plus base tiles for positions
         // not yet written in the overlay (prevents black gaps during partial preview).
-        let mut result: Vec<(TileGridPos, &CachedTile)> = self.overlay.iter()
+        let mut result: Vec<(TileGridPos, &CachedTile)> = self
+            .overlay
+            .iter()
             .filter(|(k, _)| k.mip_level == mip)
             .map(|(k, v)| (*k, v))
             .collect();

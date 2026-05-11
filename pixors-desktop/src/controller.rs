@@ -9,10 +9,11 @@ use pixors_engine::stage::Stage;
 use pixors_ops::source::cache_reader::TileRange;
 
 use pixors_document::action::PipelineMode;
-use pixors_document::render::compiler::{compile, compile_preview, CompileConfig, RenderRequest};
+use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile, compile_preview};
 use pixors_document::{NodeId, Operation};
 
 use crate::app::{App, Msg, PaneKind};
+use crate::effect::Effect;
 use crate::page::editor::tab_bar;
 use crate::page::editor::toolbar::Tool;
 use crate::page::menu_bar;
@@ -20,8 +21,8 @@ use crate::panel::{filter as filters_panel, layers as layers_panel};
 use crate::viewport::tile_cache::{CachedTile, TileCache};
 use crate::viewport::tile_cache_sink::{TileCacheSink, register_tile_cache, unregister_tile_cache};
 use crate::viewport::viewport_state::ViewportState;
-use pixors_engine::data::tile::TileGridPos;
 use pixors_document::TILE_SIZE;
+use pixors_engine::data::tile::TileGridPos;
 
 impl App {
     pub(crate) fn find_pane(&self, kind: PaneKind) -> Option<pane_grid::Pane> {
@@ -82,9 +83,7 @@ impl App {
                         tab.session.view.progress = 1.0;
                     }
                     // If this tab has no viewport state yet, it was just opened.
-                    if self.state.tab(tab_id).is_some()
-                        && !self.tile_caches.contains_key(&tab_id)
-                    {
+                    if self.state.tab(tab_id).is_some() && !self.tile_caches.contains_key(&tab_id) {
                         self.init_viewport_for_tab(tab_id);
                     }
                 }
@@ -117,6 +116,44 @@ impl App {
             },
             Msg::FilterSearch(m) => match m {
                 crate::modal::filter_search::Msg::Close => self.show_filter_search = false,
+                crate::modal::filter_search::Msg::Apply(idx) => {
+                    let _item = self.filter_search.items.get(idx).cloned();
+                    self.filter_search
+                        .update(crate::modal::filter_search::Msg::Apply(idx));
+                    self.show_filter_search = false;
+
+                    if let (Some(tab), Some(layer_id)) = (
+                        self.state.active_tab(),
+                        self.state.active_tab().and_then(|t| t.session.active_node),
+                    ) {
+                        let tab_id = tab.id;
+                        let new_id = self
+                            .state
+                            .tab_mut(tab_id)
+                            .map(|t| t.document.alloc_node_id())
+                            .unwrap_or(pixors_document::NodeId(0));
+                        let _ = self.dispatcher.dispatch(
+                            Arc::new(pixors_document::mutation::impls::AddTransform {
+                                tab: tab_id,
+                                layer: layer_id,
+                                transform: pixors_document::Transform {
+                                    id: new_id,
+                                    op: pixors_document::Operation::Blur { radius: 5.0 },
+                                    input: pixors_document::InputScope::Layer,
+                                    output: pixors_document::OutputMode::Replace {
+                                        blend: pixors_document::BlendSpec {
+                                            mode: pixors_image::image::BlendMode::Normal,
+                                            opacity: 1.0,
+                                        },
+                                    },
+                                    enabled: true,
+                                },
+                            }),
+                            &mut self.state,
+                        );
+                        self.recomposite_current_view(tab_id);
+                    }
+                }
                 other => self.filter_search.update(other),
             },
             Msg::MenuBar(m) => self.handle_menu_msg(m),
@@ -159,11 +196,6 @@ impl App {
             },
             Msg::LayersPanel(m) => self.handle_layers_msg(m),
             Msg::FiltersPanel(m) => self.handle_filters_msg(m),
-            Msg::NewFilterPanel(m) => {
-                if let Some(forwarded_msg) = self.new_filter.update(m) {
-                    self.handle_filters_msg(forwarded_msg);
-                }
-            }
             Msg::PaneResized(e) => self.panes.resize(e.split, e.ratio),
             Msg::PaneDragged(pane_grid::DragEvent::Dropped { pane, target }) => {
                 self.panes.drop(pane, target);
@@ -215,7 +247,9 @@ impl App {
 
         if let Some(path) = path {
             if let Err(e) = self.dispatcher.dispatch(
-                Arc::new(pixors_document::action::actions::open_file::OpenFile::new(path)),
+                Arc::new(pixors_document::action::actions::open_file::OpenFile::new(
+                    path,
+                )),
                 &mut self.state,
             ) {
                 self.push_error(e);
@@ -247,7 +281,11 @@ impl App {
                     if let Ok(mut guard) = cache.lock() {
                         guard.insert(
                             generation,
-                            TileGridPos { mip_level: mip, tx, ty },
+                            TileGridPos {
+                                mip_level: mip,
+                                tx,
+                                ty,
+                            },
                             CachedTile {
                                 px,
                                 py,
@@ -278,7 +316,12 @@ impl App {
         // Trigger full mip-0 fetch so tiles appear immediately.
         let ntx = img_w.div_ceil(TILE_SIZE);
         let nty = img_h.div_ceil(TILE_SIZE);
-        let full_range = TileRange { tx_start: 0, tx_end: ntx, ty_start: 0, ty_end: nty };
+        let full_range = TileRange {
+            tx_start: 0,
+            tx_end: ntx,
+            ty_start: 0,
+            ty_end: nty,
+        };
         self.run_mip_fetch(tab_id, 0, full_range);
     }
 
@@ -316,9 +359,12 @@ impl App {
     }
 
     fn run_mip_fetch(&mut self, tab_id: TabId, mip: u32, range: TileRange) {
-        let Some(tab) = self.state.tab(tab_id) else { return };
+        let Some(tab) = self.state.tab(tab_id) else {
+            return;
+        };
 
-        let visible: Vec<&pixors_document::LayerNode> = tab.document
+        let visible: Vec<&pixors_document::LayerNode> = tab
+            .document
             .visible_layers()
             .into_iter()
             .filter(|l| tab.layer_cache_dir(l.id).exists())
@@ -337,14 +383,23 @@ impl App {
                     for tx in range.tx_start..range.tx_end {
                         let px = tx * TILE_SIZE;
                         let py = ty * TILE_SIZE;
-                        if px >= img_w || py >= img_h { continue; }
+                        if px >= img_w || py >= img_h {
+                            continue;
+                        }
                         let tw = (img_w - px).min(TILE_SIZE);
                         let th = (img_h - py).min(TILE_SIZE);
                         guard.insert(
                             0,
-                            TileGridPos { mip_level: mip, tx, ty },
+                            TileGridPos {
+                                mip_level: mip,
+                                tx,
+                                ty,
+                            },
                             CachedTile {
-                                px, py, width: tw, height: th,
+                                px,
+                                py,
+                                width: tw,
+                                height: th,
                                 bytes: Arc::new(vec![0u8; (tw * th * 4) as usize]),
                                 layer: 0,
                             },
@@ -365,11 +420,17 @@ impl App {
             img_w: tab.document.canvas.width,
             img_h: tab.document.canvas.height,
         };
-        let req = RenderRequest { viewport: range, mip_level: mip, up_to: None };
+        let req = RenderRequest {
+            viewport: range,
+            mip_level: mip,
+            up_to: None,
+        };
         let sink = Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0)));
         let graph = compile(&tab.document, &req, &config, sink);
 
-        let _ = self.dispatcher.run_graph(graph, PipelineMode::Background, Some(tab_id));
+        let _ = self
+            .dispatcher
+            .run_graph(graph, PipelineMode::Background, Some(tab_id));
     }
 
     fn run_blur_preview(&mut self, tab_id: TabId, radius: u32, generation: u64, mip: u32) {
@@ -418,7 +479,9 @@ impl App {
             &config,
             Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, generation))),
             active_layer,
-            &Operation::Blur { radius: radius as f32 },
+            &Operation::Blur {
+                radius: radius as f32,
+            },
         );
 
         let _ = self
@@ -493,38 +556,17 @@ impl App {
     }
 
     pub(crate) fn handle_layers_msg(&mut self, m: layers_panel::Msg) {
-        match m {
-            layers_panel::Msg::Close => self.toggle_pane(PaneKind::Layers),
-            layers_panel::Msg::Select(id) => {
-                if let Some(tab) = self.state.active_tab_mut() {
-                    tab.session.active_node = Some(id);
-                }
-            }
-            layers_panel::Msg::ToggleVisibility(id) => {
-                if let Some(tab_id) = self.state.active_tab().map(|t| t.id) {
-                    let visible = self.state.tab(tab_id).unwrap().document.find_layer(id).map(|l| l.visible).unwrap_or(true);
-                    let _ = self.dispatcher.dispatch(
-                        Arc::new(pixors_document::mutation::impls::SetLayerVisible {
-                            tab: tab_id, layer: id, before: visible, after: !visible,
-                        }),
-                        &mut self.state,
-                    );
-                    self.recomposite_current_view(tab_id);
-                }
-            }
-            layers_panel::Msg::SetOpacity(id, opacity) => {
-                if let Some(tab_id) = self.state.active_tab().map(|t| t.id) {
-                    let before = self.state.tab(tab_id).unwrap().document.find_layer(id).map(|l| l.blend.opacity).unwrap_or(1.0);
-                    let _ = self.dispatcher.dispatch(
-                        Arc::new(pixors_document::mutation::impls::SetLayerOpacity {
-                            tab: tab_id, layer: id, before, after: opacity,
-                        }),
-                        &mut self.state,
-                    );
-                    self.recomposite_current_view(tab_id);
-                }
-            }
-        }
+        let layers = self
+            .state
+            .active_tab()
+            .map(|t| t.document.layers.as_slice())
+            .unwrap_or(&[]);
+        let ctx = layers_panel::LayersContext {
+            active_tab_id: self.state.active_tab().map(|t| t.id),
+            layers,
+        };
+        let effects = layers_panel::update(m, ctx);
+        self.execute_effects(effects);
     }
 
     fn recomposite_current_view(&mut self, tab_id: TabId) {
@@ -537,13 +579,22 @@ impl App {
                 let r = vs.camera.padded_tile_range(m, TILE_SIZE, 3);
                 (m, r)
             })
-            .unwrap_or((0, TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 }));
+            .unwrap_or((
+                0,
+                TileRange {
+                    tx_start: 0,
+                    tx_end: 0,
+                    ty_start: 0,
+                    ty_end: 0,
+                },
+            ));
         self.run_mip_fetch(tab_id, mip, range);
     }
 
     pub(crate) fn handle_filters_msg(&mut self, m: filters_panel::Msg) {
+        self.filter_panel.update(&m);
+
         match m {
-            filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             filters_panel::Msg::SetBlur(v) => {
                 self.blur_preview_radius = Some(v);
                 let info = self.state.active_tab_mut().map(|tab| {
@@ -561,44 +612,63 @@ impl App {
                     self.run_blur_preview(tab_id, v as u32, generation, mip);
                 }
             }
-            filters_panel::Msg::CommitBlur(v) => {
+            filters_panel::Msg::CommitBlur(_v) => {
                 self.blur_preview_radius = None;
+                let radius = self.filter_panel.dragging_radius.take().unwrap_or_else(|| {
+                    self.state
+                        .active_tab()
+                        .and_then(|t| {
+                            t.session
+                                .active_node
+                                .and_then(|id| t.document.find_layer(id))
+                                .and_then(|l| {
+                                    l.transforms.iter().find_map(|t| match &t.op {
+                                        pixors_document::Operation::Blur { radius } => {
+                                            Some(*radius)
+                                        }
+                                        _ => None,
+                                    })
+                                })
+                        })
+                        .unwrap_or(3.0)
+                });
                 let action = self.state.active_tab_mut().and_then(|tab| {
-                        let tab_id = tab.id;
-                        let layer_id = tab.session.active_node?;
-                        let layer = tab.document.layers.iter().find(|l| l.id == layer_id)?;
-                        let a: Arc<dyn pixors_document::action::Action> =
-                            if let Some(existing) = layer.transforms.iter().find(|t| {
-                                matches!(t.op, pixors_document::Operation::Blur { .. })
-                            }) {
-                                Arc::new(pixors_document::impls::UpdateTransformOp {
-                                    tab: tab_id,
-                                    layer: layer_id,
-                                    transform_id: existing.id,
-                                    before: existing.op.clone(),
-                                    after: pixors_document::Operation::Blur { radius: v },
-                                })
-                            } else {
-                                let new_id = tab.document.alloc_node_id();
-                                Arc::new(pixors_document::impls::AddTransform {
-                                    tab: tab_id,
-                                    layer: layer_id,
-                                    transform: pixors_document::Transform {
-                                        id: new_id,
-                                        op: pixors_document::Operation::Blur { radius: v },
-                                        input: pixors_document::InputScope::Layer,
-                                        output: pixors_document::OutputMode::Replace {
-                                            blend: pixors_document::BlendSpec {
-                                                mode: pixors_image::image::BlendMode::Normal,
-                                                opacity: 1.0,
-                                            },
-                                        },
-                                        enabled: true,
+                    let tab_id = tab.id;
+                    let layer_id = tab.session.active_node?;
+                    let layer = tab.document.layers.iter().find(|l| l.id == layer_id)?;
+                    let a: Arc<dyn pixors_document::action::Action> = if let Some(existing) = layer
+                        .transforms
+                        .iter()
+                        .find(|t| matches!(t.op, pixors_document::Operation::Blur { .. }))
+                    {
+                        Arc::new(pixors_document::mutation::impls::UpdateTransformOp {
+                            tab: tab_id,
+                            layer: layer_id,
+                            transform_id: existing.id,
+                            before: existing.op.clone(),
+                            after: pixors_document::Operation::Blur { radius },
+                        })
+                    } else {
+                        let new_id = tab.document.alloc_node_id();
+                        Arc::new(pixors_document::mutation::impls::AddTransform {
+                            tab: tab_id,
+                            layer: layer_id,
+                            transform: pixors_document::Transform {
+                                id: new_id,
+                                op: pixors_document::Operation::Blur { radius },
+                                input: pixors_document::InputScope::Layer,
+                                output: pixors_document::OutputMode::Replace {
+                                    blend: pixors_document::BlendSpec {
+                                        mode: pixors_image::image::BlendMode::Normal,
+                                        opacity: 1.0,
                                     },
-                                })
-                            };
-                        Some(a)
-                    });
+                                },
+                                enabled: true,
+                            },
+                        })
+                    };
+                    Some(a)
+                });
                 if let Some(a) = action {
                     let tab_id = a.target_tab();
                     let _ = self.dispatcher.dispatch(a, &mut self.state);
@@ -611,8 +681,27 @@ impl App {
                 self.blur_preview_radius = None;
                 self.dispatch_blur_cancel();
             }
-            filters_panel::Msg::OpenFilterSearch => {
-                self.show_filter_search = true;
+            other => {
+                let tab = self.state.active_tab();
+                let tab_id = tab.map(|t| t.id).unwrap_or(pixors_document::TabId(0));
+                let active_layer_id = tab.and_then(|t| t.session.active_node);
+                let transforms: &[pixors_document::Transform] = tab
+                    .and_then(|t| {
+                        t.session
+                            .active_node
+                            .and_then(|id| t.document.find_layer(id))
+                    })
+                    .map(|l| l.transforms.as_slice())
+                    .unwrap_or(&[]);
+                let ctx = filters_panel::FilterContext::new(
+                    tab_id,
+                    active_layer_id,
+                    transforms,
+                    self.filter_panel.drag_from,
+                    self.filter_panel.drag_over,
+                );
+                let effects = filters_panel::update(other, ctx);
+                self.execute_effects(effects);
             }
         }
     }
@@ -633,7 +722,15 @@ impl App {
                 let r = vs.camera.padded_tile_range(m, TILE_SIZE, 1);
                 (m, r)
             })
-            .unwrap_or((0, TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 }));
+            .unwrap_or((
+                0,
+                TileRange {
+                    tx_start: 0,
+                    tx_end: 0,
+                    ty_start: 0,
+                    ty_end: 0,
+                },
+            ));
 
         // Clear overlay tiles directly — no pipeline needed.
         if let Some(cache) = self.tile_caches.get(&tab_id)
@@ -652,6 +749,95 @@ impl App {
 
     pub(crate) fn push_error(&mut self, msg: String) {
         self.errors.push((msg, std::time::Instant::now()));
+    }
+
+    fn execute_effects(&mut self, effects: Vec<Effect>) {
+        for effect in effects {
+            match effect {
+                Effect::Dispatch(action) => {
+                    if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
+                        self.push_error(e);
+                    }
+                }
+                Effect::RunGraph {
+                    graph,
+                    mode,
+                    tab_id,
+                } => {
+                    let _ = self.dispatcher.run_graph(graph, mode, tab_id);
+                }
+                Effect::QueueDisplayRefresh(tab_id) => {
+                    self.recomposite_current_view(tab_id);
+                }
+                Effect::CancelBackground(tab_id) => {
+                    self.dispatcher.cancel_background(tab_id);
+                }
+                Effect::ClearOverlay(tab_id) => {
+                    if let Some(cache) = self.tile_caches.get(&tab_id)
+                        && let Ok(mut guard) = cache.lock()
+                    {
+                        let generation = self
+                            .state
+                            .tab(tab_id)
+                            .map(|t| t.session.redraw_seq)
+                            .unwrap_or(0);
+                        guard.clear_generation(generation);
+                    }
+                }
+                Effect::ShowFilterSearch => {
+                    self.show_filter_search = true;
+                }
+                Effect::TogglePane(kind) => self.toggle_pane(kind),
+                Effect::ToggleTransformEnabled {
+                    tab_id,
+                    layer_id,
+                    transform_id,
+                    enabled,
+                } => {
+                    if let Some(tab) = self.state.tab(tab_id)
+                        && let Some(layer) = tab.document.find_layer(layer_id)
+                        && let Some(t) = layer.transforms.iter().find(|t| t.id == transform_id)
+                    {
+                        let _ = self.dispatcher.dispatch(
+                            Arc::new(pixors_document::mutation::impls::UpdateTransformOp {
+                                tab: tab_id,
+                                layer: layer_id,
+                                transform_id: t.id,
+                                before: t.op.clone(),
+                                after: t.op.clone(),
+                            }),
+                            &mut self.state,
+                        );
+                        if let Some(tab) = self.state.tab_mut(tab_id)
+                            && let Some(layer) = tab.document.find_layer_mut(layer_id)
+                            && let Some(transform) =
+                                layer.transforms.iter_mut().find(|t| t.id == transform_id)
+                        {
+                            transform.enabled = enabled;
+                        }
+                    }
+                }
+                Effect::ReorderTransforms {
+                    tab_id,
+                    layer_id,
+                    from,
+                    to,
+                } => {
+                    if let Some(tab) = self.state.tab_mut(tab_id)
+                        && let Some(layer) = tab.document.find_layer_mut(layer_id)
+                        && from < layer.transforms.len()
+                        && to < layer.transforms.len()
+                    {
+                        let t = layer.transforms.remove(from);
+                        layer.transforms.insert(to, t);
+                        tab.session.redraw_seq += 1;
+                        self.recomposite_current_view(tab_id);
+                    }
+                }
+                Effect::PushError(msg) => self.push_error(msg),
+                Effect::None => {}
+            }
+        }
     }
 
     pub(crate) fn update_status_from_active_tab(&mut self) {

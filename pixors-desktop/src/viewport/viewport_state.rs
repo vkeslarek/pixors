@@ -1,3 +1,4 @@
+use iced::mouse;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::viewport::camera::Camera;
@@ -15,6 +16,8 @@ pub struct ViewportState {
     pub last_pos: Option<(f32, f32)>,
     pub last_bounds: Option<(f32, f32)>,
     pub last_reqs: Option<Vec<(TabId, u32, TileRange)>>,
+    pub ctrl_held: bool,
+    pub pan_button: Option<mouse::Button>,
 }
 
 impl Default for ViewportState {
@@ -29,6 +32,8 @@ impl Default for ViewportState {
             last_pos: None,
             last_bounds: None,
             last_reqs: None,
+            ctrl_held: false,
+            pan_button: None,
         }
     }
 }

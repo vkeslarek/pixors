@@ -2,7 +2,8 @@ use crate::common::pixel::meta::PixelMeta;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext, StageHints,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
+    StageHints,
 };
 
 use crate::error::Error;
@@ -11,8 +12,14 @@ use crate::data::buffer::Buffer;
 use crate::data::tile::{Tile, TileCoord};
 use crate::debug_stopwatch;
 
-static SA_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
-static SA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
+static SA_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "scanline",
+    kind: DataKind::ScanLine,
+}];
+static SA_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
 static SA_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Fixed(SA_INPUTS),
     outputs: PortGroup::Fixed(SA_OUTPUTS),
@@ -33,11 +40,17 @@ pub struct ScanLineToTile {
 }
 
 impl Processor for ScanLineToTile {
-    fn kind(&self) -> &'static str { "scanline_accumulator" }
+    fn kind(&self) -> &'static str {
+        "scanline_accumulator"
+    }
 
-    fn in_out_ports(&self) -> &'static InOutPortSpecification { &SA_PORTS }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
+        &SA_PORTS
+    }
 
-    fn hints(&self) -> StageHints { StageHints::cpu() }
+    fn hints(&self) -> StageHints {
+        StageHints::cpu()
+    }
 
     fn work_multiplier(&self) -> f64 {
         let cols = self.image_width.div_ceil(self.tile_size) as f64;
@@ -77,9 +90,16 @@ impl Processor for ScanLineToTile {
 impl ScanLineToTile {
     pub fn new(tile_size: u32, image_width: u32, image_height: u32) -> Self {
         Self {
-            tile_size, image_width, image_height,
-            rows: vec![], meta: None, mip_level: 0, band_y: 0,
-            state_image_width: 0, state_image_height: 0, initialized: false,
+            tile_size,
+            image_width,
+            image_height,
+            rows: vec![],
+            meta: None,
+            mip_level: 0,
+            band_y: 0,
+            state_image_width: 0,
+            state_image_height: 0,
+            initialized: false,
         }
     }
 
@@ -99,7 +119,14 @@ impl ScanLineToTile {
                 let e = (s + tw * bpp).min(row.len());
                 buf.extend_from_slice(&row[s..e]);
             }
-            let coord = TileCoord::new(self.mip_level, tx, self.band_y, self.tile_size, self.state_image_width, self.state_image_height);
+            let coord = TileCoord::new(
+                self.mip_level,
+                tx,
+                self.band_y,
+                self.tile_size,
+                self.state_image_width,
+                self.state_image_height,
+            );
             emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(buf))));
         }
         self.band_y += 1;

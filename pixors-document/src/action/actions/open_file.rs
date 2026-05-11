@@ -1,17 +1,17 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use pixors_ops::processor::color::ColorConvert;
 use pixors_engine::common::pixel::AlphaPolicy;
 use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
 use pixors_engine::stage::Stage;
-use pixors_image::image::{open_image, BlendMode};
+use pixors_image::image::{BlendMode, open_image};
 use pixors_image::sink::cache_writer::CacheWriter;
 use pixors_image::source::image_stream::ImageStreamSource;
+use pixors_ops::processor::color::ColorConvert;
 use pixors_ops::processor::mip_downsample::MipDownsample;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
-use crate::document::{CanvasInfo, Document, LayerNode, PixelSource, BlendSpec};
+use crate::document::{BlendSpec, CanvasInfo, Document, LayerNode, PixelSource};
 use crate::session::SessionState;
 use crate::{EditorState, Tab, TabId, TabView};
 
@@ -24,25 +24,36 @@ pub struct OpenFile {
 
 impl fmt::Debug for OpenFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OpenFile").field("path", &self.path).finish()
+        f.debug_struct("OpenFile")
+            .field("path", &self.path)
+            .finish()
     }
 }
 
 impl OpenFile {
     pub fn new(path: std::path::PathBuf) -> Self {
-        Self { path, pending_tab: Mutex::new(None) }
+        Self {
+            path,
+            pending_tab: Mutex::new(None),
+        }
     }
 }
 
 impl Action for OpenFile {
-    fn target_tab(&self) -> Option<TabId> { None }
+    fn target_tab(&self) -> Option<TabId> {
+        None
+    }
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
         let img = open_image(&self.path).map_err(|e| e.to_string())?;
         let desc = img.desc.clone();
         let (w, h) = (desc.width, desc.height);
 
-        tracing::info!("[pixors] image loaded: {w}×{h} {} format={}", desc.bit_depth, desc.format);
+        tracing::info!(
+            "[pixors] image loaded: {w}×{h} {} format={}",
+            desc.bit_depth,
+            desc.format
+        );
         for meta in &desc.metadata {
             tracing::info!("[pixors] exif: {:20} = {}", meta.label(), meta.value_str());
         }
@@ -63,14 +74,19 @@ impl Action for OpenFile {
         let mut layers = Vec::with_capacity(num_pages);
         for page in 0..num_pages {
             let id = document.alloc_node_id();
-            let name = desc.pages.get(page)
+            let name = desc
+                .pages
+                .get(page)
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| format!("Page {}", page + 1));
             layers.push(LayerNode {
                 id,
                 name,
                 visible: page == 0,
-                blend: BlendSpec { mode: BlendMode::Normal, opacity: 1.0 },
+                blend: BlendSpec {
+                    mode: BlendMode::Normal,
+                    opacity: 1.0,
+                },
                 source: PixelSource::PrimaryAsset { page },
                 transforms: Vec::new(),
                 mask: None,
@@ -96,29 +112,68 @@ impl Action for OpenFile {
             let to_tile = graph.add_stage(Stage::Processor(Box::new(
                 pixors_engine::data_transform::to_tile::ScanLineToTile::new(TILE_SIZE, w, h),
             )));
-            graph.add_edge(src, to_tile, EdgePorts { from_port: 0, to_port: 0 });
+            graph.add_edge(
+                src,
+                to_tile,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: 0,
+                },
+            );
             let color = graph.add_stage(Stage::Processor(Box::new(ColorConvert {
                 target_format: state.working_format,
                 target_color_space: state.working_color_space,
                 target_alpha: AlphaPolicy::Straight,
             })));
-            graph.add_edge(to_tile, color, EdgePorts { from_port: 0, to_port: 0 });
-            let mip = graph.add_stage(Stage::Processor(Box::new(MipDownsample::new(w, h, TILE_SIZE))));
-            graph.add_edge(color, mip, EdgePorts { from_port: 0, to_port: 0 });
+            graph.add_edge(
+                to_tile,
+                color,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: 0,
+                },
+            );
+            let mip = graph.add_stage(Stage::Processor(Box::new(MipDownsample::new(
+                w, h, TILE_SIZE,
+            ))));
+            graph.add_edge(
+                color,
+                mip,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: 0,
+                },
+            );
             let layer_cache = cache_dir.join(format!("layer_{:016x}", layer.id.0));
             let writer = graph.add_stage(Stage::Consumer(Box::new(CacheWriter {
                 cache_dir: layer_cache,
             })));
-            graph.add_edge(mip, writer, EdgePorts { from_port: 0, to_port: 0 });
+            graph.add_edge(
+                mip,
+                writer,
+                EdgePorts {
+                    from_port: 0,
+                    to_port: 0,
+                },
+            );
         }
 
         let mut session = SessionState::new(cache_dir);
-        session.view = TabView { active_mip: 0, loading: true, progress: 0.0 };
+        session.view = TabView {
+            active_mip: 0,
+            loading: true,
+            progress: 0.0,
+        };
         if let Some(first) = document.layers.first() {
             session.active_node = Some(first.id);
         }
 
-        let tab = Tab { id: tab_id, document, history: Default::default(), session };
+        let tab = Tab {
+            id: tab_id,
+            document,
+            history: Default::default(),
+            session,
+        };
         *self.pending_tab.lock().unwrap() = Some(tab);
 
         Ok(PreparedAction::Pipeline {
@@ -146,5 +201,7 @@ impl Action for OpenFile {
         }
     }
 
-    fn record_in_history(&self) -> bool { false }
+    fn record_in_history(&self) -> bool {
+        false
+    }
 }

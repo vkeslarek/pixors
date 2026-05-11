@@ -56,7 +56,12 @@ impl Producer for CacheReader {
         let cols = mip_w.div_ceil(self.tile_size);
         let rows = mip_h.div_ceil(self.tile_size);
         let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
-            Some(r) => (r.tx_start, r.tx_end.min(cols), r.ty_start, r.ty_end.min(rows)),
+            Some(r) => (
+                r.tx_start,
+                r.tx_end.min(cols),
+                r.ty_start,
+                r.ty_end.min(rows),
+            ),
             None => (0, cols, 0, rows),
         };
         (tx_end.saturating_sub(tx_start) * ty_end.saturating_sub(ty_start)) as usize
@@ -68,7 +73,12 @@ impl Producer for CacheReader {
         let cols = mip_w.div_ceil(self.tile_size);
         let rows = mip_h.div_ceil(self.tile_size);
         let (tx_start, tx_end, ty_start, ty_end) = match &self.tile_range {
-            Some(r) => (r.tx_start, r.tx_end.min(cols), r.ty_start, r.ty_end.min(rows)),
+            Some(r) => (
+                r.tx_start,
+                r.tx_end.min(cols),
+                r.ty_start,
+                r.ty_end.min(rows),
+            ),
             None => (0, cols, 0, rows),
         };
 
@@ -76,7 +86,10 @@ impl Producer for CacheReader {
         let dir = self.cache_dir.join(format!("mip_{}", self.mip_level));
 
         if !dir.is_dir() {
-            tracing::warn!("[pixors] cache_reader: cache dir does not exist: {}", dir.display());
+            tracing::warn!(
+                "[pixors] cache_reader: cache dir does not exist: {}",
+                dir.display()
+            );
             return Ok(());
         }
 
@@ -87,15 +100,26 @@ impl Producer for CacheReader {
                     Ok(b) => b,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(e) => {
-                        tracing::warn!("[pixors] cache_reader: failed to read {}: {e}", path.display());
+                        tracing::warn!(
+                            "[pixors] cache_reader: failed to read {}: {e}",
+                            path.display()
+                        );
                         continue;
                     }
                 };
-                let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, self.image_width, self.image_height);
+                let coord = TileCoord::new(
+                    self.mip_level,
+                    tx,
+                    ty,
+                    self.tile_size,
+                    self.image_width,
+                    self.image_height,
+                );
                 if coord.width == 0 || coord.height == 0 {
                     continue;
                 }
-                ctx.emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
+                ctx.emit
+                    .emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(bytes))));
             }
         }
         Ok(())

@@ -4,16 +4,23 @@ use crate::common::pixel::meta::PixelMeta;
 use crate::data::buffer::Buffer;
 use crate::data::scanline::ScanLine;
 use crate::data::tile::Tile;
+use crate::error::Error;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext, StageHints,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
+    StageHints,
 };
-use crate::error::Error;
 
 use crate::debug_stopwatch;
 
-static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration { name: "tile", kind: DataKind::Tile }];
-static TS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration { name: "scanline", kind: DataKind::ScanLine }];
+static TS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "tile",
+    kind: DataKind::Tile,
+}];
+static TS_OUTPUTS: &[PortDeclaration] = &[PortDeclaration {
+    name: "scanline",
+    kind: DataKind::ScanLine,
+}];
 static TS_PORTS: InOutPortSpecification = InOutPortSpecification {
     inputs: PortGroup::Fixed(TS_INPUTS),
     outputs: PortGroup::Fixed(TS_OUTPUTS),
@@ -29,9 +36,15 @@ pub struct TileToScanline {
 }
 
 impl Processor for TileToScanline {
-    fn kind(&self) -> &'static str { "tile_to_scanline" }
-    fn in_out_ports(&self) -> &'static InOutPortSpecification { &TS_PORTS }
-    fn hints(&self) -> StageHints { StageHints::prefer_cpu() }
+    fn kind(&self) -> &'static str {
+        "tile_to_scanline"
+    }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
+        &TS_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_cpu()
+    }
 
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         ctx.ensure_cpu()?;
@@ -59,7 +72,9 @@ impl Processor for TileToScanline {
             for row in 0..band_h {
                 let mut full_row = vec![0u8; row_bytes];
                 for tile in &tiles {
-                    if row >= tile.coord.height { continue; }
+                    if row >= tile.coord.height {
+                        continue;
+                    }
                     let data: &[u8] = match &tile.data {
                         Buffer::Cpu(v) => v.as_slice(),
                         Buffer::Gpu(_) => &[],
@@ -67,10 +82,18 @@ impl Processor for TileToScanline {
                     let tw = tile.coord.width as usize;
                     let src_off = row as usize * tw * bpp;
                     let dst_off = tile.coord.px as usize * bpp;
-                    let len = (tw * bpp).min(data.len() - src_off).min(full_row.len() - dst_off);
+                    let len = (tw * bpp)
+                        .min(data.len() - src_off)
+                        .min(full_row.len() - dst_off);
                     full_row[dst_off..dst_off + len].copy_from_slice(&data[src_off..src_off + len]);
                 }
-                ctx.emit.emit(Item::ScanLine(ScanLine::new(self.mip_level, band_py + row, self.image_width, meta, Buffer::cpu(full_row))));
+                ctx.emit.emit(Item::ScanLine(ScanLine::new(
+                    self.mip_level,
+                    band_py + row,
+                    self.image_width,
+                    meta,
+                    Buffer::cpu(full_row),
+                )));
             }
         }
         Ok(())

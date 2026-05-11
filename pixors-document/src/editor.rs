@@ -37,7 +37,10 @@ impl EditorState {
         if tab.document.canvas.width <= 1 {
             // CanvasInfo defaults set via EditorState, no mutation needed
         }
-        let title = tab.document.assets.primary_path
+        let title = tab
+            .document
+            .assets
+            .primary_path
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
@@ -53,7 +56,10 @@ impl EditorState {
 
     pub fn close(&mut self, id: TabId) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id == id) {
-            let title = self.tabs[pos].document.assets.primary_path
+            let title = self.tabs[pos]
+                .document
+                .assets
+                .primary_path
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
@@ -62,13 +68,17 @@ impl EditorState {
             self.tabs.remove(pos);
             let old_active = self.active;
             if self.active == Some(id) {
-                self.active = self.tabs.get(pos)
+                self.active = self
+                    .tabs
+                    .get(pos)
                     .or_else(|| self.tabs.get(pos.saturating_sub(1)))
                     .map(|t| t.id);
             }
             tracing::info!(
                 "[state] close_tab id={id:?} title=\"{title}\" active {:?}→{:?} tab_count={}",
-                old_active, self.active, self.tabs.len(),
+                old_active,
+                self.active,
+                self.tabs.len(),
             );
         } else {
             tracing::warn!("[state] close_tab id={id:?} not found");
@@ -79,7 +89,8 @@ impl EditorState {
         let old = self.active;
         self.active = Some(id);
         if old != self.active {
-            let title = self.tab(id)
+            let title = self
+                .tab(id)
                 .and_then(|t| t.document.assets.primary_path.as_ref())
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())

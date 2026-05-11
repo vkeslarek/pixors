@@ -67,15 +67,7 @@ impl Processor for ColorConvert {
                 .as_ref()
                 .ok_or_else(|| Error::internal("GPU ColorConvert: no GPU context"))?;
 
-            let new_tile = gpu_dispatch(
-                &tile,
-                src_fmt,
-                dst_fmt,
-                src_cs,
-                dst_cs,
-                src_alpha,
-                gpu,
-            )?;
+            let new_tile = gpu_dispatch(&tile, src_fmt, dst_fmt, src_cs, dst_cs, src_alpha, gpu)?;
             ctx.emit.emit(Item::Tile(new_tile));
             return Ok(());
         }
@@ -107,38 +99,76 @@ enum Precision {
 
 fn precision(fmt: PixelFormat) -> Option<Precision> {
     match fmt {
-        PixelFormat::Rgba8 | PixelFormat::Rgb8 | PixelFormat::Gray8 | PixelFormat::GrayA8
-        | PixelFormat::Cmyk8 | PixelFormat::CmykA8 | PixelFormat::YCbCr8 | PixelFormat::Lab8 => Some(Precision::U8),
-        PixelFormat::Rgba16 | PixelFormat::Rgb16 | PixelFormat::Gray16 | PixelFormat::GrayA16
-        | PixelFormat::Cmyk16 | PixelFormat::CmykA16 | PixelFormat::Lab16 => Some(Precision::U16),
-        PixelFormat::RgbaF16 | PixelFormat::RgbF16 | PixelFormat::GrayF16 | PixelFormat::GrayAF16
-        | PixelFormat::CmykF16 | PixelFormat::CmykAF16 | PixelFormat::YCbCrF16 => Some(Precision::F16),
-        PixelFormat::RgbaF32 | PixelFormat::RgbF32 | PixelFormat::GrayF32 | PixelFormat::GrayAF32
-        | PixelFormat::CmykF32 | PixelFormat::CmykAF32 | PixelFormat::YCbCrF32 => Some(Precision::F32),
+        PixelFormat::Rgba8
+        | PixelFormat::Rgb8
+        | PixelFormat::Gray8
+        | PixelFormat::GrayA8
+        | PixelFormat::Cmyk8
+        | PixelFormat::CmykA8
+        | PixelFormat::YCbCr8
+        | PixelFormat::Lab8 => Some(Precision::U8),
+        PixelFormat::Rgba16
+        | PixelFormat::Rgb16
+        | PixelFormat::Gray16
+        | PixelFormat::GrayA16
+        | PixelFormat::Cmyk16
+        | PixelFormat::CmykA16
+        | PixelFormat::Lab16 => Some(Precision::U16),
+        PixelFormat::RgbaF16
+        | PixelFormat::RgbF16
+        | PixelFormat::GrayF16
+        | PixelFormat::GrayAF16
+        | PixelFormat::CmykF16
+        | PixelFormat::CmykAF16
+        | PixelFormat::YCbCrF16 => Some(Precision::F16),
+        PixelFormat::RgbaF32
+        | PixelFormat::RgbF32
+        | PixelFormat::GrayF32
+        | PixelFormat::GrayAF32
+        | PixelFormat::CmykF32
+        | PixelFormat::CmykAF32
+        | PixelFormat::YCbCrF32 => Some(Precision::F32),
         _ => None,
     }
 }
 
 fn channels(fmt: PixelFormat) -> Option<u32> {
     match fmt {
-        PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::RgbaF16 | PixelFormat::RgbaF32
-        | PixelFormat::Cmyk8 | PixelFormat::Cmyk16 | PixelFormat::CmykF16 | PixelFormat::CmykF32 => Some(0),
-        PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::RgbF16 | PixelFormat::RgbF32
-        | PixelFormat::YCbCr8 | PixelFormat::YCbCrF16 | PixelFormat::YCbCrF32
-        | PixelFormat::Lab8 | PixelFormat::Lab16 => Some(1),
-        PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::GrayF16 | PixelFormat::GrayF32 => Some(2),
-        PixelFormat::GrayA8 | PixelFormat::GrayA16 | PixelFormat::GrayAF16 | PixelFormat::GrayAF32 => Some(3),
-        PixelFormat::CmykA8 | PixelFormat::CmykA16 | PixelFormat::CmykAF16 | PixelFormat::CmykAF32 => Some(4),
+        PixelFormat::Rgba8
+        | PixelFormat::Rgba16
+        | PixelFormat::RgbaF16
+        | PixelFormat::RgbaF32
+        | PixelFormat::Cmyk8
+        | PixelFormat::Cmyk16
+        | PixelFormat::CmykF16
+        | PixelFormat::CmykF32 => Some(0),
+        PixelFormat::Rgb8
+        | PixelFormat::Rgb16
+        | PixelFormat::RgbF16
+        | PixelFormat::RgbF32
+        | PixelFormat::YCbCr8
+        | PixelFormat::YCbCrF16
+        | PixelFormat::YCbCrF32
+        | PixelFormat::Lab8
+        | PixelFormat::Lab16 => Some(1),
+        PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::GrayF16 | PixelFormat::GrayF32 => {
+            Some(2)
+        }
+        PixelFormat::GrayA8
+        | PixelFormat::GrayA16
+        | PixelFormat::GrayAF16
+        | PixelFormat::GrayAF32 => Some(3),
+        PixelFormat::CmykA8
+        | PixelFormat::CmykA16
+        | PixelFormat::CmykAF16
+        | PixelFormat::CmykAF32 => Some(4),
         _ => None,
     }
 }
 
 fn bytes_per_pixel(fmt: PixelFormat) -> Option<u64> {
-    Some(fmt.bytes_per_pixel() as u64).filter(|&b| {
-        b > 0 && {
-            precision(fmt).is_some() && channels(fmt).is_some()
-        }
-    })
+    Some(fmt.bytes_per_pixel() as u64)
+        .filter(|&b| b > 0 && { precision(fmt).is_some() && channels(fmt).is_some() })
 }
 
 fn tf_u32(tf: pixors_engine::common::color::transfer::TransferFn) -> u32 {
@@ -217,11 +247,8 @@ fn gpu_dispatch(
         dst_channels: channels(dst_fmt).unwrap_or(4),
     };
 
-    let kernel = pixors_shader::kernel::color::ColorConvertParamsKernel::new(
-        params,
-        src_fmt,
-        dst_fmt,
-    );
+    let kernel =
+        pixors_shader::kernel::color::ColorConvertParamsKernel::new(params, src_fmt, dst_fmt);
 
     let out_gbuf = scheduler.allocate_buffer(out_size);
 

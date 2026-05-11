@@ -17,9 +17,9 @@ pub use document::{
 };
 pub use editor::EditorState;
 pub use history::History;
-pub use mutation::{impls, DocumentMutation};
+pub use mutation::{DocumentMutation, impls};
 pub use session::{PreviewState, SessionState};
-pub use view::params::ParamValue;
 pub use tab::{Tab, TabId, TabView};
+pub use view::params::ParamValue;
 
 pub const TILE_SIZE: u32 = 256;

@@ -26,13 +26,7 @@ pub struct PixelOffset {
     pub y: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-pub enum BlendMode {
-    #[default]
-    Normal,
-    Source,
-    Over,
-}
+pub use pixors_engine::common::blend::BlendMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum DisposeOp {

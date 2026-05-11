@@ -50,7 +50,13 @@ impl State {
             let is_active = active_id == Some(tab.id);
             all.push(tab_view(
                 i,
-                tab.document.assets.primary_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("untitled"),
+                tab.document
+                    .assets
+                    .primary_path
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("untitled"),
                 is_active,
                 tab.id,
                 self.drag_from,

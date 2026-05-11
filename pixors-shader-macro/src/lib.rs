@@ -5,10 +5,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use syn::{
+    DeriveInput, Ident, LitInt, LitStr, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    DeriveInput, Ident, LitInt, LitStr, Token,
 };
 
 // ── parsed attributes ───────────────────────────────────────────────────────
@@ -154,7 +154,12 @@ impl Parse for KernelArgs {
                     syn::parenthesized!(content in input);
                     match content.parse::<Ident>()?.to_string().as_str() {
                         "PerPixel" => dispatch = Some(DispatchKind::PerPixel),
-                        o => return Err(syn::Error::new(content.span(), format!("unknown dispatch: {o}"))),
+                        o => {
+                            return Err(syn::Error::new(
+                                content.span(),
+                                format!("unknown dispatch: {o}"),
+                            ));
+                        }
                     }
                 }
 
@@ -163,7 +168,12 @@ impl Parse for KernelArgs {
                     syn::parenthesized!(content in input);
                     match content.parse::<Ident>()?.to_string().as_str() {
                         "PerPixel" => class = Some(ClassKind::PerPixel),
-                        o => return Err(syn::Error::new(content.span(), format!("unknown class: {o}"))),
+                        o => {
+                            return Err(syn::Error::new(
+                                content.span(),
+                                format!("unknown class: {o}"),
+                            ));
+                        }
                     }
                 }
 
@@ -194,14 +204,28 @@ impl Parse for KernelArgs {
 
 fn find_slangc() -> PathBuf {
     for c in &["slangc", "/home/keslarek/.local/bin/slangc"] {
-        if Command::new(c).arg("--version").stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok() {
+        if Command::new(c)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok()
+        {
             return PathBuf::from(*c);
         }
     }
     panic!("slangc not found");
 }
 
-fn compile_slang(slangc: &PathBuf, wrapper_content: &str, wrapper_name: &str, entry_name: &str, manifest_dir: &str, target_dir: &str, includes: &[String]) {
+fn compile_slang(
+    slangc: &PathBuf,
+    wrapper_content: &str,
+    wrapper_name: &str,
+    entry_name: &str,
+    manifest_dir: &str,
+    target_dir: &str,
+    includes: &[String],
+) {
     let out = PathBuf::from(env::var("OUT_DIR").unwrap_or_else(|_| "/tmp".into()));
     let wrap_path = out.join(format!("{wrapper_name}.slang"));
     let spv_path = PathBuf::from(target_dir).join(format!("{wrapper_name}.spv"));
@@ -214,7 +238,8 @@ fn compile_slang(slangc: &PathBuf, wrapper_content: &str, wrapper_name: &str, en
     for inc in includes {
         cmd.arg("-I").arg(format!("{manifest_dir}/{inc}"));
     }
-    let status = cmd.arg("-entry")
+    let status = cmd
+        .arg("-entry")
         .arg(entry_name)
         .arg("-stage")
         .arg("compute")
@@ -259,7 +284,9 @@ pub fn kernel(attr: TokenStream, item: TokenStream) -> TokenStream {
     for s in &args.specs {
         let wrapper_name = format!("{}_{}", name, s.id);
         let entry_name = wrapper_name.clone();
-        let type_args = s.types.iter()
+        let type_args = s
+            .types
+            .iter()
             .map(|t| t.to_string())
             .collect::<Vec<_>>()
             .join(", ");
@@ -277,14 +304,24 @@ pub fn kernel(attr: TokenStream, item: TokenStream) -> TokenStream {
             entry = &entry_name,
         );
 
-        compile_slang(&slangc, &wrapper, &wrapper_name, &entry_name, &manifest_dir, &target_dir, &args.includes);
+        compile_slang(
+            &slangc,
+            &wrapper,
+            &wrapper_name,
+            &entry_name,
+            &manifest_dir,
+            &target_dir,
+            &args.includes,
+        );
     }
 
     // ── extract struct fields for params ──
     let fields: Vec<(Ident, syn::Type)> = match &input.data {
-        syn::Data::Struct(ds) => ds.fields.iter().map(|f| {
-            (f.ident.clone().unwrap(), f.ty.clone())
-        }).collect(),
+        syn::Data::Struct(ds) => ds
+            .fields
+            .iter()
+            .map(|f| (f.ident.clone().unwrap(), f.ty.clone()))
+            .collect(),
         _ => panic!("#[kernel] only supports structs"),
     };
 
@@ -343,14 +380,17 @@ pub fn kernel(attr: TokenStream, item: TokenStream) -> TokenStream {
             entries
         }).collect()
     } else {
-        args.specs.iter().flat_map(|s| {
-            let cname = format_ident!("{}_SPV_{}", name_up, s.id.to_uppercase());
-            let entry_name = format!("{}_{}", name, s.id);
-            s.formats.iter().map(move |fmt| {
+        args.specs
+            .iter()
+            .flat_map(|s| {
+                let cname = format_ident!("{}_SPV_{}", name_up, s.id.to_uppercase());
+                let entry_name = format!("{}_{}", name, s.id);
+                s.formats.iter().map(move |fmt| {
                 let pf = format_ident!("{}", fmt.to_string());
                 quote! { (::pixors_engine::common::pixel::PixelFormat::#pf, #entry_name, & #cname) }
             }).collect::<Vec<_>>()
-        }).collect()
+            })
+            .collect()
     };
 
     let fmt_map_static = format_ident!("{}_FORMAT_MAP", name_up);

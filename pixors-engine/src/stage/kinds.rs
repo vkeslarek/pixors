@@ -55,4 +55,3 @@ pub struct InOutPortSpecification {
     pub inputs: PortGroup,
     pub outputs: PortGroup,
 }
-

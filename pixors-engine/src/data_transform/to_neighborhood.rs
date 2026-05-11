@@ -6,13 +6,14 @@ use crate::data::buffer::Buffer;
 use crate::data::device::Device;
 use crate::data::neighborhood::{EdgeCondition, Neighborhood, TileGpuInfo};
 use crate::data::tile::{Tile, TileCoord, TileGridPos};
+use crate::error::Error;
 use crate::gpu::pool::GpuBuffer;
 use crate::graph::emitter::Emitter;
 use crate::graph::item::Item;
 use crate::stage::{
-    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext, StageHints,
+    DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
+    StageHints,
 };
-use crate::error::Error;
 
 use crate::debug_stopwatch;
 
@@ -50,7 +51,21 @@ pub struct TileToNeighborhood {
 
 impl TileToNeighborhood {
     pub fn new(radius: u32) -> Self {
-        Self { radius, emitted: HashSet::new(), tile_size: 0, image_width: 0, image_height: 0, meta: None, initialized: false, is_gpu: None, tile_cache: HashMap::new(), gpu_buffers: HashMap::new(), gpu_tile_w: 0, gpu_tile_h: 0, gpu_ctx: None }
+        Self {
+            radius,
+            emitted: HashSet::new(),
+            tile_size: 0,
+            image_width: 0,
+            image_height: 0,
+            meta: None,
+            initialized: false,
+            is_gpu: None,
+            tile_cache: HashMap::new(),
+            gpu_buffers: HashMap::new(),
+            gpu_tile_w: 0,
+            gpu_tile_h: 0,
+            gpu_ctx: None,
+        }
     }
 
     fn tile_radius(&self) -> u32 {
@@ -299,14 +314,22 @@ impl TileToNeighborhood {
 
 impl fmt::Debug for TileToNeighborhood {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TileToNeighborhood").field("radius", &self.radius).finish()
+        f.debug_struct("TileToNeighborhood")
+            .field("radius", &self.radius)
+            .finish()
     }
 }
 
 impl Processor for TileToNeighborhood {
-    fn kind(&self) -> &'static str { "neighborhood_agg" }
-    fn in_out_ports(&self) -> &'static InOutPortSpecification { &NA_PORTS }
-    fn hints(&self) -> StageHints { StageHints::prefer_cpu() }
+    fn kind(&self) -> &'static str {
+        "neighborhood_agg"
+    }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
+        &NA_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_cpu()
+    }
 
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let _sw = debug_stopwatch!("neighborhood_agg");

@@ -56,11 +56,7 @@ impl<'a, Message: Clone + 'a> From<Modal<'a, Message>> for Element<'a, Message> 
         .width(Length::Fill);
 
         if let Some(msg) = d.on_close {
-            title_row = title_row.push(
-                icon_button(crate::icons::X)
-                    .size(16)
-                    .on_press(msg),
-            );
+            title_row = title_row.push(icon_button(crate::icons::X).size(16).on_press(msg));
         }
 
         let divider = container(text(""))

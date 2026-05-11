@@ -1,6 +1,7 @@
 mod app;
 pub mod components;
 mod controller;
+mod effect;
 mod icons;
 pub mod layout;
 pub mod modal;

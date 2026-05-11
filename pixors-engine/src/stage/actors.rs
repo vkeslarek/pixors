@@ -9,8 +9,12 @@ use super::node::StageHints;
 pub trait Producer: Send + Sync + std::fmt::Debug {
     fn kind(&self) -> &'static str;
     fn out_ports(&self) -> &'static OutPortSpecification;
-    fn hints(&self) -> StageHints { StageHints::cpu() }
-    fn source_items(&self) -> usize { 0 }
+    fn hints(&self) -> StageHints {
+        StageHints::cpu()
+    }
+    fn source_items(&self) -> usize {
+        0
+    }
     fn produce(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error>;
 }
 
@@ -19,8 +23,12 @@ pub trait Producer: Send + Sync + std::fmt::Debug {
 pub trait Processor: Send + Sync + std::fmt::Debug {
     fn kind(&self) -> &'static str;
     fn in_out_ports(&self) -> &'static InOutPortSpecification;
-    fn hints(&self) -> StageHints { StageHints::cpu() }
-    fn work_multiplier(&self) -> f64 { 1.0 }
+    fn hints(&self) -> StageHints {
+        StageHints::cpu()
+    }
+    fn work_multiplier(&self) -> f64 {
+        1.0
+    }
     fn process(
         &mut self,
         ctx: ProcessorContext<'_>,
@@ -36,7 +44,9 @@ pub trait Processor: Send + Sync + std::fmt::Debug {
 pub trait Consumer: Send + Sync + std::fmt::Debug {
     fn kind(&self) -> &'static str;
     fn in_ports(&self) -> &'static InPortSpecification;
-    fn hints(&self) -> StageHints { StageHints::cpu() }
+    fn hints(&self) -> StageHints {
+        StageHints::cpu()
+    }
     fn consume(&mut self, item: crate::graph::item::Item) -> Result<(), Error>;
     fn finish(&mut self) -> Result<(), Error> {
         Ok(())

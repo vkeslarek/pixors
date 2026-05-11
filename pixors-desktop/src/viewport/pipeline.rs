@@ -242,7 +242,10 @@ impl shader::Primitive for ViewportPrimitive {
         if (img_w0, img_h0) != cache.active_dims {
             tracing::debug!(
                 "[viewport] prepare: stale primitive (img0={}x{} vs active_dims={}x{}), skipping",
-                img_w0, img_h0, cache.active_dims.0, cache.active_dims.1,
+                img_w0,
+                img_h0,
+                cache.active_dims.0,
+                cache.active_dims.1,
             );
             return;
         }
@@ -268,7 +271,11 @@ impl shader::Primitive for ViewportPrimitive {
                 let t = cache.tiles_in_range(mip, &self.visible_range);
                 tracing::debug!(
                     "[viewport] prepare: full_reload mip={} tex={}x{} range={:?} tiles_in_cache={}",
-                    mip, tex_w, tex_h, self.visible_range, t.len(),
+                    mip,
+                    tex_w,
+                    tex_h,
+                    self.visible_range,
+                    t.len(),
                 );
                 t
             } else {
@@ -279,7 +286,8 @@ impl shader::Primitive for ViewportPrimitive {
                 if !t.is_empty() {
                     tracing::debug!(
                         "[viewport] prepare: incremental mip={} uploading {} pending tiles",
-                        mip, t.len(),
+                        mip,
+                        t.len(),
                     );
                 }
                 t
@@ -403,16 +411,19 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let scale_y = cam.img_h0 / cam.img_h;
     let img_xy = img_xy_mip0 / vec2<f32>(scale_x, scale_y);
 
-    let bg = vec4<f32>(0.067, 0.067, 0.075, 1.0);
+    let bg_outside = vec4<f32>(0.067, 0.067, 0.075, 1.0);
     if img_xy.x < 0.0 || img_xy.y < 0.0 || img_xy.x >= cam.img_w || img_xy.y >= cam.img_h {
-        return bg;
+        return bg_outside;
     }
+
+    let checker = select(0.14, 0.19, (i32(img_xy.x / 12.0) + i32(img_xy.y / 12.0)) % 2 == 0);
+    let bg = vec4<f32>(checker, checker, checker, 1.0);
     
     var color = textureSample(t, s, img_xy / vec2<f32>(cam.img_w, cam.img_h));
     
-    // Composite over background (both for unwritten zeroed tiles and transparent image pixels)
+    // Composite over background (pre-multiplied alpha: tiles are stored as straight alpha)
     color = vec4<f32>(
-        color.rgb + bg.rgb * (1.0 - color.a),
+        color.rgb * color.a + bg.rgb * (1.0 - color.a),
         color.a + bg.a * (1.0 - color.a)
     );
 

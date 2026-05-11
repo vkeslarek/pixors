@@ -10,12 +10,23 @@ pub struct PathBuilder {
 
 impl PathBuilder {
     pub fn new() -> Self {
-        Self { stages: Vec::new(), edges: Vec::new(), outputs: Vec::new(), anchors: Vec::new() }
+        Self {
+            stages: Vec::new(),
+            edges: Vec::new(),
+            outputs: Vec::new(),
+            anchors: Vec::new(),
+        }
     }
 
-    pub fn src(self, s: Stage) -> Self { self.add(s) }
-    pub fn data_xform(self, d: Stage) -> Self { self.add(d) }
-    pub fn op(self, o: Stage) -> Self { self.add(o) }
+    pub fn src(self, s: Stage) -> Self {
+        self.add(s)
+    }
+    pub fn data_xform(self, d: Stage) -> Self {
+        self.add(d)
+    }
+    pub fn op(self, o: Stage) -> Self {
+        self.add(o)
+    }
 
     pub fn sink(self, s: Stage) -> Self {
         let mut next = self.add(s);

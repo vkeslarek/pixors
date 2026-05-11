@@ -64,7 +64,13 @@ impl fmt::Debug for MipDownsample {
 
 impl MipDownsample {
     pub fn new(image_width: u32, image_height: u32, tile_size: u32) -> Self {
-        Self { image_width, image_height, tile_size, gpu: None, grid: HashMap::new() }
+        Self {
+            image_width,
+            image_height,
+            tile_size,
+            gpu: None,
+            grid: HashMap::new(),
+        }
     }
 }
 
@@ -208,19 +214,51 @@ impl MipDownsample {
         let out_tile = if all_gpu {
             match gpu_ctx {
                 Some(g) => {
-                    match gpu_downsample_block(g, &block, mip, tx, ty, self.tile_size, self.image_width, self.image_height)
-                    {
+                    match gpu_downsample_block(
+                        g,
+                        &block,
+                        mip,
+                        tx,
+                        ty,
+                        self.tile_size,
+                        self.image_width,
+                        self.image_height,
+                    ) {
                         Ok(t) => t,
                         Err(e) => {
                             tracing::warn!("GPU mip downsample failed ({e}), falling back to CPU");
-                            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, self.image_width, self.image_height)
+                            cpu_downsample_block(
+                                &block,
+                                mip,
+                                tx,
+                                ty,
+                                self.tile_size,
+                                self.image_width,
+                                self.image_height,
+                            )
                         }
                     }
                 }
-                None => cpu_downsample_block(&block, mip, tx, ty, self.tile_size, self.image_width, self.image_height),
+                None => cpu_downsample_block(
+                    &block,
+                    mip,
+                    tx,
+                    ty,
+                    self.tile_size,
+                    self.image_width,
+                    self.image_height,
+                ),
             }
         } else {
-            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, self.image_width, self.image_height)
+            cpu_downsample_block(
+                &block,
+                mip,
+                tx,
+                ty,
+                self.tile_size,
+                self.image_width,
+                self.image_height,
+            )
         };
 
         emit.emit(Item::Tile(out_tile.clone()));

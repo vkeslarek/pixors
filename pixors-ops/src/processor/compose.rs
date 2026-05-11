@@ -38,14 +38,25 @@ pub struct Compose {
 
 impl Compose {
     pub fn new(layer_count: u16, blend_modes: Vec<BlendMode>, opacities: Vec<f32>) -> Self {
-        Self { layer_count, blend_modes, opacities, grid: HashMap::new() }
+        Self {
+            layer_count,
+            blend_modes,
+            opacities,
+            grid: HashMap::new(),
+        }
     }
 }
 
 impl Processor for Compose {
-    fn kind(&self) -> &'static str { "compose" }
-    fn in_out_ports(&self) -> &'static InOutPortSpecification { &COMPOSE_PORTS }
-    fn hints(&self) -> StageHints { StageHints::prefer_gpu() }
+    fn kind(&self) -> &'static str {
+        "compose"
+    }
+    fn in_out_ports(&self) -> &'static InOutPortSpecification {
+        &COMPOSE_PORTS
+    }
+    fn hints(&self) -> StageHints {
+        StageHints::prefer_gpu()
+    }
 
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let tile = ProcessorContext::take_tile(item)?;
@@ -89,11 +100,19 @@ impl Compose {
         gpu: Option<Arc<GpuContext>>,
         emit: &mut Emitter<Item>,
     ) {
-        let Some(slots) = self.grid.get(&key) else { return };
-        if slots.iter().any(|s| s.is_none()) { return; }
+        let Some(slots) = self.grid.get(&key) else {
+            return;
+        };
+        if slots.iter().any(|s| s.is_none()) {
+            return;
+        }
 
-        let tiles: Vec<(u16, Tile)> = self.grid.remove(&key).unwrap()
-            .into_iter().enumerate()
+        let tiles: Vec<(u16, Tile)> = self
+            .grid
+            .remove(&key)
+            .unwrap()
+            .into_iter()
+            .enumerate()
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
 
@@ -107,8 +126,12 @@ impl Compose {
         gpu: Option<Arc<GpuContext>>,
         emit: &mut Emitter<Item>,
     ) {
-        let Some(slots) = self.grid.remove(&key) else { return };
-        let tiles: Vec<(u16, Tile)> = slots.into_iter().enumerate()
+        let Some(slots) = self.grid.remove(&key) else {
+            return;
+        };
+        let tiles: Vec<(u16, Tile)> = slots
+            .into_iter()
+            .enumerate()
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
 
@@ -148,7 +171,9 @@ fn gpu_compose(
     opacities: &[f32],
     emit: &mut Emitter<Item>,
 ) -> Result<(), (Error, Vec<(u16, Tile)>)> {
-    if tiles.is_empty() { return Ok(()); }
+    if tiles.is_empty() {
+        return Ok(());
+    }
 
     tiles.sort_by_key(|(port, _)| *port);
 
@@ -195,8 +220,19 @@ fn gpu_compose(
 
         let out = scheduler.allocate_buffer(buf_size);
         let out = scheduler
-            .dispatch_one(&kernel, &[&acc, &layer_buf], out, w.div_ceil(8), h.div_ceil(8))
-            .map_err(|e| (Error::internal(format!("GPU compose dispatch: {e}")), Vec::new()))?;
+            .dispatch_one(
+                &kernel,
+                &[&acc, &layer_buf],
+                out,
+                w.div_ceil(8),
+                h.div_ceil(8),
+            )
+            .map_err(|e| {
+                (
+                    Error::internal(format!("GPU compose dispatch: {e}")),
+                    Vec::new(),
+                )
+            })?;
 
         acc = Arc::new(out);
     }
@@ -207,8 +243,15 @@ fn gpu_compose(
 
 // ── CPU path ──────────────────────────────────────────────────────────────────
 
-fn cpu_compose(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[f32], emit: &mut Emitter<Item>) {
-    if tiles.is_empty() { return; }
+fn cpu_compose(
+    tiles: Vec<(u16, Tile)>,
+    blend_modes: &[BlendMode],
+    opacities: &[f32],
+    emit: &mut Emitter<Item>,
+) {
+    if tiles.is_empty() {
+        return;
+    }
 
     let bpp = tiles[0].1.meta.format.bytes_per_pixel();
     let mut w = 0;
@@ -231,13 +274,17 @@ fn cpu_compose(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[
             let mut started = false;
 
             for (port, tile) in tiles.iter() {
-                if x >= tile.coord.width as usize || y >= tile.coord.height as usize { continue; }
+                if x >= tile.coord.width as usize || y >= tile.coord.height as usize {
+                    continue;
+                }
                 let data = match &tile.data {
                     Buffer::Cpu(v) => v.as_slice(),
                     Buffer::Gpu(_) => continue,
                 };
                 let t_off = (y * tile.coord.width as usize + x) * bpp;
-                if t_off + bpp > data.len() { continue; }
+                if t_off + bpp > data.len() {
+                    continue;
+                }
 
                 let mut pixel = read_pixel(&data[t_off..], bpp);
                 let opacity = opacities.get(*port as usize).copied().unwrap_or(1.0);
@@ -261,10 +308,12 @@ fn cpu_compose(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[
 
 fn read_pixel(data: &[u8], bpp: usize) -> [f32; 4] {
     match bpp {
-        4 => {
-            [data[0] as f32 / 255.0, data[1] as f32 / 255.0,
-             data[2] as f32 / 255.0, data[3] as f32 / 255.0]
-        }
+        4 => [
+            data[0] as f32 / 255.0,
+            data[1] as f32 / 255.0,
+            data[2] as f32 / 255.0,
+            data[3] as f32 / 255.0,
+        ],
         8 => {
             let r = half::f16::from_le_bytes([data[0], data[1]]).to_f32();
             let g = half::f16::from_le_bytes([data[2], data[3]]).to_f32();
@@ -285,7 +334,9 @@ fn write_pixel(pixel: [f32; 4], bpp: usize, dst: &mut [u8]) {
             dst[3] = (pixel[3].clamp(0.0, 1.0) * 255.0) as u8;
         }
         8 => {
-            fn f32_to_f16(v: f32) -> half::f16 { half::f16::from_f32(v.clamp(-65504.0, 65504.0)) }
+            fn f32_to_f16(v: f32) -> half::f16 {
+                half::f16::from_f32(v.clamp(-65504.0, 65504.0))
+            }
             let r = f32_to_f16(pixel[0]).to_le_bytes();
             let g = f32_to_f16(pixel[1]).to_le_bytes();
             let b = f32_to_f16(pixel[2]).to_le_bytes();
