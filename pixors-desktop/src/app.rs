@@ -16,9 +16,9 @@ use crate::page::{
 use crate::panel::{filter as filters_panel, layers as layers_panel};
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
-use pixors_state::TabId;
-use pixors_state::EditorState;
-use pixors_state::action::{Action, Dispatcher};
+use pixors_document::TabId;
+use pixors_document::EditorState;
+use pixors_document::action::{Action, Dispatcher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -129,10 +129,7 @@ impl Default for App {
 
 impl App {
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
-        self.state.active_tab().and_then(|t| match &t.source {
-            pixors_state::TabSource::File { path } => Some(path.as_path()),
-            pixors_state::TabSource::NewBlank { .. } => None,
-        })
+        self.state.active_tab().and_then(|t| t.document.assets.primary_path.as_deref())
     }
 
     pub fn subscription(&self) -> Subscription<Msg> {

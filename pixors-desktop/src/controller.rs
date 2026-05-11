@@ -1,4 +1,4 @@
-use pixors_state::TabId;
+use pixors_document::TabId;
 use std::sync::Arc;
 
 use iced::keyboard::{self, Key};
@@ -15,8 +15,8 @@ use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
 use pixors_ops::processor::color::ColorConvert;
 use pixors_engine::common::pixel::meta::PixelMeta;
-use pixors_state::action::PipelineMode;
-use pixors_state::PathBuilder;
+use pixors_document::action::PipelineMode;
+use pixors_document::PathBuilder;
 use pixors_ops::processor::blur::Blur;
 
 use crate::app::{App, Msg, PaneKind};
@@ -31,7 +31,7 @@ use crate::viewport::tile_cache_source::{
 };
 use crate::viewport::viewport_state::ViewportState;
 use pixors_engine::data::tile::TileGridPos;
-use pixors_state::TILE_SIZE;
+use pixors_document::TILE_SIZE;
 
 impl App {
     pub(crate) fn find_pane(&self, kind: PaneKind) -> Option<pane_grid::Pane> {
@@ -81,15 +81,15 @@ impl App {
                     };
                     let tab_id = TabId(tag);
                     if let Some(tab) = self.state.tab_mut(tab_id) {
-                        tab.view.progress = p;
+                        tab.session.view.progress = p;
                     }
                 }
                 PipelineEvent::Done { tag } => {
                     let tab_id = TabId(tag);
                     self.dispatcher.on_pipeline_done(&mut self.state, tab_id);
                     if let Some(tab) = self.state.tab_mut(tab_id) {
-                        tab.view.loading = false;
-                        tab.view.progress = 1.0;
+                        tab.session.view.loading = false;
+                        tab.session.view.progress = 1.0;
                     }
                     // If this tab has no viewport state yet, it was just opened.
                     if self.state.tab(tab_id).is_some()
@@ -103,14 +103,14 @@ impl App {
                     self.dispatcher
                         .on_pipeline_error(&mut self.state, tab_id, message.clone());
                     if let Some(tab) = self.state.tab_mut(tab_id) {
-                        tab.view.loading = false;
+                        tab.session.view.loading = false;
                     }
                     self.push_error(message);
                 }
                 PipelineEvent::Cancelled { tag } => {
                     let tab_id = TabId(tag);
                     if let Some(tab) = self.state.tab_mut(tab_id) {
-                        tab.view.loading = false;
+                        tab.session.view.loading = false;
                     }
                 }
             },
@@ -149,7 +149,7 @@ impl App {
                     uninstall_tile_cache_reader(id.0);
 
                     if let Err(e) = self.dispatcher.dispatch(
-                        Arc::new(pixors_state::action::actions::close_tab::CloseTab(id)),
+                        Arc::new(pixors_document::action::actions::close_tab::CloseTab(id)),
                         &mut self.state,
                     ) {
                         self.push_error(e);
@@ -226,7 +226,7 @@ impl App {
 
         if let Some(path) = path {
             if let Err(e) = self.dispatcher.dispatch(
-                Arc::new(pixors_state::action::actions::open_file::OpenFile::new(path)),
+                Arc::new(pixors_document::action::actions::open_file::OpenFile::new(path)),
                 &mut self.state,
             ) {
                 self.push_error(e);
@@ -241,9 +241,9 @@ impl App {
         let Some(tab) = self.state.tab(tab_id) else {
             return;
         };
-        let img_w = tab.desc.width;
-        let img_h = tab.desc.height;
-        let cache_dir = tab.cache_dir.clone();
+        let img_w = tab.document.canvas.width;
+        let img_h = tab.document.canvas.height;
+        let cache_dir = tab.session.cache_dir.clone();
         let display_format = self.state.display_format;
         let display_color_space = self.state.display_color_space;
 
@@ -340,15 +340,15 @@ impl App {
             if let Some(cache) = self.tile_caches.get(&tab.id)
                 && cache.lock().is_ok_and(|g| g.has_pending())
             {
-                tab.redraw_seq = tab.redraw_seq.wrapping_add(1);
+                tab.session.redraw_seq = tab.session.redraw_seq.wrapping_add(1);
             }
 
             if let Some(queue) = self.mip_queues.get(&tab.id) {
                 let mut sigs = queue.lock().unwrap();
                 if !sigs.is_empty() {
                     for (tab_id, mip, range) in sigs.drain(..) {
-                        let cache_dir = tab.cache_dir.clone();
-                        let (img_w, img_h) = (tab.desc.width, tab.desc.height);
+                        let cache_dir = tab.session.cache_dir.clone();
+                        let (img_w, img_h) = (tab.document.canvas.width, tab.document.canvas.height);
                         mip_requests.push((tab_id, mip, range, cache_dir, img_w, img_h));
                     }
                 }
@@ -403,7 +403,7 @@ impl App {
         let (img_w, img_h) = self
             .state
             .tab(tab_id)
-            .map(|t| (t.desc.width, t.desc.height))
+            .map(|t| (t.document.canvas.width, t.document.canvas.height))
             .unwrap_or((1, 1));
 
         let graph = PathBuilder::new()
@@ -475,17 +475,17 @@ impl App {
                             return;
                         };
                         let tab_id = tab.id;
-                        tab.view.loading = true;
-                        tab.view.progress = 0.0;
+                        tab.session.view.loading = true;
+                        tab.session.view.progress = 0.0;
 
-                        let action = Arc::new(pixors_state::action::actions::export::Export {
+                        let action = Arc::new(pixors_document::action::actions::export::Export {
                             tab: tab_id,
                             source_path: path.clone(),
                             save_path: save_path.clone(),
                             config: config.clone(),
-                            dpi: tab.desc.dpi,
-                            icc_profile: tab.desc.icc_profile.clone(),
-                            image_height: tab.desc.height,
+                            dpi: None,
+                            icc_profile: None,
+                            image_height: tab.document.canvas.height,
                         });
 
                         if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
@@ -506,14 +506,14 @@ impl App {
             layers_panel::Msg::Close => self.toggle_pane(PaneKind::Layers),
             layers_panel::Msg::Select(i) => {
                 if let Some(tab) = self.state.active_tab_mut()
-                    && let Some(layer) = tab.layers.get(i)
+                    && let Some(layer) = tab.document.layers.get(i)
                 {
-                    tab.active_layer = Some(layer.id);
+                    tab.session.active_node = Some(layer.id);
                 }
             }
             layers_panel::Msg::ToggleVisibility(i) => {
                 if let Some(tab) = self.state.active_tab_mut()
-                    && let Some(layer) = tab.layers.get_mut(i)
+                    && let Some(layer) = tab.document.layers.get_mut(i)
                 {
                     layer.visible = !layer.visible;
                 }
@@ -525,9 +525,17 @@ impl App {
         match m {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             filters_panel::Msg::SetBlur(v) => {
-                let info = self.state.active_tab_mut().filter(|t| t.filter.blur_radius != v).map(|tab| {
-                    tab.filter.blur_radius = v;
-                    (tab.id, tab.redraw_seq.wrapping_add(1))
+                let info = self.state.active_tab_mut().and_then(|tab| {
+                    let active_id = tab.session.active_node?;
+                    let layer = tab.document.layers.iter_mut().find(|l| l.id == active_id)?;
+                    let current = layer.filters.iter().find_map(|f| match f {
+                        pixors_document::LayerFilter::Blur { radius } => Some(*radius),
+                    }).unwrap_or(0.0);
+                    if (current - v).abs() < 0.01 { return None; }
+                    layer.filters.retain(|f| !matches!(f, pixors_document::LayerFilter::Blur { .. }));
+                    layer.filters.push(pixors_document::LayerFilter::Blur { radius: v });
+                    tab.session.redraw_seq = tab.session.redraw_seq.wrapping_add(1);
+                    Some((tab.id, tab.session.redraw_seq))
                 });
                 if let Some((tab_id, generation)) = info {
                     let mip = self
@@ -553,7 +561,7 @@ impl App {
             return;
         };
         let tab_id = tab.id;
-        let generation = tab.redraw_seq.wrapping_add(1);
+        let generation = tab.session.redraw_seq.wrapping_add(1);
 
         let (mip, range) = self
             .viewport_states
@@ -587,9 +595,9 @@ impl App {
 
     pub(crate) fn update_status_from_active_tab(&mut self) {
         if let Some(tab) = self.state.active_tab() {
-            self.status.canvas_w = tab.desc.width;
-            self.status.canvas_h = tab.desc.height;
-            self.status.layers = tab.layers.len();
+            self.status.canvas_w = tab.document.canvas.width;
+            self.status.canvas_h = tab.document.canvas.height;
+            self.status.layers = tab.document.layers.len();
         } else {
             self.status.canvas_w = 0;
             self.status.canvas_h = 0;

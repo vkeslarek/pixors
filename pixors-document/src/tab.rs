@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::document::{Document, LayerNode, NodeId};
+use crate::document::Document;
 use crate::session::SessionState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

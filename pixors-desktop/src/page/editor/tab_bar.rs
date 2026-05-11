@@ -5,7 +5,7 @@ use iced::{Background, Border, Color, Element, Length};
 use crate::theme::{
     ACCENT, BG_BASE, BORDER_SUBTLE, TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
-use pixors_state::{EditorState, TabId};
+use pixors_document::{EditorState, TabId};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -50,7 +50,7 @@ impl State {
             let is_active = active_id == Some(tab.id);
             all.push(tab_view(
                 i,
-                &tab.title,
+                tab.document.assets.primary_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("untitled"),
                 is_active,
                 tab.id,
                 self.drag_from,

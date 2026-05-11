@@ -9,7 +9,7 @@ use crate::components::pill::pill;
 use crate::viewport::program::ViewportProgram;
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
-use pixors_state::TabId;
+use pixors_document::TabId;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,

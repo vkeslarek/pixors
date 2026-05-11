@@ -9,8 +9,8 @@ use crate::viewport::camera::{Camera, compute_max_mip};
 use crate::viewport::pipeline::ViewportPrimitive;
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
-use pixors_state::TabId;
-use pixors_state::TILE_SIZE;
+use pixors_document::TabId;
+use pixors_document::TILE_SIZE;
 
 pub struct ViewportProgram {
     pub cache: Option<Arc<Mutex<TileCache>>>,

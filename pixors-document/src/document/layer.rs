@@ -47,7 +47,7 @@ pub enum PixelSource {
     /// Page of the primary asset (multi-page TIFF, etc.)
     PrimaryAsset { page: usize },
     /// Solid color fill.
-    SolidColor([u8; 4]),
+    SolidColor { color: [u8; 4] },
 }
 
 /// Slot for future mask implementation.

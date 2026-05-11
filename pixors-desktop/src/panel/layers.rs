@@ -11,7 +11,7 @@ pub enum Msg {
     ToggleVisibility(usize),
 }
 
-pub fn view<'a>(layers: &'a [pixors_state::tab::Layer], active_idx: usize) -> Element<'a, Msg> {
+pub fn view<'a>(layers: &'a [pixors_document::LayerNode], active_idx: usize) -> Element<'a, Msg> {
     if layers.is_empty() {
         container(text("No layers yet.").size(12).color(TEXT_MUTED))
             .padding(16)
@@ -35,12 +35,12 @@ pub fn view<'a>(layers: &'a [pixors_state::tab::Layer], active_idx: usize) -> El
 
 fn layer_row<'a>(
     i: usize,
-    layer: &'a pixors_state::tab::Layer,
+    layer: &'a pixors_document::LayerNode,
     is_active: bool,
 ) -> Element<'a, Msg> {
     let color = match &layer.source {
-        pixors_state::tab::LayerSource::FilePage { .. } => Color::from_rgb(0.3, 0.5, 0.8),
-        pixors_state::tab::LayerSource::SolidColor { color } => Color::from_rgba(
+        pixors_document::PixelSource::PrimaryAsset { .. } => Color::from_rgb(0.3, 0.5, 0.8),
+        pixors_document::PixelSource::SolidColor { color } => Color::from_rgba(
             color[0] as f32 / 255.0,
             color[1] as f32 / 255.0,
             color[2] as f32 / 255.0,
@@ -76,7 +76,7 @@ fn layer_row<'a>(
         .size(12)
         .on_press(Msg::ToggleVisibility(i));
 
-    let opacity_text = text(format!("{}%", (layer.opacity * 100.0) as u32))
+    let opacity_text = text(format!("{}%", (layer.blend.opacity * 100.0) as u32))
         .size(9)
         .color(TEXT_MUTED);
 

@@ -7,7 +7,7 @@ edition.workspace = true
 pixors-engine = { path = "../pixors-engine" }
 pixors-image = { path = "../pixors-image" }
 pixors-ops = { path = "../pixors-ops" }
-pixors-state = { path = "../pixors-state" }
+pixors-document = { path = "../pixors-document" }
 iced = { version = "0.14", features = ["advanced", "tokio"] }
 tokio = { version = "1", features = ["sync", "rt"] }
 iced_aw = { version = "0.13", default-features = false, features = ["menu"] }

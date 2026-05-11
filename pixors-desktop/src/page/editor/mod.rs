@@ -10,18 +10,18 @@ use crate::theme::{BG_SURFACE, TEXT_MUTED};
 
 pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let active = app.state.active_tab();
-    let canvas_w = active.map(|t| t.desc.width).unwrap_or(0);
-    let canvas_h = active.map(|t| t.desc.height).unwrap_or(0);
+    let canvas_w = active.map(|t| t.document.canvas.width).unwrap_or(0);
+    let canvas_h = active.map(|t| t.document.canvas.height).unwrap_or(0);
     let tab_id = app.state.active_id();
     let active_cache = tab_id.and_then(|id| app.tile_caches.get(&id)).cloned();
     let viewport_state = tab_id.and_then(|id| app.viewport_states.get(&id)).cloned();
-    let redraw_seq = active.map(|t| t.redraw_seq).unwrap_or(0);
+    let redraw_seq = active.map(|t| t.session.redraw_seq).unwrap_or(0);
     let mip_fetch_queue = tab_id
         .and_then(|id| app.mip_queues.get(&id))
         .cloned()
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
-    let loading = active.map(|t| t.view.loading).unwrap_or(false);
-    let progress = active.map(|t| t.view.progress).unwrap_or(0.0);
+    let loading = active.map(|t| t.session.view.loading).unwrap_or(false);
+    let progress = active.map(|t| t.session.view.progress).unwrap_or(0.0);
 
     let canvas = if let Some(tab_id) = tab_id {
         let viewport = crate::page::editor::viewport::view(
@@ -100,11 +100,11 @@ fn pane_content<'a>(
             let idx = app
                 .state
                 .active_tab()
-                .and_then(|t| t.active_layer)
+                .and_then(|t| t.session.active_node)
                 .and_then(|active_id| {
                     app.state
                         .active_tab()?
-                        .layers
+                        .document.layers
                         .iter()
                         .position(|l| l.id == active_id)
                 })
@@ -112,7 +112,7 @@ fn pane_content<'a>(
             let layers = app
                 .state
                 .active_tab()
-                .map(|t| t.layers.as_slice())
+                .map(|t| t.document.layers.as_slice())
                 .unwrap_or(&[]);
             crate::panel::layers::view(layers, idx).map(Msg::LayersPanel)
         }
@@ -120,7 +120,13 @@ fn pane_content<'a>(
             let radius = app
                 .state
                 .active_tab()
-                .map(|t| t.filter.blur_radius)
+                .and_then(|t| {
+                    t.session.active_node
+                        .and_then(|id| t.document.layers.iter().find(|l| l.id == id))
+                        .and_then(|l| l.filters.iter().find_map(|f| match f {
+                            pixors_document::LayerFilter::Blur { radius } => Some(*radius),
+                        }))
+                })
                 .unwrap_or(3.0);
             crate::panel::filter::body_view(radius).map(Msg::FiltersPanel)
         }
