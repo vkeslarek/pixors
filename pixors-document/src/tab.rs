@@ -1,10 +1,12 @@
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::document::Document;
 use crate::history::History;
 use crate::session::SessionState;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TabId(pub u64);
 
 #[derive(Debug)]
