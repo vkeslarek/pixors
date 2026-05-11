@@ -2,9 +2,10 @@ use pixors_image::image::BlendMode;
 use serde::{Deserialize, Serialize};
 
 use super::NodeId;
+use super::transform::Transform;
 
 /// A single layer in the document's layer stack.
-/// Flat list for Phase 10 — groups come later.
+/// Flat list for now — groups come later.
 /// Order: index 0 = bottommost.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerNode {
@@ -13,44 +14,10 @@ pub struct LayerNode {
     pub visible: bool,
     pub blend: BlendSpec,
     pub source: PixelSource,
-    /// Per-layer ordered filter stack. Applies before compositing.
-    pub filters: Vec<LayerFilter>,
+    /// Ordered transform stack applied before compositing.
+    pub transforms: Vec<Transform>,
     /// Slot for future mask.
     pub mask: Option<Mask>,
-}
-
-/// Non-destructive per-layer filter.
-/// Public-facing filter type. Only the `document` module pattern-matches on variants.
-/// Desktop code uses `params()` / `label()` / `set_param()` — generic rendering.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LayerFilter {
-    Blur { radius: f32 },
-}
-
-impl LayerFilter {
-    pub fn label(&self) -> &str {
-        match self {
-            LayerFilter::Blur { .. } => "Gaussian Blur",
-        }
-    }
-
-    pub fn params(&self) -> Vec<crate::view::params::ParamSpec> {
-        match self {
-            LayerFilter::Blur { radius } => vec![
-                crate::view::params::ParamSpec::float("radius", "Radius", *radius, 0.0..=64.0),
-            ],
-        }
-    }
-
-    pub fn set_param(&mut self, name: &str, value: &crate::view::params::ParamValue) -> bool {
-        match (self, name, value) {
-            (LayerFilter::Blur { radius }, "radius", crate::view::params::ParamValue::F32(v)) => {
-                *radius = *v;
-                true
-            }
-            _ => false,
-        }
-    }
 }
 
 /// Blend mode + opacity for a layer.

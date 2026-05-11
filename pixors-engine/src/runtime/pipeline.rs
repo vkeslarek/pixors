@@ -62,7 +62,7 @@ impl Pipeline {
             let num_stages = nodes.len();
             let kinds: Vec<_> = nodes.iter().map(|&id| g.node_kind(id)).collect();
             let chain_name = format!("#{idx} [{dev:?}]  {}", kinds.join(" → "));
-            tracing::info!("[pixors] compile: {chain_name}  ({} stage{})", num_stages, if num_stages == 1 { "" } else { "s" });
+            tracing::debug!("[pixors] compile: {chain_name}  ({} stage{})", num_stages, if num_stages == 1 { "" } else { "s" });
 
             let has_producer = nodes.first().is_some_and(|&id| matches!(g.stage(id), Stage::Producer(_)));
             let has_consumer = nodes.last().is_some_and(|&id| matches!(g.stage(id), Stage::Consumer(_)));
@@ -91,7 +91,7 @@ impl Pipeline {
             ));
         }
 
-        tracing::info!("[pixors] compile: {} chains built, total_work={total_work}", compiled.len());
+        tracing::debug!("[pixors] compile: {} chains built, total_work={total_work}", compiled.len());
         Ok(Pipeline { chains: compiled, cancelled })
     }
 }
@@ -110,7 +110,7 @@ impl PipelineHandle {
         let mut first_err: Option<Error> = None;
         for (i, h) in self.handles.into_iter().enumerate() {
             match h.join() {
-                Ok(Ok(())) => tracing::info!("[pixors] pipeline: thread {i} joined OK"),
+                Ok(Ok(())) => tracing::debug!("[pixors] pipeline: thread {i} joined OK"),
                 Ok(Err(e)) => { tracing::error!("[pixors] pipeline: thread {i} returned error: {e}"); first_err.get_or_insert(e); }
                 Err(_) => { tracing::error!("[pixors] pipeline: thread {i} PANICKED"); first_err.get_or_insert(Error::internal("pipeline thread panicked")); }
             }
@@ -319,6 +319,6 @@ fn compute_work_total(g: &ExecGraph, order: &[StageId]) -> usize {
         let ow = if g.edges_in(id).count() == 0 { g.stage(id).source_items() } else { (input_work as f64 * g.stage(id).work_multiplier()).ceil() as usize };
         output_work.insert(id, ow);
     }
-    tracing::info!("[pixors] compute_work_total: total_received={total}");
+        tracing::debug!("[pixors] compute_work_total: total_received={total}");
     total
 }

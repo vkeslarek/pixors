@@ -7,6 +7,7 @@ use crate::theme::TEXT_SECONDARY;
 #[derive(Debug, Clone)]
 pub enum Msg {
     SetBlur(f32),
+    CommitBlur(f32),
     CancelPreview,
     Close,
     OpenFilterSearch,
@@ -19,7 +20,8 @@ pub fn body_view<'a>(blur_radius: f32) -> Element<'a, Msg> {
 
     let slider = iced::widget::slider(1.0..=32.0, blur_radius, Msg::SetBlur)
         .width(Length::Fill)
-        .step(1.0);
+        .step(1.0)
+        .on_release(Msg::CommitBlur(blur_radius));
 
     let preview_btn = crate::components::button("Cancel")
         .variant(crate::components::ButtonVariant::Danger)

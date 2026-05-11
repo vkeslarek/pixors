@@ -28,6 +28,8 @@ pub struct TileCoord {
 }
 
 impl TileCoord {
+    /// `image_width` and `image_height` must be mip-0 values.
+    /// The constructor computes mip-adjusted pixel dimensions internally.
     pub fn new(
         mip_level: u32,
         tx: u32,
@@ -36,17 +38,19 @@ impl TileCoord {
         image_width: u32,
         image_height: u32,
     ) -> Self {
+        let mip_w = (image_width >> mip_level).max(1);
+        let mip_h = (image_height >> mip_level).max(1);
         let px = tx * tile_size;
         let py = ty * tile_size;
-        let width = if px >= image_width {
+        let width = if px >= mip_w {
             0
         } else {
-            (image_width - px).min(tile_size)
+            (mip_w - px).min(tile_size)
         };
-        let height = if py >= image_height {
+        let height = if py >= mip_h {
             0
         } else {
-            (image_height - py).min(tile_size)
+            (mip_h - py).min(tile_size)
         };
         Self {
             mip_level,

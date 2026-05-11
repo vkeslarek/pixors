@@ -1,6 +1,6 @@
 # Pixors Architecture
 
-> Current as of May 2026 — Phase 9 cleanup complete.
+> Current as of May 2026 — Phase 10: Transform model + GPU Compose.
 > See `CLAUDE.md` and `AGENTS.md` for agent quick reference.
 
 ---
@@ -82,6 +82,22 @@ compiles and runs the pipeline, and calls `apply()` on completion. Two modes:
 Two-tier in-memory tile buffer: `base` (gen=0, never evicted) and `overlay`
 (gen>0, preview pipelines). The viewport renders overlay over base.
 
+### Document Model
+
+A `Document` holds a flat list of `LayerNode`s. Each `LayerNode` owns:
+- `source: PixelSource` — `PrimaryAsset { page }` or `SolidColor`
+- `blend: BlendSpec { mode, opacity }`
+- `transforms: Vec<Transform>` — ordered list of operations applied to the layer
+
+Each `Transform` has:
+- `op: Operation` — `Blur { radius }`, `Exposure { stops }` (Exposure: todo)
+- `input: InputScope` — `Layer` (self), `Below` (composite below), `Reference(NodeId)`
+- `output: OutputMode` — `Replace { blend }` or `Composite { blend, position }`
+
+`compile(doc, req, config, sink) -> ExecGraph` is the pure function that turns a
+`Document` into a runnable graph. It lives in `pixors-document/src/render/compiler.rs`.
+The desktop's `run_mip_fetch` calls it directly, passing `TileCacheSink` as the sink.
+
 ---
 
 ## 4. Pipeline Flow (Open File Example)
@@ -113,7 +129,7 @@ OpenFile action
 | `pixors-engine/src/gpu/scheduler.rs` | GPU dispatch, buffer pool, readback |
 | `pixors-engine/src/stage/node.rs` | `Stage` trait, `StageHints` |
 | `pixors-state/src/action/mod.rs` | `Action` trait, `Dispatcher`, `PreparedAction` |
-| `pixors-state/src/state/tab.rs` | `Tab`, `TabId`, `Layer`, `FilterState` |
+| `pixors-state/src/state/tab.rs` | `Tab`, `TabId` |
 | `pixors-state/src/state/editor.rs` | `EditorState` |
 | `pixors-desktop/src/controller.rs` | `App::update()` — message routing |
 | `pixors-desktop/src/viewport/pipeline.rs` | `ViewportPrimitive` — GPU texture upload |
@@ -129,8 +145,13 @@ batches dispatch calls into encoder slots, flushing when full or at download poi
 Buffer pool uses deferred recycling: dropped buffers go to a `pending` lock-free
 queue and are only recycled at safe points (`flush()` or `Device::poll(Wait)`).
 
-SPIR-V shaders are precompiled from Slang in `pixors-shader` and exposed as
-`COLOR_SPV`, `BLUR_SPV`, `MIP_DOWNSAMPLE_SPV`.
+SPIR-V shaders are precompiled from Slang in `pixors-shader` via the `#[kernel]`
+proc-macro in `pixors-shader-macro`. Each kernel generates a `*ParamsKernel` type
+(e.g. `BlurParamsKernel`, `ComposeParamsKernel`) that implements `GpuKernel`.
+
+`Compose` runs on GPU when `assign_devices` places it there: N layers trigger N
+sequential pairwise alpha-over dispatches, starting from a zeroed transparent
+accumulator (opacity per layer applied via `opacity_b` parameter).
 
 ---
 

@@ -193,12 +193,7 @@ impl Clone for ViewportPrimitive {
         Self {
             camera: self.camera,
             cache: self.cache.clone(),
-            visible_range: pixors_ops::source::cache_reader::TileRange {
-                tx_start: 0,
-                tx_end: 0,
-                ty_start: 0,
-                ty_end: 0,
-            },
+            visible_range: self.visible_range.clone(),
         }
     }
 }
@@ -245,6 +240,10 @@ impl shader::Primitive for ViewportPrimitive {
         // it is stale. Abort preparation so we don't prematurely drain pending tiles into
         // an incorrectly sized texture, which would cause a wgpu out-of-bounds panic.
         if (img_w0, img_h0) != cache.active_dims {
+            tracing::debug!(
+                "[viewport] prepare: stale primitive (img0={}x{} vs active_dims={}x{}), skipping",
+                img_w0, img_h0, cache.active_dims.0, cache.active_dims.1,
+            );
             return;
         }
 
@@ -266,12 +265,24 @@ impl shader::Primitive for ViewportPrimitive {
             let mut pending = cache.take_pending_keys_for_mip(mip);
 
             let tiles: Vec<_> = if full_reload {
-                cache.tiles_in_range(mip, &self.visible_range)
+                let t = cache.tiles_in_range(mip, &self.visible_range);
+                tracing::debug!(
+                    "[viewport] prepare: full_reload mip={} tex={}x{} range={:?} tiles_in_cache={}",
+                    mip, tex_w, tex_h, self.visible_range, t.len(),
+                );
+                t
             } else {
-                pending
+                let t: Vec<_> = pending
                     .drain(..)
                     .filter_map(|k| cache.get(&k).map(|v| (k, v)))
-                    .collect()
+                    .collect();
+                if !t.is_empty() {
+                    tracing::debug!(
+                        "[viewport] prepare: incremental mip={} uploading {} pending tiles",
+                        mip, t.len(),
+                    );
+                }
+                t
             };
 
             for (_, tile) in tiles {

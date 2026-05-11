@@ -17,7 +17,7 @@ pub fn view_slice<'a>(layers: &'a [LayerNode], active_id: Option<NodeId>) -> Ele
         container(text("No layers yet.").size(12).color(TEXT_MUTED))
             .padding(16).width(Length::Fill).center_x(Length::Fill).into()
     } else {
-        column(layers.iter().map(|l| layer_row(l, active_id == Some(l.id))).collect::<Vec<_>>())
+        column(layers.iter().rev().map(|l| layer_row(l, active_id == Some(l.id))).collect::<Vec<_>>())
             .spacing(2).padding([4, 8]).width(Length::Fill).into()
     }
 }

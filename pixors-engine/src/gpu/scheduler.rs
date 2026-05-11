@@ -197,14 +197,22 @@ impl Scheduler {
     }
 
     /// Allocate a GPU buffer and zero-fill it via a GPU clear command (no CPU round-trip).
+    ///
+    /// The clear is submitted immediately via its own encoder. Recording it into a
+    /// batched slot is unsafe because callers like `copy_tiles_into_padded` and
+    /// `dispatch_one` submit via different paths (queue.submit vs slot flush);
+    /// without ordering the clear could fire AFTER subsequent writes, zeroing
+    /// the buffer back out.
     pub fn alloc_zeroed_buffer(&self, size: u64) -> GpuBuffer {
         let aligned = (size + 3) & !3;
         let buf = self.allocate_buffer(aligned);
-        let idx = self.slot_index();
-        let slot = &self.slots[idx];
-        let mut state = slot.lock();
-        let encoder = state.encoder(&self.device);
-        encoder.clear_buffer(buf.buffer(), 0, None);
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("alloc_zeroed"),
+            });
+        enc.clear_buffer(buf.buffer(), 0, None);
+        self.queue.submit(std::iter::once(enc.finish()));
         buf
     }
 

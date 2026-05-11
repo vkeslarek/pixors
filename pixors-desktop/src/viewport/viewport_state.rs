@@ -9,6 +9,9 @@ pub struct ViewportState {
     pub last_generation: u64,
     pub dragging: bool,
     pub fitted: bool,
+    /// Set true once user manually pans/zooms. Until then, bounds changes
+    /// trigger a re-fit (Iced may give wrong bounds on first frame).
+    pub user_interacted: bool,
     pub last_pos: Option<(f32, f32)>,
     pub last_bounds: Option<(f32, f32)>,
     pub last_reqs: Option<Vec<(TabId, u32, TileRange)>>,
@@ -22,6 +25,7 @@ impl Default for ViewportState {
             last_generation: 0,
             dragging: false,
             fitted: false,
+            user_interacted: false,
             last_pos: None,
             last_bounds: None,
             last_reqs: None,

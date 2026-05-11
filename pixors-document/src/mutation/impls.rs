@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use pixors_image::image::BlendMode;
 
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::document::{Document, LayerFilter, LayerNode, NodeId};
-use crate::view::params::ParamValue;
+use crate::document::{Document, LayerNode, NodeId};
+use crate::document::transform::{Operation, Transform};
 use crate::{EditorState, TabId};
 
 use super::DocumentMutation;
@@ -152,76 +152,80 @@ impl DocumentMutation for SwapLayers {
     fn label(&self) -> &str { "Reorder Layers" }
 }
 impl_document_action!(SwapLayers, tab);
-// AddLayerFilter
+// AddTransform
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddLayerFilter {
+pub struct AddTransform {
     pub tab: TabId,
     pub layer: NodeId,
-    pub at_index: usize,
-    pub filter: LayerFilter,
+    pub transform: Transform,
 }
 #[typetag::serde]
-impl DocumentMutation for AddLayerFilter {
+impl DocumentMutation for AddTransform {
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
-            let idx = self.at_index.min(l.filters.len());
-            l.filters.insert(idx, self.filter.clone());
+            l.transforms.push(self.transform.clone());
         }
     }
     fn undo(&self, doc: &mut Document) {
-        if let Some(l) = doc.find_layer_mut(self.layer)
-            && self.at_index < l.filters.len()
-        {
-            l.filters.remove(self.at_index);
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            l.transforms.retain(|t| t.id != self.transform.id);
         }
     }
-    fn label(&self) -> &str { "Add Filter" }
+    fn label(&self) -> &str { "Add Transform" }
 }
-impl_document_action!(AddLayerFilter, tab);
-// RemoveLayerFilter
+impl_document_action!(AddTransform, tab);
+// RemoveTransform
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RemoveLayerFilter {
+pub struct RemoveTransform {
     pub tab: TabId,
     pub layer: NodeId,
+    pub transform_id: NodeId,
+    pub removed: Transform,
     pub index: usize,
-    pub filter: LayerFilter,
 }
 #[typetag::serde]
-impl DocumentMutation for RemoveLayerFilter {
+impl DocumentMutation for RemoveTransform {
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer)
-            && self.index < l.filters.len()
+            && let Some(i) = l.transforms.iter().position(|t| t.id == self.transform_id)
         {
-            l.filters.remove(self.index);
+            l.transforms.remove(i);
         }
     }
     fn undo(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
-            let idx = self.index.min(l.filters.len());
-            l.filters.insert(idx, self.filter.clone());
+            let idx = self.index.min(l.transforms.len());
+            l.transforms.insert(idx, self.removed.clone());
         }
     }
-    fn label(&self) -> &str { "Remove Filter" }
+    fn label(&self) -> &str { "Remove Transform" }
 }
-impl_document_action!(RemoveLayerFilter, tab);
-// SetFilterParam
+impl_document_action!(RemoveTransform, tab);
+// UpdateTransformOp
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetFilterParam {
+pub struct UpdateTransformOp {
     pub tab: TabId,
     pub layer: NodeId,
-    pub filter_index: usize,
-    pub param: String,
-    pub before: ParamValue,
-    pub after: ParamValue,
+    pub transform_id: NodeId,
+    pub before: Operation,
+    pub after: Operation,
 }
 #[typetag::serde]
-impl DocumentMutation for SetFilterParam {
+impl DocumentMutation for UpdateTransformOp {
     fn apply(&self, doc: &mut Document) {
-        if let Some(l) = doc.find_layer_mut(self.layer) && let Some(f) = l.filters.get_mut(self.filter_index) { f.set_param(&self.param, &self.after); }
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && let Some(t) = l.transforms.iter_mut().find(|t| t.id == self.transform_id)
+        {
+            t.op = self.after.clone();
+        }
     }
     fn undo(&self, doc: &mut Document) {
-        if let Some(l) = doc.find_layer_mut(self.layer) && let Some(f) = l.filters.get_mut(self.filter_index) { f.set_param(&self.param, &self.before); }
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && let Some(t) = l.transforms.iter_mut().find(|t| t.id == self.transform_id)
+        {
+            t.op = self.before.clone();
+        }
     }
-    fn label(&self) -> &str { "Adjust Parameter" }
+    fn label(&self) -> &str { "Update Transform" }
 }
-impl_document_action!(SetFilterParam, tab);
+impl_document_action!(UpdateTransformOp, tab);

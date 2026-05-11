@@ -200,8 +200,6 @@ impl MipDownsample {
     /// recursively ingest it so even higher levels are generated.
     fn downsample_block(&mut self, block: TileBlock, emit: &mut Emitter<Item>) {
         let mip = block.coord.mip_level + 1;
-        let mip_w = (self.image_width >> mip).max(1);
-        let mip_h = (self.image_height >> mip).max(1);
         let tx = block.coord.tx_tl / 2;
         let ty = block.coord.ty_tl / 2;
 
@@ -210,25 +208,25 @@ impl MipDownsample {
         let out_tile = if all_gpu {
             match gpu_ctx {
                 Some(g) => {
-                    match gpu_downsample_block(g, &block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+                    match gpu_downsample_block(g, &block, mip, tx, ty, self.tile_size, self.image_width, self.image_height)
                     {
                         Ok(t) => t,
                         Err(e) => {
                             tracing::warn!("GPU mip downsample failed ({e}), falling back to CPU");
-                            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+                            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, self.image_width, self.image_height)
                         }
                     }
                 }
-                None => cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h),
+                None => cpu_downsample_block(&block, mip, tx, ty, self.tile_size, self.image_width, self.image_height),
             }
         } else {
-            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, mip_w, mip_h)
+            cpu_downsample_block(&block, mip, tx, ty, self.tile_size, self.image_width, self.image_height)
         };
 
         emit.emit(Item::Tile(out_tile.clone()));
 
-        let tiles_x = mip_w.div_ceil(self.tile_size);
-        let tiles_y = mip_h.div_ceil(self.tile_size);
+        let tiles_x = (self.image_width >> mip).max(1).div_ceil(self.tile_size);
+        let tiles_y = (self.image_height >> mip).max(1).div_ceil(self.tile_size);
         if tiles_x > 1 || tiles_y > 1 {
             self.ingest(out_tile, emit);
         }
@@ -332,8 +330,8 @@ fn gpu_downsample_block(
     tx: u32,
     ty: u32,
     tile_size: u32,
-    mip_w: u32,
-    mip_h: u32,
+    image_width: u32,
+    image_height: u32,
 ) -> Result<Tile, Error> {
     let scheduler = gpu.scheduler();
 
@@ -343,7 +341,7 @@ fn gpu_downsample_block(
         block.tiles[2].data.as_gpu().unwrap(),
         block.tiles[3].data.as_gpu().unwrap(),
     ];
-    let coord = TileCoord::new(mip, tx, ty, tile_size, mip_w, mip_h);
+    let coord = TileCoord::new(mip, tx, ty, tile_size, image_width, image_height);
     let fmt = block.tiles[0].meta.format;
     let bpp = fmt.bytes_per_pixel();
     let out_w = coord.width;
@@ -388,11 +386,11 @@ fn cpu_downsample_block(
     tx: u32,
     ty: u32,
     tile_size: u32,
-    mip_w: u32,
-    mip_h: u32,
+    image_width: u32,
+    image_height: u32,
 ) -> Tile {
     let meta = block.tiles[0].meta;
-    let coord = TileCoord::new(mip, tx, ty, tile_size, mip_w, mip_h);
+    let coord = TileCoord::new(mip, tx, ty, tile_size, image_width, image_height);
     let out_w = coord.width as usize;
     let out_h = coord.height as usize;
 

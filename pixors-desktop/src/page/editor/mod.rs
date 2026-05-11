@@ -107,17 +107,19 @@ fn pane_content<'a>(
             crate::panel::layers::view_slice(layers, active_id).map(Msg::LayersPanel)
         }
         PaneKind::Filters => {
-            let radius = app
+            let doc_radius = app
                 .state
                 .active_tab()
                 .and_then(|t| {
                     t.session.active_node
                         .and_then(|id| t.document.layers.iter().find(|l| l.id == id))
-                        .and_then(|l| l.filters.iter().find_map(|f| match f {
-                            pixors_document::LayerFilter::Blur { radius } => Some(*radius),
+                        .and_then(|l| l.transforms.iter().find_map(|t| match &t.op {
+                            pixors_document::Operation::Blur { radius } => Some(*radius),
+                            _ => None,
                         }))
                 })
                 .unwrap_or(3.0);
+            let radius = app.blur_preview_radius.unwrap_or(doc_radius);
             crate::panel::filter::body_view(radius).map(Msg::FiltersPanel)
         }
         PaneKind::NewFilter => {

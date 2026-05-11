@@ -1,13 +1,11 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::mutation::impls::SetFilterParam;
 use crate::session::PreviewState;
 use crate::view::params::ParamValue;
 use crate::{EditorState, TabId};
 
-/// Update the live preview for one filter parameter. Does not touch History.
+/// Update the live preview for one transform parameter. Does not touch History.
 #[derive(Debug)]
 pub struct UpdatePreview {
     pub tab: TabId,
@@ -23,8 +21,6 @@ impl Action for UpdatePreview {
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
         if let Some(tab) = state.tab_mut(self.tab) {
-            // Reset preview if the target filter changed (user switched filter/layer
-            // while a previous preview was still pending commit).
             let needs_reset = tab.session.active_preview.as_ref()
                 .is_some_and(|p| p.layer_id != self.layer_id || p.filter_index != self.filter_index);
             if needs_reset {
@@ -47,6 +43,7 @@ impl Action for UpdatePreview {
 }
 
 /// Commit the current preview overrides as real document mutations.
+/// Currently a no-op — commit is handled via Transform mutations in the desktop controller.
 #[derive(Debug)]
 pub struct CommitPreview {
     pub tab: TabId,
@@ -56,30 +53,8 @@ impl Action for CommitPreview {
     fn target_tab(&self) -> Option<TabId> { Some(self.tab) }
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
-        if let Some(tab) = state.tab_mut(self.tab)
-            && let Some(preview) = tab.session.active_preview.take()
-        {
-            for (param, value) in &preview.overrides {
-                let before = tab.document
-                    .find_layer(preview.layer_id)
-                    .and_then(|l| l.filters.get(preview.filter_index))
-                    .and_then(|f| f.params().into_iter().find(|p| p.name == param))
-                    .map(|p| match &p.kind {
-                        crate::view::params::ParamKind::Float { value, .. } => ParamValue::F32(*value),
-                        crate::view::params::ParamKind::Int { value, .. } => ParamValue::I32(*value),
-                        crate::view::params::ParamKind::Bool { value } => ParamValue::Bool(*value),
-                    })
-                    .unwrap_or_else(|| value.clone());
-
-                tab.history.push(Arc::new(SetFilterParam {
-                    tab: self.tab,
-                    layer: preview.layer_id,
-                    filter_index: preview.filter_index,
-                    param: param.clone(),
-                    before,
-                    after: value.clone(),
-                }), &mut tab.document);
-            }
+        if let Some(tab) = state.tab_mut(self.tab) {
+            tab.session.active_preview = None;
             tab.session.redraw_seq += 1;
         }
         Ok(PreparedAction::StateOnly)

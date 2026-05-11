@@ -42,8 +42,16 @@ impl TileCache {
 
     pub fn insert(&mut self, generation: u64, key: TileGridPos, tile: CachedTile) {
         if generation == 0 {
+            let is_new = !self.base.contains_key(&key);
             self.base.insert(key, tile);
             self.pending.insert(key);
+            if is_new {
+                let mip_count = self.base.keys().filter(|k| k.mip_level == key.mip_level).count();
+                tracing::debug!(
+                    "[tile_cache] insert gen=0 mip={} tx={} ty={} → {} total at this mip",
+                    key.mip_level, key.tx, key.ty, mip_count,
+                );
+            }
         } else {
             if let Some(existing) = self.overlay.get(&key)
                 && existing.layer > generation
@@ -140,15 +148,24 @@ impl TileCache {
     }
 
     pub fn tiles_at_mip(&self, mip: u32, generation: u64) -> Vec<(TileGridPos, &CachedTile)> {
-        let map = if generation == 0 {
-            &self.base
-        } else {
-            &self.overlay
-        };
-        map.iter()
-            .filter(|(k, v)| k.mip_level == mip && v.layer == generation)
+        if generation == 0 {
+            return self.base.iter()
+                .filter(|(k, v)| k.mip_level == mip && v.layer == generation)
+                .map(|(k, v)| (*k, v))
+                .collect();
+        }
+        // Overlay generation: return overlay tiles plus base tiles for positions
+        // not yet written in the overlay (prevents black gaps during partial preview).
+        let mut result: Vec<(TileGridPos, &CachedTile)> = self.overlay.iter()
+            .filter(|(k, _)| k.mip_level == mip)
             .map(|(k, v)| (*k, v))
-            .collect()
+            .collect();
+        for (k, v) in &self.base {
+            if k.mip_level == mip && !self.overlay.contains_key(k) {
+                result.push((*k, v));
+            }
+        }
+        result
     }
 
     pub fn signal_new_img(&mut self, w: u32, h: u32) {

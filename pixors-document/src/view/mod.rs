@@ -1,7 +1,8 @@
 pub mod params;
 
 use crate::document::canvas::CanvasInfo;
-use crate::document::layer::{LayerFilter, LayerNode, PixelSource};
+use crate::document::layer::{LayerNode, PixelSource};
+use crate::document::transform::Transform;
 use crate::document::Document;
 use crate::document::NodeId;
 use crate::session::SessionState;
@@ -21,8 +22,8 @@ pub struct LayerPanelItem {
     pub opacity: f32,
     pub blend_mode: BlendMode,
     pub kind: LayerKind,
-    pub depth: u8,          // always 0 in phase 10
-    pub filter_count: usize,
+    pub depth: u8,
+    pub transform_count: usize,
     pub has_mask: bool,
 }
 
@@ -58,7 +59,7 @@ impl<'a> DocumentView<'a> {
                 PixelSource::SolidColor { .. } => LayerKind::SolidColor,
             },
             depth: 0,
-            filter_count: l.filters.len(),
+            transform_count: l.transforms.len(),
             has_mask: l.mask.is_some(),
         }).collect()
     }
@@ -68,17 +69,29 @@ impl<'a> DocumentView<'a> {
             .and_then(|id| self.document.find_layer(id))
     }
 
-    pub fn active_layer_filters(&self) -> Option<&[LayerFilter]> {
-        self.active_layer().map(|l| l.filters.as_slice())
+    pub fn active_layer_transforms(&self) -> Option<&[Transform]> {
+        self.active_layer().map(|l| l.transforms.as_slice())
     }
 
-    pub fn active_layer_filter_params(&self, filter_index: usize) -> Option<Vec<ParamSpec>> {
+    pub fn active_layer_transform_params(&self, transform_index: usize) -> Option<Vec<ParamSpec>> {
         self.active_layer()
-            .and_then(|l| l.filters.get(filter_index))
-            .map(|f| f.params())
+            .and_then(|l| l.transforms.get(transform_index))
+            .map(transform_params)
     }
 
     pub fn canvas(&self) -> &CanvasInfo {
         &self.document.canvas
+    }
+}
+
+fn transform_params(t: &Transform) -> Vec<ParamSpec> {
+    use crate::document::transform::Operation;
+    match &t.op {
+        Operation::Blur { radius } => vec![
+            ParamSpec::float("radius", "Radius", *radius, 0.0..=64.0),
+        ],
+        Operation::Exposure { stops } => vec![
+            ParamSpec::float("stops", "Stops", *stops, -5.0..=5.0),
+        ],
     }
 }

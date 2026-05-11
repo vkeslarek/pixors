@@ -75,7 +75,7 @@ If your change would reverse an arrow, stop — you have a design problem.
 
 1. **Desktop never writes to Document.** All writes are Action → DocumentMutation. No exceptions.
 2. **Desktop never reads Document directly in hot paths.** Reads `DocumentView` (derived cache) or `SessionState`.
-3. **Preview lives in SessionState, commit goes to Document.** Slider drags touch `session.active_preview`; release creates a `DocumentMutation` → `History::push()`.
+3. **Preview lives in SessionState, commit goes to Document.** Slider drags run a preview overlay pipeline (no mutation); release dispatches `CommitBlur` which writes directly to `LayerNode.transforms` and calls `recomposite_current_view()`.
 
 ### Decision test
 
@@ -122,7 +122,9 @@ For simple document edits, mutations implement BOTH `DocumentMutation` and `Acti
 | `pixors-engine/src/gpu/scheduler.rs` | GPU API for processors |
 | `pixors-engine/src/graph/graph.rs` | `ExecGraph` — owned graph with toposort |
 | `pixors-document/src/document/mod.rs` | `Document`, `NodeId` |
-| `pixors-document/src/document/layer.rs` | `LayerNode`, `LayerFilter`, `BlendSpec`, `PixelSource` |
+| `pixors-document/src/document/layer.rs` | `LayerNode`, `BlendSpec`, `PixelSource`, `Mask` |
+| `pixors-document/src/document/transform.rs` | `Transform`, `Operation`, `InputScope`, `OutputMode`, `CompositePosition` |
+| `pixors-document/src/render/compiler.rs` | `compile()`, `CompileConfig`, `RenderRequest` — pure fn, builds `ExecGraph` from `Document` |
 | `pixors-document/src/session.rs` | `SessionState`, `PreviewState` |
 | `pixors-document/src/mutation/mod.rs` | `DocumentMutation` trait (typetag) |
 | `pixors-document/src/mutation/impls.rs` | Concrete mutations + dual-trait Action impls |

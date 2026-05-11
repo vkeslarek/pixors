@@ -54,17 +54,32 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             state.camera.img_h = img_h as f32;
             state.camera.fit();
             state.current_mip = state.camera.visible_mip_level();
+            tracing::info!(
+                "[viewport] new_img: img={}x{} vp={}x{} zoom={:.4} mip={}",
+                img_w, img_h, state.camera.vp_w, state.camera.vp_h,
+                state.camera.zoom, state.current_mip,
+            );
         }
 
         let bounds_tuple = (bounds.width, bounds.height);
         if state.last_bounds != Some(bounds_tuple) {
             state.camera.resize(bounds_tuple.0, bounds_tuple.1);
-            if !state.fitted {
+            // Re-fit on every bounds change until user manually interacts.
+            // Iced can report incorrect bounds on the first frame; only after
+            // pan/zoom should we consider the camera state user-owned.
+            if !state.user_interacted {
                 state.camera.fit();
                 state.fitted = true;
                 state.current_mip = state.camera.visible_mip_level();
             }
             state.last_bounds = Some(bounds_tuple);
+            tracing::debug!(
+                "[viewport] bounds change: bounds={}x{} img={}x{} zoom={:.4} pan=({:.1},{:.1}) mip={} interacted={}",
+                bounds_tuple.0, bounds_tuple.1,
+                state.camera.img_w, state.camera.img_h,
+                state.camera.zoom, state.camera.pan_x, state.camera.pan_y,
+                state.current_mip, state.user_interacted,
+            );
         }
 
         let mut target_mip = state.camera.visible_mip_level();
@@ -74,10 +89,9 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         {
             let base_mip = state.camera.floor_mip();
             if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
-                tracing::debug!(
-                    "[pixors] viewport: fallback from target {} to mip {}",
-                    target_mip,
-                    base_mip
+                tracing::info!(
+                    "[viewport] mip fallback: target={} base={} (target not in cache, falling back)",
+                    target_mip, base_mip,
                 );
                 target_mip = base_mip;
             }
@@ -189,6 +203,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                     if let Some(curr) = cursor.position_in(bounds) {
                         if let Some((last_x, last_y)) = state.last_pos {
                             state.camera.pan(curr.x - last_x, curr.y - last_y);
+                            state.user_interacted = true;
                         }
                         state.last_pos = Some((curr.x, curr.y));
                     }
@@ -209,6 +224,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                         .map(|p| (p.x, p.y))
                         .unwrap_or((0.0, 0.0));
                     state.camera.zoom_at(factor, pos.0, pos.1);
+                    state.user_interacted = true;
                     Some(shader::Action::request_redraw().and_capture())
                 } else {
                     None

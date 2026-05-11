@@ -1,25 +1,16 @@
 use pixors_document::TabId;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced::keyboard::{self, Key};
 use iced::widget::pane_grid;
-use pixors_engine::common::color::space::ColorSpace;
-use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
-use pixors_engine::data::buffer::Buffer;
-use pixors_engine::data::tile::{Tile, TileCoord};
-use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
-use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
-use pixors_engine::graph::item::Item;
 use pixors_engine::runtime::event::PipelineEvent;
 use pixors_engine::stage::Stage;
-use pixors_ops::source::cache_reader::{CacheReader, TileRange};
+use pixors_ops::source::cache_reader::TileRange;
 
-use pixors_ops::processor::color::ColorConvert;
-use pixors_engine::common::pixel::meta::PixelMeta;
 use pixors_document::action::PipelineMode;
-use pixors_document::PathBuilder;
-use pixors_ops::processor::blur::Blur;
-use pixors_ops::processor::compose::Compose;
+use pixors_document::render::compiler::{compile, compile_preview, CompileConfig, RenderRequest};
+use pixors_document::{NodeId, Operation};
 
 use crate::app::{App, Msg, PaneKind};
 use crate::page::editor::tab_bar;
@@ -28,9 +19,6 @@ use crate::page::menu_bar;
 use crate::panel::{filter as filters_panel, layers as layers_panel};
 use crate::viewport::tile_cache::{CachedTile, TileCache};
 use crate::viewport::tile_cache_sink::{TileCacheSink, register_tile_cache, unregister_tile_cache};
-use crate::viewport::tile_cache_source::{
-    TileCacheSource, install_tile_cache_reader, uninstall_tile_cache_reader,
-};
 use crate::viewport::viewport_state::ViewportState;
 use pixors_engine::data::tile::TileGridPos;
 use pixors_document::TILE_SIZE;
@@ -148,7 +136,6 @@ impl App {
                     self.viewport_states.remove(&id);
                     self.mip_queues.remove(&id);
                     unregister_tile_cache(id.0);
-                    uninstall_tile_cache_reader(id.0);
 
                     if let Err(e) = self.dispatcher.dispatch(
                         Arc::new(pixors_document::action::actions::close_tab::CloseTab(id)),
@@ -246,8 +233,8 @@ impl App {
         let img_w = tab.document.canvas.width;
         let img_h = tab.document.canvas.height;
         let _cache_dir = tab.session.cache_dir.clone();
-        let display_format = self.state.display_format;
-        let display_color_space = self.state.display_color_space;
+        let _display_format = self.state.display_format;
+        let _display_color_space = self.state.display_color_space;
 
         let tile_cache = TileCache::new();
 
@@ -271,43 +258,6 @@ impl App {
                             },
                         );
                     }
-                }),
-            );
-        }
-
-        // Register source callback (BlurPreview reads base tiles from RAM cache).
-        {
-            let cache = tile_cache.clone();
-            install_tile_cache_reader(
-                tab_id.0,
-                Box::new(move |_key, generation, mip, _range| {
-                    let guard = cache.lock().unwrap();
-                    guard
-                        .tiles_at_mip(mip, generation)
-                        .into_iter()
-                        .map(|(pos, ct)| {
-                            Item::Tile(Tile::new(
-                                TileCoord {
-                                    mip_level: pos.mip_level,
-                                    tx: pos.tx,
-                                    ty: pos.ty,
-                                    px: ct.px,
-                                    py: ct.py,
-                                    width: ct.width,
-                                    height: ct.height,
-                                    tile_size: TILE_SIZE,
-                                    image_width: img_w,
-                                    image_height: img_h,
-                                },
-                                PixelMeta::new(
-                                    display_format,
-                                    display_color_space,
-                                    AlphaPolicy::Straight,
-                                ),
-                                Buffer::cpu(ct.bytes.as_ref().clone()),
-                            ))
-                        })
-                        .collect()
                 }),
             );
         }
@@ -368,109 +318,112 @@ impl App {
     fn run_mip_fetch(&mut self, tab_id: TabId, mip: u32, range: TileRange) {
         let Some(tab) = self.state.tab(tab_id) else { return };
 
-        let visible: Vec<&pixors_document::LayerNode> = tab.document.visible_layers();
-        if visible.is_empty() { return; }
-
-        let mut graph = ExecGraph::new();
-        let n = visible.len();
-
-        let compose = graph.add_stage(Stage::Processor(Box::new(Compose::new(
-            n as u16,
-            visible.iter().map(|l| l.blend.mode).collect(),
-            visible.iter().map(|l| l.blend.opacity).collect(),
-        ))));
-
-        let color_out = graph.add_stage(Stage::Processor(Box::new(ColorConvert {
-            target_format: self.state.display_format,
-            target_color_space: self.state.display_color_space,
-            target_alpha: AlphaPolicy::Straight,
-        })));
-        graph.add_edge(compose, color_out, EdgePorts { from_port: 0, to_port: 0 });
-
-        let sink = graph.add_stage(Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0))));
-        graph.add_edge(color_out, sink, EdgePorts { from_port: 0, to_port: 0 });
-
-        let cw = tab.document.canvas.width;
-        let ch = tab.document.canvas.height;
-        let (img_w, img_h) = if mip == 0 { (cw, ch) }
-            else { let s = 1u32 << mip; ((cw + s - 1) / s, (ch + s - 1) / s) };
-
-        for (i, layer) in visible.iter().enumerate() {
-            let layer_cache = tab.layer_cache_dir(layer.id);
-            let reader = graph.add_stage(Stage::Producer(Box::new(CacheReader {
-                cache_dir: layer_cache,
-                mip_level: mip,
-                tile_size: TILE_SIZE,
-                image_width: img_w,
-                image_height: img_h,
-                tile_range: Some(range.clone()),
-                pixel_format: PixelFormat::RgbaF16,
-                color_space: ColorSpace::ACES_CG,
-            })));
-
-            let mut prev_id = reader;
-            let mut prev_port = 0u16;
-
-            // Per-layer filter chain
-            for filter in &layer.filters {
-                match filter {
-                    pixors_document::LayerFilter::Blur { radius } => {
-                        let ttn = graph.add_stage(Stage::Processor(Box::new(
-                            TileToNeighborhood::new(*radius as u32),
-                        )));
-                        graph.add_edge(prev_id, ttn, EdgePorts { from_port: prev_port, to_port: 0 });
-
-                        let blur = graph.add_stage(Stage::Processor(Box::new(Blur {
-                            radius: *radius as u32,
-                        })));
-                        graph.add_edge(ttn, blur, EdgePorts { from_port: 0, to_port: 0 });
-
-                        prev_id = blur;
-                        prev_port = 0;
+        let visible: Vec<&pixors_document::LayerNode> = tab.document
+            .visible_layers()
+            .into_iter()
+            .filter(|l| tab.layer_cache_dir(l.id).exists())
+            .collect();
+        if visible.is_empty() {
+            // Write transparent tiles so the viewport clears instead of showing stale data.
+            let cw = tab.document.canvas.width;
+            let ch = tab.document.canvas.height;
+            let scale = 1u32 << mip;
+            let img_w = cw.div_ceil(scale);
+            let img_h = ch.div_ceil(scale);
+            if let Some(cache) = self.tile_caches.get(&tab_id)
+                && let Ok(mut guard) = cache.lock()
+            {
+                for ty in range.ty_start..range.ty_end {
+                    for tx in range.tx_start..range.tx_end {
+                        let px = tx * TILE_SIZE;
+                        let py = ty * TILE_SIZE;
+                        if px >= img_w || py >= img_h { continue; }
+                        let tw = (img_w - px).min(TILE_SIZE);
+                        let th = (img_h - py).min(TILE_SIZE);
+                        guard.insert(
+                            0,
+                            TileGridPos { mip_level: mip, tx, ty },
+                            CachedTile {
+                                px, py, width: tw, height: th,
+                                bytes: Arc::new(vec![0u8; (tw * th * 4) as usize]),
+                                layer: 0,
+                            },
+                        );
                     }
                 }
             }
-
-            graph.add_edge(prev_id, compose, EdgePorts { from_port: prev_port, to_port: i as u16 });
+            return;
         }
+
+        let config = CompileConfig {
+            cache_dir: tab.session.cache_dir.clone(),
+            display_format: self.state.display_format,
+            display_color_space: self.state.display_color_space,
+            working_format: self.state.working_format,
+            working_color_space: self.state.working_color_space,
+            tile_size: TILE_SIZE,
+            img_w: tab.document.canvas.width,
+            img_h: tab.document.canvas.height,
+        };
+        let req = RenderRequest { viewport: range, mip_level: mip, up_to: None };
+        let sink = Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0)));
+        let graph = compile(&tab.document, &req, &config, sink);
 
         let _ = self.dispatcher.run_graph(graph, PipelineMode::Background, Some(tab_id));
     }
 
     fn run_blur_preview(&mut self, tab_id: TabId, radius: u32, generation: u64, mip: u32) {
-        let (img_w, img_h) = self
+        let (img_w, img_h, cache_dir, active_layer) = self
             .state
             .tab(tab_id)
-            .map(|t| (t.document.canvas.width, t.document.canvas.height))
-            .unwrap_or((1, 1));
+            .and_then(|t| {
+                Some((
+                    t.document.canvas.width,
+                    t.document.canvas.height,
+                    t.session.cache_dir.clone(),
+                    t.session.active_node?,
+                ))
+            })
+            .unwrap_or((1, 1, PathBuf::new(), NodeId(0)));
 
-        let graph = PathBuilder::new()
-            .src(Stage::Producer(Box::new(TileCacheSource {
-                routing_key: tab_id.0,
-                mip_level: mip,
-                generation: 0,
-                tile_range: None,
-            })))
-            .op(Stage::Processor(Box::new(ColorConvert {
-                target_format: self.state.working_format,
-                target_color_space: self.state.working_color_space,
-                target_alpha: AlphaPolicy::Straight,
-            })))
-            .data_xform(Stage::Processor(Box::new(TileToNeighborhood::new(radius))))
-            .op(Stage::Processor(Box::new(Blur { radius })))
-            .op(Stage::Processor(Box::new(ColorConvert {
-                target_format: self.state.display_format,
-                target_color_space: self.state.display_color_space,
-                target_alpha: AlphaPolicy::Straight,
-            })))
-            .sink(Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, generation))))
-            .compile();
+        let mip_scale = 1u32 << mip;
+        let mip_w = img_w.div_ceil(mip_scale);
+        let mip_h = img_h.div_ceil(mip_scale);
+
+        let config = CompileConfig {
+            cache_dir,
+            display_format: self.state.display_format,
+            display_color_space: self.state.display_color_space,
+            working_format: self.state.working_format,
+            working_color_space: self.state.working_color_space,
+            tile_size: TILE_SIZE,
+            img_w,
+            img_h,
+        };
+
+        let req = RenderRequest {
+            viewport: TileRange {
+                tx_start: 0,
+                tx_end: mip_w.div_ceil(TILE_SIZE),
+                ty_start: 0,
+                ty_end: mip_h.div_ceil(TILE_SIZE),
+            },
+            mip_level: mip,
+            up_to: None,
+        };
+
+        let graph = compile_preview(
+            &self.state.tab(tab_id).unwrap().document,
+            &req,
+            &config,
+            Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, generation))),
+            active_layer,
+            &Operation::Blur { radius: radius as f32 },
+        );
 
         let _ = self
             .dispatcher
             .run_graph(graph, PipelineMode::Background, Some(tab_id));
-
-        let _ = (img_w, img_h); // used indirectly via source callback registration
     }
 
     pub(crate) fn handle_menu_msg(&mut self, m: menu_bar::Msg) {
@@ -548,47 +501,57 @@ impl App {
                 }
             }
             layers_panel::Msg::ToggleVisibility(id) => {
-                if let Some(tab) = self.state.active_tab() {
-                    let visible = tab.document.find_layer(id).map(|l| l.visible).unwrap_or(true);
+                if let Some(tab_id) = self.state.active_tab().map(|t| t.id) {
+                    let visible = self.state.tab(tab_id).unwrap().document.find_layer(id).map(|l| l.visible).unwrap_or(true);
                     let _ = self.dispatcher.dispatch(
                         Arc::new(pixors_document::mutation::impls::SetLayerVisible {
-                            tab: tab.id, layer: id, before: visible, after: !visible,
+                            tab: tab_id, layer: id, before: visible, after: !visible,
                         }),
                         &mut self.state,
                     );
+                    self.recomposite_current_view(tab_id);
                 }
             }
             layers_panel::Msg::SetOpacity(id, opacity) => {
-                if let Some(tab) = self.state.active_tab() {
-                    let before = tab.document.find_layer(id).map(|l| l.blend.opacity).unwrap_or(1.0);
+                if let Some(tab_id) = self.state.active_tab().map(|t| t.id) {
+                    let before = self.state.tab(tab_id).unwrap().document.find_layer(id).map(|l| l.blend.opacity).unwrap_or(1.0);
                     let _ = self.dispatcher.dispatch(
                         Arc::new(pixors_document::mutation::impls::SetLayerOpacity {
-                            tab: tab.id, layer: id, before, after: opacity,
+                            tab: tab_id, layer: id, before, after: opacity,
                         }),
                         &mut self.state,
                     );
+                    self.recomposite_current_view(tab_id);
                 }
             }
         }
+    }
+
+    fn recomposite_current_view(&mut self, tab_id: TabId) {
+        let (mip, range) = self
+            .viewport_states
+            .get(&tab_id)
+            .and_then(|vs| vs.read().ok())
+            .map(|vs| {
+                let m = vs.current_mip;
+                let r = vs.camera.padded_tile_range(m, TILE_SIZE, 3);
+                (m, r)
+            })
+            .unwrap_or((0, TileRange { tx_start: 0, tx_end: 0, ty_start: 0, ty_end: 0 }));
+        self.run_mip_fetch(tab_id, mip, range);
     }
 
     pub(crate) fn handle_filters_msg(&mut self, m: filters_panel::Msg) {
         match m {
             filters_panel::Msg::Close => self.toggle_pane(PaneKind::Filters),
             filters_panel::Msg::SetBlur(v) => {
-                let info = self.state.active_tab_mut().and_then(|tab| {
-                    let active_id = tab.session.active_node?;
-                    let layer = tab.document.layers.iter_mut().find(|l| l.id == active_id)?;
-                    let current = layer.filters.iter().find_map(|f| match f {
-                        pixors_document::LayerFilter::Blur { radius } => Some(*radius),
-                    }).unwrap_or(0.0);
-                    if (current - v).abs() < 0.01 { return None; }
-                    layer.filters.retain(|f| !matches!(f, pixors_document::LayerFilter::Blur { .. }));
-                    layer.filters.push(pixors_document::LayerFilter::Blur { radius: v });
+                self.blur_preview_radius = Some(v);
+                let info = self.state.active_tab_mut().map(|tab| {
                     tab.session.redraw_seq = tab.session.redraw_seq.wrapping_add(1);
-                    Some((tab.id, tab.session.redraw_seq))
+                    (tab.id, tab.session.redraw_seq)
                 });
                 if let Some((tab_id, generation)) = info {
+                    self.dispatcher.cancel_background(tab_id);
                     let mip = self
                         .viewport_states
                         .get(&tab_id)
@@ -598,7 +561,54 @@ impl App {
                     self.run_blur_preview(tab_id, v as u32, generation, mip);
                 }
             }
+            filters_panel::Msg::CommitBlur(v) => {
+                self.blur_preview_radius = None;
+                let action = self.state.active_tab_mut().and_then(|tab| {
+                        let tab_id = tab.id;
+                        let layer_id = tab.session.active_node?;
+                        let layer = tab.document.layers.iter().find(|l| l.id == layer_id)?;
+                        let a: Arc<dyn pixors_document::action::Action> =
+                            if let Some(existing) = layer.transforms.iter().find(|t| {
+                                matches!(t.op, pixors_document::Operation::Blur { .. })
+                            }) {
+                                Arc::new(pixors_document::impls::UpdateTransformOp {
+                                    tab: tab_id,
+                                    layer: layer_id,
+                                    transform_id: existing.id,
+                                    before: existing.op.clone(),
+                                    after: pixors_document::Operation::Blur { radius: v },
+                                })
+                            } else {
+                                let new_id = tab.document.alloc_node_id();
+                                Arc::new(pixors_document::impls::AddTransform {
+                                    tab: tab_id,
+                                    layer: layer_id,
+                                    transform: pixors_document::Transform {
+                                        id: new_id,
+                                        op: pixors_document::Operation::Blur { radius: v },
+                                        input: pixors_document::InputScope::Layer,
+                                        output: pixors_document::OutputMode::Replace {
+                                            blend: pixors_document::BlendSpec {
+                                                mode: pixors_image::image::BlendMode::Normal,
+                                                opacity: 1.0,
+                                            },
+                                        },
+                                        enabled: true,
+                                    },
+                                })
+                            };
+                        Some(a)
+                    });
+                if let Some(a) = action {
+                    let tab_id = a.target_tab();
+                    let _ = self.dispatcher.dispatch(a, &mut self.state);
+                    if let Some(tid) = tab_id {
+                        self.recomposite_current_view(tid);
+                    }
+                }
+            }
             filters_panel::Msg::CancelPreview => {
+                self.blur_preview_radius = None;
                 self.dispatch_blur_cancel();
             }
             filters_panel::Msg::OpenFilterSearch => {

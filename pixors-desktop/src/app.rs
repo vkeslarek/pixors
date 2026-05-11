@@ -75,6 +75,9 @@ pub struct App {
     pub viewport_states: HashMap<TabId, Arc<RwLock<ViewportState>>>,
     /// Per-tab queue of tile requests from the viewport draw loop.
     pub mip_queues: HashMap<TabId, Arc<Mutex<Vec<(TabId, u32, TileRange)>>>>,
+    /// Live blur radius during slider drag — overrides the document value so the
+    /// slider thumb tracks the drag. Cleared on CommitBlur / CancelPreview.
+    pub blur_preview_radius: Option<f32>,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
@@ -121,6 +124,7 @@ impl Default for App {
             tile_caches: HashMap::new(),
             viewport_states: HashMap::new(),
             mip_queues: HashMap::new(),
+            blur_preview_radius: None,
         };
         app.update_status_from_active_tab();
         app

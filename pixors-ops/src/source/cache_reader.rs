@@ -91,7 +91,7 @@ impl Producer for CacheReader {
                         continue;
                     }
                 };
-                let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, mip_w, mip_h);
+                let coord = TileCoord::new(self.mip_level, tx, ty, self.tile_size, self.image_width, self.image_height);
                 if coord.width == 0 || coord.height == 0 {
                     continue;
                 }

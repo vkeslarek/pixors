@@ -2,31 +2,18 @@
 
 ---
 
-## BUG-01 · Blur preview drops random tiles
+## BUG-01 · Blur preview drops random tiles — ✅ FIXED
 
 **Symptom:** During fast blur preview (slider drag), some tiles render blurred correctly
 while others disappear entirely, leaving black or transparent gaps across the viewport.
-The pattern is non-deterministic — different tiles drop on each preview run.
 
-**Screenshot:** `docs/assets/bug01-blur-tiles.png` (screenshot from 2026-05-09)
+**Root cause:** `TileCache::tiles_at_mip` with `generation > 0` returned only overlay
+tiles. Base tiles for positions not yet written by the preview pipeline were omitted,
+causing those positions to show black.
 
-**Root cause (suspected):** The preview pipeline writes blurred tiles into the overlay
-generation of `TileCache` via `TileCacheSink`. If the pipeline produces tiles out of
-order, or if a previous preview's cancel races with the new pipeline's writes, some
-tile slots in the overlay are never filled. The viewport then renders black for any
-`TileCache` miss that falls back to nothing (base tiles are skipped when an overlay
-generation is active).
-
-**Fix direction:**
-- On preview start, pre-populate all expected overlay tile slots with a sentinel
-  (e.g. copy from base) before the pipeline writes blurred versions. This prevents
-  the viewport seeing a partial overlay.
-- Or: the viewport falls back to base tiles for any slot not yet written in the
-  current overlay generation, instead of showing black.
-- Either approach requires `TileCache::get()` to distinguish "overlay generation
-  active but this slot not yet written" from "no tile exists at all".
-
-**Priority:** High — visible corruption during the primary interactive operation.
+**Fix (2026-05-11):** `tiles_at_mip` now returns overlay tiles PLUS base-tier fallbacks
+for any position the overlay hasn't written yet. Overlay tiles win when present; base
+fills the gaps. Change in `pixors-desktop/src/viewport/tile_cache.rs`.
 
 ---
 

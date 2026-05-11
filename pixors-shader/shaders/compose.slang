@@ -19,6 +19,8 @@ struct ComposeParams {
 
 void cs_compose<C : IPixelCodec>(uint3 gid)
 {
+    if (gid.x >= g_params.width || gid.y >= g_params.height) return;
+
     uint idx = gid.y * g_params.width + gid.x;
 
     float4 bottom = C.decode(g_layer_a, idx, ChannelLayout::Rgba);

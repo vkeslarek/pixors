@@ -218,7 +218,7 @@ impl Runner for ChainRunner {
                         item_count += 1;
                     }
                     Ok(None) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        tracing::info!(
+                        tracing::debug!(
                             "[pixors] {name}: received None after {item_count} items, entering finish phase…"
                         );
                         Self::run_finish_streaming(
@@ -231,7 +231,7 @@ impl Runner for ChainRunner {
                             &outputs,
                             &progress,
                         )?;
-                        tracing::info!(
+                        tracing::debug!(
                             "[pixors] {name}: finish phase complete, signalling Done to {num_outputs} output(s)"
                         );
                         break;
@@ -246,7 +246,7 @@ impl Runner for ChainRunner {
         for (tx, _, _) in &outputs {
             let _ = tx.send(None);
         }
-        tracing::info!("[pixors] {name}: RUN COMPLETE");
+        tracing::debug!("[pixors] {name}: RUN COMPLETE");
         Ok(())
     }
 }

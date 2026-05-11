@@ -3,13 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use pixors_ops::processor::color::ColorConvert;
 use pixors_engine::common::pixel::AlphaPolicy;
+use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
 use pixors_engine::stage::Stage;
 use pixors_image::image::{open_image, BlendMode};
 use pixors_image::sink::cache_writer::CacheWriter;
 use pixors_image::source::image_stream::ImageStreamSource;
 use pixors_ops::processor::mip_downsample::MipDownsample;
 
-use crate::PathBuilder;
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::document::{CanvasInfo, Document, LayerNode, PixelSource, BlendSpec};
 use crate::session::SessionState;
@@ -50,42 +50,7 @@ impl Action for OpenFile {
         let cache_dir = self.path.with_extension("pixors_cache");
         let tab_id = state.alloc_tab_id();
 
-        // Allocate layer IDs first so we know the cache subdirectory.
-        let num_pages = img.page_count();
-        let mut layer_ids: Vec<usize> = Vec::with_capacity(num_pages);
-        for _ in 0..num_pages {
-            // Temporarily use raw u64; we'll create a proper Document next.
-            layer_ids.push(layer_ids.len()); // placeholder indices
-        }
-
-        // Use a single-layer cache dir for page 0 (Phase 10: one page per stream).
-        // Multi-page TIFFs will need parallel branches — deferred.
-        let layer0_cache = cache_dir.join(format!("layer_{:016x}", 0u64));
-
-        let stream = Arc::new(Mutex::new(Some(
-            img.open_page(0).map_err(|e| e.to_string())?,
-        )));
-
-        let graph = PathBuilder::new()
-            .src(Stage::Producer(Box::new(ImageStreamSource {
-                stream,
-                image_height: desc.height,
-            })))
-            .data_xform(Stage::Processor(Box::new(
-                pixors_engine::data_transform::to_tile::ScanLineToTile::new(TILE_SIZE, w, h),
-            )))
-            .op(Stage::Processor(Box::new(ColorConvert {
-                target_format: state.working_format,
-                target_color_space: state.working_color_space,
-                target_alpha: AlphaPolicy::Straight,
-            })))
-            .op(Stage::Processor(Box::new(MipDownsample::new(w, h, TILE_SIZE))))
-            .sink(Stage::Consumer(Box::new(CacheWriter {
-                cache_dir: layer0_cache,
-            })))
-            .compile();
-
-        // Build the document model
+        // Build document first so we have real NodeIds for cache paths.
         let mut document = Document::new(CanvasInfo {
             width: w,
             height: h,
@@ -107,11 +72,45 @@ impl Action for OpenFile {
                 visible: page == 0,
                 blend: BlendSpec { mode: BlendMode::Normal, opacity: 1.0 },
                 source: PixelSource::PrimaryAsset { page },
-                filters: Vec::new(),
+                transforms: Vec::new(),
                 mask: None,
             });
         }
         document.layers = layers;
+
+        // One ExecGraph with N independent chains — one per page.
+        // Each chain: ImageStreamSource → ScanLineToTile → ColorConvert → MipDownsample → CacheWriter
+        let mut graph = ExecGraph::new();
+        for layer in &document.layers {
+            let page = match &layer.source {
+                PixelSource::PrimaryAsset { page } => *page,
+                _ => continue,
+            };
+            let stream = Arc::new(Mutex::new(Some(
+                img.open_page(page).map_err(|e| e.to_string())?,
+            )));
+            let src = graph.add_stage(Stage::Producer(Box::new(ImageStreamSource {
+                stream,
+                image_height: h,
+            })));
+            let to_tile = graph.add_stage(Stage::Processor(Box::new(
+                pixors_engine::data_transform::to_tile::ScanLineToTile::new(TILE_SIZE, w, h),
+            )));
+            graph.add_edge(src, to_tile, EdgePorts { from_port: 0, to_port: 0 });
+            let color = graph.add_stage(Stage::Processor(Box::new(ColorConvert {
+                target_format: state.working_format,
+                target_color_space: state.working_color_space,
+                target_alpha: AlphaPolicy::Straight,
+            })));
+            graph.add_edge(to_tile, color, EdgePorts { from_port: 0, to_port: 0 });
+            let mip = graph.add_stage(Stage::Processor(Box::new(MipDownsample::new(w, h, TILE_SIZE))));
+            graph.add_edge(color, mip, EdgePorts { from_port: 0, to_port: 0 });
+            let layer_cache = cache_dir.join(format!("layer_{:016x}", layer.id.0));
+            let writer = graph.add_stage(Stage::Consumer(Box::new(CacheWriter {
+                cache_dir: layer_cache,
+            })));
+            graph.add_edge(mip, writer, EdgePorts { from_port: 0, to_port: 0 });
+        }
 
         let mut session = SessionState::new(cache_dir);
         session.view = TabView { active_mip: 0, loading: true, progress: 0.0 };

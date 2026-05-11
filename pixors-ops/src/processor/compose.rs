@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-
-use half::f16;
+use std::sync::Arc;
 
 use pixors_engine::data::buffer::Buffer;
+use pixors_engine::data::device::Device;
 use pixors_engine::data::tile::{Tile, TileGridPos};
 use pixors_engine::error::Error;
+use pixors_engine::gpu::context::GpuContext;
+use pixors_engine::gpu::pool::GpuBuffer;
 use pixors_engine::graph::emitter::Emitter;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{
@@ -48,13 +50,10 @@ impl Processor for Compose {
     fn process(&mut self, ctx: ProcessorContext<'_>, item: Item) -> Result<(), Error> {
         let tile = ProcessorContext::take_tile(item)?;
 
-        let mip = tile.coord.mip_level;
-        let tx = tile.coord.tx;
-        let ty = tile.coord.ty;
         let key = TileGridPos {
-            mip_level: mip,
-            tx,
-            ty,
+            mip_level: tile.coord.mip_level,
+            tx: tile.coord.tx,
+            ty: tile.coord.ty,
         };
 
         if ctx.port >= self.layer_count {
@@ -69,22 +68,27 @@ impl Processor for Compose {
             .or_insert_with(|| vec![None; self.layer_count as usize]);
         slots[ctx.port as usize] = Some(tile);
 
-        self.try_compose(mip, tx, ty, ctx.emit);
+        self.try_compose(key, ctx.device, ctx.gpu, ctx.emit);
         Ok(())
     }
 
     fn finish(&mut self, ctx: ProcessorContext<'_>) -> Result<(), Error> {
         let keys: Vec<TileGridPos> = self.grid.keys().cloned().collect();
         for key in keys {
-            self.flush_slot(key, ctx.emit);
+            self.flush_slot(key, ctx.device, ctx.gpu.clone(), ctx.emit);
         }
         Ok(())
     }
 }
 
 impl Compose {
-    fn try_compose(&mut self, mip: u32, tx: u32, ty: u32, emit: &mut Emitter<Item>) {
-        let key = TileGridPos { mip_level: mip, tx, ty };
+    fn try_compose(
+        &mut self,
+        key: TileGridPos,
+        device: Device,
+        gpu: Option<Arc<GpuContext>>,
+        emit: &mut Emitter<Item>,
+    ) {
         let Some(slots) = self.grid.get(&key) else { return };
         if slots.iter().any(|s| s.is_none()) { return; }
 
@@ -93,19 +97,117 @@ impl Compose {
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
 
-        compose_and_emit(tiles, &self.blend_modes, &self.opacities, emit);
+        self.compose_tiles(tiles, device, gpu, emit, "try_compose");
     }
 
-    fn flush_slot(&mut self, key: TileGridPos, emit: &mut Emitter<Item>) {
+    fn flush_slot(
+        &mut self,
+        key: TileGridPos,
+        device: Device,
+        gpu: Option<Arc<GpuContext>>,
+        emit: &mut Emitter<Item>,
+    ) {
         let Some(slots) = self.grid.remove(&key) else { return };
         let tiles: Vec<(u16, Tile)> = slots.into_iter().enumerate()
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
-        compose_and_emit(tiles, &self.blend_modes, &self.opacities, emit);
+
+        self.compose_tiles(tiles, device, gpu, emit, "flush_slot");
+    }
+
+    fn compose_tiles(
+        &self,
+        tiles: Vec<(u16, Tile)>,
+        device: Device,
+        gpu: Option<Arc<GpuContext>>,
+        emit: &mut Emitter<Item>,
+        site: &str,
+    ) {
+        if device == Device::Gpu
+            && let Some(gpu_ctx) = gpu
+        {
+            match gpu_compose(&gpu_ctx, tiles, &self.blend_modes, &self.opacities, emit) {
+                Ok(()) => return,
+                Err((e, fallback_tiles)) => {
+                    tracing::error!("GPU compose {site} failed ({e}), falling back to CPU");
+                    cpu_compose(fallback_tiles, &self.blend_modes, &self.opacities, emit);
+                    return;
+                }
+            }
+        }
+        cpu_compose(tiles, &self.blend_modes, &self.opacities, emit);
     }
 }
 
-fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[f32], emit: &mut Emitter<Item>) {
+// ── GPU path ──────────────────────────────────────────────────────────────────
+
+fn gpu_compose(
+    gpu_ctx: &Arc<GpuContext>,
+    mut tiles: Vec<(u16, Tile)>,
+    _blend_modes: &[BlendMode],
+    opacities: &[f32],
+    emit: &mut Emitter<Item>,
+) -> Result<(), (Error, Vec<(u16, Tile)>)> {
+    if tiles.is_empty() { return Ok(()); }
+
+    tiles.sort_by_key(|(port, _)| *port);
+
+    // Validate all tiles are GPU before consuming them.
+    for (_, tile) in &tiles {
+        if tile.data.is_cpu() {
+            return Err((
+                Error::internal("compose GPU path received CPU tile — invariant violation"),
+                tiles,
+            ));
+        }
+    }
+
+    let w = tiles.iter().map(|(_, t)| t.coord.width).max().unwrap();
+    let h = tiles.iter().map(|(_, t)| t.coord.height).max().unwrap();
+    let meta = tiles[0].1.meta;
+    let mut out_coord = tiles[0].1.coord;
+    out_coord.width = w;
+    out_coord.height = h;
+
+    let fmt = meta.format;
+    let buf_size = w as u64 * h as u64 * fmt.bytes_per_pixel() as u64;
+    let scheduler = gpu_ctx.scheduler();
+
+    // Accumulator starts as zeroed transparent background.
+    let mut acc: Arc<GpuBuffer> = Arc::new(scheduler.alloc_zeroed_buffer(buf_size));
+
+    for (port, tile) in tiles {
+        let layer_buf: Arc<GpuBuffer> = match tile.data {
+            Buffer::Gpu(b) => b,
+            Buffer::Cpu(_) => unreachable!("validated above"),
+        };
+
+        let opacity_b = opacities.get(port as usize).copied().unwrap_or(1.0);
+        let kernel = pixors_shader::kernel::compose::ComposeParamsKernel::new(
+            pixors_shader::kernel::compose::ComposeParams {
+                width: w,
+                height: h,
+                opacity_a: 1.0,
+                opacity_b,
+            },
+            fmt,
+        );
+
+        let out = scheduler.allocate_buffer(buf_size);
+        let out = scheduler
+            .dispatch_one(&kernel, &[&acc, &layer_buf], out, w.div_ceil(8), h.div_ceil(8))
+            .map_err(|e| (Error::internal(format!("GPU compose dispatch: {e}")), Vec::new()))?;
+
+        acc = Arc::new(out);
+    }
+
+    emit.emit(Item::Tile(Tile::new(out_coord, meta, Buffer::Gpu(acc))));
+    Ok(())
+}
+
+// ── CPU path ──────────────────────────────────────────────────────────────────
+
+fn cpu_compose(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[f32], emit: &mut Emitter<Item>) {
     if tiles.is_empty() { return; }
 
     let bpp = tiles[0].1.meta.format.bytes_per_pixel();
