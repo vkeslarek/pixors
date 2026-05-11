@@ -2,8 +2,10 @@ pub mod action;
 pub mod document;
 pub mod editor;
 pub mod history;
+pub mod mutation;
 pub mod session;
 pub mod tab;
+pub mod view;
 
 pub use pixors_engine::graph::path_builder::PathBuilder;
 
@@ -13,8 +15,10 @@ pub use document::{
     Document, LayerFilter, LayerNode, Mask, NodeId, PixelSource,
 };
 pub use editor::EditorState;
-pub use history::{History, HistoryEntry, SnapshotId};
-pub use session::{AdjustmentValue, PreviewState, SessionState};
+pub use history::History;
+pub use mutation::{impls, DocumentMutation};
+pub use session::{PreviewState, SessionState};
+pub use view::params::ParamValue;
 pub use tab::{Tab, TabId, TabView};
 
 pub const TILE_SIZE: u32 = 256;

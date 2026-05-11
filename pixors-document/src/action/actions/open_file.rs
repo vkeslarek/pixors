@@ -107,7 +107,7 @@ impl Action for OpenFile {
             session.active_node = Some(first.id);
         }
 
-        let tab = Tab { id: tab_id, document, session };
+        let tab = Tab { id: tab_id, document, history: Default::default(), session };
         *self.pending_tab.lock().unwrap() = Some(tab);
 
         Ok(PreparedAction::Pipeline {

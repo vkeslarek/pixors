@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::document::Document;
+use crate::history::History;
 use crate::session::SessionState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -10,6 +11,7 @@ pub struct TabId(pub u64);
 pub struct Tab {
     pub id: TabId,
     pub document: Document,
+    pub history: History,
     pub session: SessionState,
 }
 

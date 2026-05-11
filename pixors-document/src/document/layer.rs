@@ -20,9 +20,37 @@ pub struct LayerNode {
 }
 
 /// Non-destructive per-layer filter.
+/// Public-facing filter type. Only the `document` module pattern-matches on variants.
+/// Desktop code uses `params()` / `label()` / `set_param()` — generic rendering.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayerFilter {
     Blur { radius: f32 },
+}
+
+impl LayerFilter {
+    pub fn label(&self) -> &str {
+        match self {
+            LayerFilter::Blur { .. } => "Gaussian Blur",
+        }
+    }
+
+    pub fn params(&self) -> Vec<crate::view::params::ParamSpec> {
+        match self {
+            LayerFilter::Blur { radius } => vec![
+                crate::view::params::ParamSpec::float("radius", "Radius", *radius, 0.0..=64.0),
+            ],
+        }
+    }
+
+    pub fn set_param(&mut self, name: &str, value: &crate::view::params::ParamValue) -> bool {
+        match (self, name, value) {
+            (LayerFilter::Blur { radius }, "radius", crate::view::params::ParamValue::F32(v)) => {
+                *radius = *v;
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Blend mode + opacity for a layer.
