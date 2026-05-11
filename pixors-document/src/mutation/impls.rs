@@ -24,12 +24,9 @@ macro_rules! impl_document_action {
                     tab.session.redraw_seq += 1;
                 }
             }
-            fn undo(&self, state: &mut EditorState) {
-                if let Some(tab) = state.tab_mut(self.$tab_field) {
-                    tab.history.undo(&mut tab.document);
-                    tab.session.redraw_seq += 1;
-                }
-            }
+            // Undo for document mutations is driven by UndoAction → History::undo,
+            // not by Action::undo. This path should never be called directly.
+            fn undo(&self, _: &mut EditorState) {}
             fn record_in_history(&self) -> bool { false }
         }
     };
@@ -108,8 +105,15 @@ pub struct AddLayer {
 }
 #[typetag::serde]
 impl DocumentMutation for AddLayer {
-    fn apply(&self, doc: &mut Document) { doc.layers.insert(self.at_index, self.layer.clone()); }
-    fn undo(&self, doc: &mut Document) { doc.layers.remove(self.at_index); }
+    fn apply(&self, doc: &mut Document) {
+        let idx = self.at_index.min(doc.layers.len());
+        doc.layers.insert(idx, self.layer.clone());
+    }
+    fn undo(&self, doc: &mut Document) {
+        if self.at_index < doc.layers.len() {
+            doc.layers.remove(self.at_index);
+        }
+    }
     fn label(&self) -> &str { "Add Layer" }
 }
 impl_document_action!(AddLayer, tab);
@@ -122,8 +126,15 @@ pub struct RemoveLayer {
 }
 #[typetag::serde]
 impl DocumentMutation for RemoveLayer {
-    fn apply(&self, doc: &mut Document) { doc.layers.remove(self.index); }
-    fn undo(&self, doc: &mut Document) { doc.layers.insert(self.index, self.layer.clone()); }
+    fn apply(&self, doc: &mut Document) {
+        if self.index < doc.layers.len() {
+            doc.layers.remove(self.index);
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        let idx = self.index.min(doc.layers.len());
+        doc.layers.insert(idx, self.layer.clone());
+    }
     fn label(&self) -> &str { "Remove Layer" }
 }
 impl_document_action!(RemoveLayer, tab);
@@ -151,8 +162,19 @@ pub struct AddLayerFilter {
 }
 #[typetag::serde]
 impl DocumentMutation for AddLayerFilter {
-    fn apply(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.filters.insert(self.at_index, self.filter.clone()); } }
-    fn undo(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.filters.remove(self.at_index); } }
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            let idx = self.at_index.min(l.filters.len());
+            l.filters.insert(idx, self.filter.clone());
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && self.at_index < l.filters.len()
+        {
+            l.filters.remove(self.at_index);
+        }
+    }
     fn label(&self) -> &str { "Add Filter" }
 }
 impl_document_action!(AddLayerFilter, tab);
@@ -166,8 +188,19 @@ pub struct RemoveLayerFilter {
 }
 #[typetag::serde]
 impl DocumentMutation for RemoveLayerFilter {
-    fn apply(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.filters.remove(self.index); } }
-    fn undo(&self, doc: &mut Document) { if let Some(l) = doc.find_layer_mut(self.layer) { l.filters.insert(self.index, self.filter.clone()); } }
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && self.index < l.filters.len()
+        {
+            l.filters.remove(self.index);
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer) {
+            let idx = self.index.min(l.filters.len());
+            l.filters.insert(idx, self.filter.clone());
+        }
+    }
     fn label(&self) -> &str { "Remove Filter" }
 }
 impl_document_action!(RemoveLayerFilter, tab);

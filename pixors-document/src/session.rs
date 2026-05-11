@@ -27,7 +27,6 @@ pub struct SessionState {
     pub view: crate::tab::TabView,
     pub active_node: Option<NodeId>,
     pub active_preview: Option<PreviewState>,
-    pub history_cursor: usize,
     pub pipeline_running: bool,
     pub progress: f32,
 }
@@ -40,7 +39,6 @@ impl SessionState {
             view: crate::tab::TabView::default(),
             active_node: None,
             active_preview: None,
-            history_cursor: 0,
             pipeline_running: false,
             progress: 0.0,
         }
