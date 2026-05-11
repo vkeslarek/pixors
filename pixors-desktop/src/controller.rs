@@ -504,18 +504,31 @@ impl App {
     pub(crate) fn handle_layers_msg(&mut self, m: layers_panel::Msg) {
         match m {
             layers_panel::Msg::Close => self.toggle_pane(PaneKind::Layers),
-            layers_panel::Msg::Select(i) => {
-                if let Some(tab) = self.state.active_tab_mut()
-                    && let Some(layer) = tab.document.layers.get(i)
-                {
-                    tab.session.active_node = Some(layer.id);
+            layers_panel::Msg::Select(id) => {
+                if let Some(tab) = self.state.active_tab_mut() {
+                    tab.session.active_node = Some(id);
                 }
             }
-            layers_panel::Msg::ToggleVisibility(i) => {
-                if let Some(tab) = self.state.active_tab_mut()
-                    && let Some(layer) = tab.document.layers.get_mut(i)
-                {
-                    layer.visible = !layer.visible;
+            layers_panel::Msg::ToggleVisibility(id) => {
+                if let Some(tab) = self.state.active_tab() {
+                    let visible = tab.document.find_layer(id).map(|l| l.visible).unwrap_or(true);
+                    let _ = self.dispatcher.dispatch(
+                        Arc::new(pixors_document::mutation::impls::SetLayerVisible {
+                            tab: tab.id, layer: id, before: visible, after: !visible,
+                        }),
+                        &mut self.state,
+                    );
+                }
+            }
+            layers_panel::Msg::SetOpacity(id, opacity) => {
+                if let Some(tab) = self.state.active_tab() {
+                    let before = tab.document.find_layer(id).map(|l| l.blend.opacity).unwrap_or(1.0);
+                    let _ = self.dispatcher.dispatch(
+                        Arc::new(pixors_document::mutation::impls::SetLayerOpacity {
+                            tab: tab.id, layer: id, before, after: opacity,
+                        }),
+                        &mut self.state,
+                    );
                 }
             }
         }

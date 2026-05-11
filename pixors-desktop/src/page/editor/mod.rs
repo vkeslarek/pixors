@@ -97,24 +97,14 @@ fn pane_content<'a>(
 ) -> pane_grid::Content<'a, Msg> {
     let body: Element<Msg> = match kind {
         PaneKind::Layers => {
-            let idx = app
-                .state
-                .active_tab()
-                .and_then(|t| t.session.active_node)
-                .and_then(|active_id| {
-                    app.state
-                        .active_tab()?
-                        .document.layers
-                        .iter()
-                        .position(|l| l.id == active_id)
-                })
-                .unwrap_or(0);
-            let layers = app
-                .state
-                .active_tab()
+            // Iced needs the data to outlive the Element tree.
+            // Use the tab's layers directly (they live in EditorState which is pinned).
+            let layers = app.state.active_tab()
                 .map(|t| t.document.layers.as_slice())
                 .unwrap_or(&[]);
-            crate::panel::layers::view(layers, idx).map(Msg::LayersPanel)
+            let active_id = app.state.active_tab()
+                .and_then(|t| t.session.active_node);
+            crate::panel::layers::view_slice(layers, active_id).map(Msg::LayersPanel)
         }
         PaneKind::Filters => {
             let radius = app
