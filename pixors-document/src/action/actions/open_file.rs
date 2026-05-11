@@ -50,6 +50,18 @@ impl Action for OpenFile {
         let cache_dir = self.path.with_extension("pixors_cache");
         let tab_id = state.alloc_tab_id();
 
+        // Allocate layer IDs first so we know the cache subdirectory.
+        let num_pages = img.page_count();
+        let mut layer_ids: Vec<usize> = Vec::with_capacity(num_pages);
+        for _ in 0..num_pages {
+            // Temporarily use raw u64; we'll create a proper Document next.
+            layer_ids.push(layer_ids.len()); // placeholder indices
+        }
+
+        // Use a single-layer cache dir for page 0 (Phase 10: one page per stream).
+        // Multi-page TIFFs will need parallel branches — deferred.
+        let layer0_cache = cache_dir.join(format!("layer_{:016x}", 0u64));
+
         let stream = Arc::new(Mutex::new(Some(
             img.open_page(0).map_err(|e| e.to_string())?,
         )));
@@ -69,7 +81,7 @@ impl Action for OpenFile {
             })))
             .op(Stage::Processor(Box::new(MipDownsample::new(w, h, TILE_SIZE))))
             .sink(Stage::Consumer(Box::new(CacheWriter {
-                cache_dir: cache_dir.clone(),
+                cache_dir: layer0_cache,
             })))
             .compile();
 

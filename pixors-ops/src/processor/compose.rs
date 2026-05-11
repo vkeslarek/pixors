@@ -28,7 +28,14 @@ static COMPOSE_PORTS: InOutPortSpecification = InOutPortSpecification {
 pub struct Compose {
     pub layer_count: u16,
     pub blend_modes: Vec<BlendMode>,
+    pub opacities: Vec<f32>,
     grid: HashMap<TileGridPos, Vec<Option<Tile>>>,
+}
+
+impl Compose {
+    pub fn new(layer_count: u16, blend_modes: Vec<BlendMode>, opacities: Vec<f32>) -> Self {
+        Self { layer_count, blend_modes, opacities, grid: HashMap::new() }
+    }
 }
 
 impl Processor for Compose {
@@ -84,7 +91,7 @@ impl Compose {
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
 
-        compose_and_emit(tiles, &self.blend_modes, emit);
+        compose_and_emit(tiles, &self.blend_modes, &self.opacities, emit);
     }
 
     fn flush_slot(&mut self, key: TileGridPos, emit: &mut Emitter<Item>) {
@@ -92,11 +99,11 @@ impl Compose {
         let tiles: Vec<(u16, Tile)> = slots.into_iter().enumerate()
             .filter_map(|(i, o)| o.map(|t| (i as u16, t)))
             .collect();
-        compose_and_emit(tiles, &self.blend_modes, emit);
+        compose_and_emit(tiles, &self.blend_modes, &self.opacities, emit);
     }
 }
 
-fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], emit: &mut Emitter<Item>) {
+fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[f32], emit: &mut Emitter<Item>) {
     if tiles.is_empty() {
         return;
     }
@@ -134,12 +141,15 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], emit: &m
                 if t_off + bpp > data.len() {
                     continue;
                 }
-                let src: [u8; 4] = [
+                let mut src: [u8; 4] = [
                     data[t_off],
                     data[t_off + 1],
                     data[t_off + 2],
                     data[t_off + 3],
                 ];
+                let opacity = opacities.get(*port as usize).copied().unwrap_or(1.0);
+                src[3] = (src[3] as f32 * opacity).min(255.0) as u8;
+
                 if !started {
                     result = src;
                     started = true;

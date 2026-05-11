@@ -8,6 +8,7 @@ use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::data::tile::{Tile, TileCoord};
 use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
+use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
 use pixors_engine::graph::item::Item;
 use pixors_engine::runtime::event::PipelineEvent;
 use pixors_engine::stage::Stage;
@@ -18,6 +19,7 @@ use pixors_engine::common::pixel::meta::PixelMeta;
 use pixors_document::action::PipelineMode;
 use pixors_document::PathBuilder;
 use pixors_ops::processor::blur::Blur;
+use pixors_ops::processor::compose::Compose;
 
 use crate::app::{App, Msg, PaneKind};
 use crate::page::editor::tab_bar;
@@ -327,14 +329,13 @@ impl App {
         let ntx = img_w.div_ceil(TILE_SIZE);
         let nty = img_h.div_ceil(TILE_SIZE);
         let full_range = TileRange { tx_start: 0, tx_end: ntx, ty_start: 0, ty_end: nty };
-        self.run_mip_fetch(tab_id, 0, full_range, cache_dir, img_w, img_h);
+        self.run_mip_fetch(tab_id, 0, full_range);
     }
 
     pub(crate) fn handle_tick(&mut self) {
         self.errors.retain(|(_, ts)| ts.elapsed().as_secs() < 5);
 
-        let mut mip_requests: Vec<(TabId, u32, TileRange, std::path::PathBuf, u32, u32)> =
-            Vec::new();
+        let mut mip_requests: Vec<(TabId, u32, TileRange)> = Vec::new();
 
         for tab in &mut self.state.tabs {
             if let Some(cache) = self.tile_caches.get(&tab.id)
@@ -347,56 +348,93 @@ impl App {
                 let mut sigs = queue.lock().unwrap();
                 if !sigs.is_empty() {
                     for (tab_id, mip, range) in sigs.drain(..) {
-                        let cache_dir = tab.session.cache_dir.clone();
-                        let (img_w, img_h) = (tab.document.canvas.width, tab.document.canvas.height);
-                        mip_requests.push((tab_id, mip, range, cache_dir, img_w, img_h));
+                        mip_requests.push((tab_id, mip, range));
                     }
                 }
             }
         }
 
-        for (tab_id, mip, range, cache_dir, img_w, img_h) in mip_requests {
+        for (tab_id, mip, range) in mip_requests {
             if let Some(cache) = self.tile_caches.get(&tab_id)
                 && let Ok(guard) = cache.lock()
                 && guard.has_all_tiles(mip, &range)
             {
                 continue;
             }
-            self.run_mip_fetch(tab_id, mip, range, cache_dir, img_w, img_h);
+            self.run_mip_fetch(tab_id, mip, range);
         }
     }
 
-    fn run_mip_fetch(
-        &mut self,
-        tab_id: TabId,
-        mip: u32,
-        range: TileRange,
-        cache_dir: std::path::PathBuf,
-        img_w: u32,
-        img_h: u32,
-    ) {
-        let graph = PathBuilder::new()
-            .src(Stage::Producer(Box::new(CacheReader {
-                cache_dir,
+    fn run_mip_fetch(&mut self, tab_id: TabId, mip: u32, range: TileRange) {
+        let Some(tab) = self.state.tab(tab_id) else { return };
+
+        let visible: Vec<&pixors_document::LayerNode> = tab.document.visible_layers();
+        if visible.is_empty() { return; }
+
+        let mut graph = ExecGraph::new();
+        let n = visible.len();
+
+        let compose = graph.add_stage(Stage::Processor(Box::new(Compose::new(
+            n as u16,
+            visible.iter().map(|l| l.blend.mode).collect(),
+            visible.iter().map(|l| l.blend.opacity).collect(),
+        ))));
+
+        let color_out = graph.add_stage(Stage::Processor(Box::new(ColorConvert {
+            target_format: self.state.display_format,
+            target_color_space: self.state.display_color_space,
+            target_alpha: AlphaPolicy::Straight,
+        })));
+        graph.add_edge(compose, color_out, EdgePorts { from_port: 0, to_port: 0 });
+
+        let sink = graph.add_stage(Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0))));
+        graph.add_edge(color_out, sink, EdgePorts { from_port: 0, to_port: 0 });
+
+        let cw = tab.document.canvas.width;
+        let ch = tab.document.canvas.height;
+        let (img_w, img_h) = if mip == 0 { (cw, ch) }
+            else { let s = 1u32 << mip; ((cw + s - 1) / s, (ch + s - 1) / s) };
+
+        for (i, layer) in visible.iter().enumerate() {
+            let layer_cache = tab.layer_cache_dir(layer.id);
+            let reader = graph.add_stage(Stage::Producer(Box::new(CacheReader {
+                cache_dir: layer_cache,
                 mip_level: mip,
                 tile_size: TILE_SIZE,
                 image_width: img_w,
                 image_height: img_h,
-                tile_range: Some(range),
+                tile_range: Some(range.clone()),
                 pixel_format: PixelFormat::RgbaF16,
                 color_space: ColorSpace::ACES_CG,
-            })))
-            .op(Stage::Processor(Box::new(ColorConvert {
-                target_format: self.state.display_format,
-                target_color_space: self.state.display_color_space,
-                target_alpha: AlphaPolicy::Straight,
-            })))
-            .sink(Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0))))
-            .compile();
+            })));
 
-        let _ = self
-            .dispatcher
-            .run_graph(graph, PipelineMode::Background, Some(tab_id));
+            let mut prev_id = reader;
+            let mut prev_port = 0u16;
+
+            // Per-layer filter chain
+            for filter in &layer.filters {
+                match filter {
+                    pixors_document::LayerFilter::Blur { radius } => {
+                        let ttn = graph.add_stage(Stage::Processor(Box::new(
+                            TileToNeighborhood::new(*radius as u32),
+                        )));
+                        graph.add_edge(prev_id, ttn, EdgePorts { from_port: prev_port, to_port: 0 });
+
+                        let blur = graph.add_stage(Stage::Processor(Box::new(Blur {
+                            radius: *radius as u32,
+                        })));
+                        graph.add_edge(ttn, blur, EdgePorts { from_port: 0, to_port: 0 });
+
+                        prev_id = blur;
+                        prev_port = 0;
+                    }
+                }
+            }
+
+            graph.add_edge(prev_id, compose, EdgePorts { from_port: prev_port, to_port: i as u16 });
+        }
+
+        let _ = self.dispatcher.run_graph(graph, PipelineMode::Background, Some(tab_id));
     }
 
     fn run_blur_preview(&mut self, tab_id: TabId, radius: u32, generation: u64, mip: u32) {
