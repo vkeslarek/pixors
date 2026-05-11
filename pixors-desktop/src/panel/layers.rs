@@ -1,7 +1,6 @@
 use iced::widget::{column, container, row, slider, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 use pixors_document::document::{LayerNode, NodeId};
-use pixors_document::view::LayerKind;
 
 use crate::theme::{ACCENT, BG_ELEVATED, TEXT_MUTED, TEXT_SECONDARY};
 

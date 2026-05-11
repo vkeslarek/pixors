@@ -245,7 +245,7 @@ impl App {
         };
         let img_w = tab.document.canvas.width;
         let img_h = tab.document.canvas.height;
-        let cache_dir = tab.session.cache_dir.clone();
+        let _cache_dir = tab.session.cache_dir.clone();
         let display_format = self.state.display_format;
         let display_color_space = self.state.display_color_space;
 

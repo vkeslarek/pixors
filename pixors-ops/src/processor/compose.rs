@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use half::f16;
+
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::data::tile::{Tile, TileGridPos};
 use pixors_engine::error::Error;
@@ -104,9 +106,7 @@ impl Compose {
 }
 
 fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacities: &[f32], emit: &mut Emitter<Item>) {
-    if tiles.is_empty() {
-        return;
-    }
+    if tiles.is_empty() { return; }
 
     let bpp = tiles[0].1.meta.format.bytes_per_pixel();
     let mut w = 0;
@@ -125,92 +125,95 @@ fn compose_and_emit(tiles: Vec<(u16, Tile)>, blend_modes: &[BlendMode], opacitie
     for y in 0..h {
         for x in 0..w {
             let off = (y * w + x) * bpp;
-            let mut result: [u8; 4] = [0, 0, 0, 0];
+            let mut result: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
             let mut started = false;
 
             for (port, tile) in tiles.iter() {
-                if x >= tile.coord.width as usize || y >= tile.coord.height as usize {
-                    continue;
-                }
-
+                if x >= tile.coord.width as usize || y >= tile.coord.height as usize { continue; }
                 let data = match &tile.data {
                     Buffer::Cpu(v) => v.as_slice(),
                     Buffer::Gpu(_) => continue,
                 };
                 let t_off = (y * tile.coord.width as usize + x) * bpp;
-                if t_off + bpp > data.len() {
-                    continue;
-                }
-                let mut src: [u8; 4] = [
-                    data[t_off],
-                    data[t_off + 1],
-                    data[t_off + 2],
-                    data[t_off + 3],
-                ];
+                if t_off + bpp > data.len() { continue; }
+
+                let mut pixel = read_pixel(&data[t_off..], bpp);
                 let opacity = opacities.get(*port as usize).copied().unwrap_or(1.0);
-                src[3] = (src[3] as f32 * opacity).min(255.0) as u8;
+                pixel[3] *= opacity;
 
                 if !started {
-                    result = src;
+                    result = pixel;
                     started = true;
                 } else {
                     let mode = blend_modes.get(*port as usize).copied().unwrap_or_default();
-                    result = blend(&src, &result, mode);
+                    alpha_over_f32(&pixel, &mut result, mode);
                 }
             }
 
-            out[off..off + bpp].copy_from_slice(&result);
+            write_pixel(result, bpp, &mut out[off..]);
         }
     }
 
     emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(out))));
 }
 
-fn blend(top: &[u8; 4], bottom: &[u8; 4], mode: BlendMode) -> [u8; 4] {
-    match mode {
-        BlendMode::Normal | BlendMode::Over => alpha_over(top, bottom),
-        BlendMode::Source => *top,
+fn read_pixel(data: &[u8], bpp: usize) -> [f32; 4] {
+    match bpp {
+        4 => {
+            [data[0] as f32 / 255.0, data[1] as f32 / 255.0,
+             data[2] as f32 / 255.0, data[3] as f32 / 255.0]
+        }
+        8 => {
+            let r = half::f16::from_le_bytes([data[0], data[1]]).to_f32();
+            let g = half::f16::from_le_bytes([data[2], data[3]]).to_f32();
+            let b = half::f16::from_le_bytes([data[4], data[5]]).to_f32();
+            let a = half::f16::from_le_bytes([data[6], data[7]]).to_f32();
+            [r, g, b, a]
+        }
+        _ => [0.0, 0.0, 0.0, 0.0],
     }
 }
 
-fn alpha_over(top: &[u8; 4], bottom: &[u8; 4]) -> [u8; 4] {
-    let rt = top[0] as u32;
-    let gt = top[1] as u32;
-    let bt = top[2] as u32;
-    let at = top[3] as u32;
-
-    let rb = bottom[0] as u32;
-    let gb = bottom[1] as u32;
-    let bb = bottom[2] as u32;
-    let ab = bottom[3] as u32;
-
-    let pt_r = rt * at / 255;
-    let pt_g = gt * at / 255;
-    let pt_b = bt * at / 255;
-
-    let pb_r = rb * ab / 255;
-    let pb_g = gb * ab / 255;
-    let pb_b = bb * ab / 255;
-
-    let inv_at = 255 - at;
-
-    let a_result = at + ab * inv_at / 255;
-    if a_result == 0 {
-        return [0; 4];
+fn write_pixel(pixel: [f32; 4], bpp: usize, dst: &mut [u8]) {
+    match bpp {
+        4 => {
+            dst[0] = (pixel[0].clamp(0.0, 1.0) * 255.0) as u8;
+            dst[1] = (pixel[1].clamp(0.0, 1.0) * 255.0) as u8;
+            dst[2] = (pixel[2].clamp(0.0, 1.0) * 255.0) as u8;
+            dst[3] = (pixel[3].clamp(0.0, 1.0) * 255.0) as u8;
+        }
+        8 => {
+            fn f32_to_f16(v: f32) -> half::f16 { half::f16::from_f32(v.clamp(-65504.0, 65504.0)) }
+            let r = f32_to_f16(pixel[0]).to_le_bytes();
+            let g = f32_to_f16(pixel[1]).to_le_bytes();
+            let b = f32_to_f16(pixel[2]).to_le_bytes();
+            let a = f32_to_f16(pixel[3]).to_le_bytes();
+            dst[0..2].copy_from_slice(&r);
+            dst[2..4].copy_from_slice(&g);
+            dst[4..6].copy_from_slice(&b);
+            dst[6..8].copy_from_slice(&a);
+        }
+        _ => {}
     }
+}
 
-    let p_result_r = pt_r + pb_r * inv_at / 255;
-    let p_result_g = pt_g + pb_g * inv_at / 255;
-    let p_result_b = pt_b + pb_b * inv_at / 255;
-
-    let r_result = p_result_r * 255 / a_result;
-    let g_result = p_result_g * 255 / a_result;
-    let b_result = p_result_b * 255 / a_result;
-
-    [
-        r_result as u8,
-        g_result as u8,
-        b_result as u8,
-        a_result as u8,
-    ]
+fn alpha_over_f32(top: &[f32; 4], result: &mut [f32; 4], mode: BlendMode) {
+    match mode {
+        BlendMode::Normal | BlendMode::Over => {
+            let a_top = top[3];
+            let a_bot = result[3];
+            let inv_a = 1.0 - a_top;
+            let a_out = a_top + a_bot * inv_a;
+            if a_out <= 0.0 {
+                *result = [0.0; 4];
+                return;
+            }
+            let inv = 1.0 / a_out;
+            result[0] = (top[0] * a_top + result[0] * a_bot * inv_a) * inv;
+            result[1] = (top[1] * a_top + result[1] * a_bot * inv_a) * inv;
+            result[2] = (top[2] * a_top + result[2] * a_bot * inv_a) * inv;
+            result[3] = a_out;
+        }
+        BlendMode::Source => *result = *top,
+    }
 }
