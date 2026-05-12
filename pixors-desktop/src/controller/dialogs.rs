@@ -158,7 +158,7 @@ impl App {
 
     pub(crate) fn open_file_dialog(&mut self) {
         let path = rfd::FileDialog::new()
-            .add_filter("Images", &["png", "tiff", "tif"])
+            .add_filter("Images", &["png", "tiff", "tif", "jpg", "jpeg"])
             .pick_file();
 
         if let Some(path) = path {

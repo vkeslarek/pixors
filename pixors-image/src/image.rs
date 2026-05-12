@@ -9,6 +9,7 @@ use pixors_engine::error::Error;
 
 use crate::codec::{ImageDecoder, PageStream};
 use crate::exif::Metadata;
+use crate::jpeg;
 use crate::png;
 use crate::tiff;
 
@@ -156,6 +157,13 @@ pub fn open_image(path: impl AsRef<Path>) -> Result<Image, Error> {
         return Ok(Image {
             desc,
             decoder: Arc::new(tiff::TiffDecoder),
+            path: path.to_path_buf(),
+        });
+    }
+    if let Ok(desc) = jpeg::JpegDecoder.decode(path) {
+        return Ok(Image {
+            desc,
+            decoder: Arc::new(jpeg::JpegDecoder),
             path: path.to_path_buf(),
         });
     }
