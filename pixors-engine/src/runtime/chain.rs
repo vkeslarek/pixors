@@ -70,6 +70,7 @@ impl ChainRunner {
     }
 
     fn run_item_streaming(
+        cancelled: &Arc<AtomicBool>,
         tag: u64,
         kernels: &mut [Box<dyn Processor>],
         consumer: &mut Option<Box<dyn Consumer>>,
@@ -105,12 +106,13 @@ impl ChainRunner {
             device,
             emit: &mut emit,
             gpu: gpu.clone(),
+            cancelled: cancelled.clone(),
         };
         Self::bump_progress(tag, progress);
         kernels[kernel_idx].process(ctx, item)?;
         let items = emit.into_items();
         for next_item in items {
-            Self::run_item_streaming(
+            Self::run_item_streaming(cancelled, 
                 tag,
                 kernels,
                 consumer,
@@ -127,6 +129,7 @@ impl ChainRunner {
     }
 
     fn run_finish_streaming(
+        cancelled: &Arc<AtomicBool>,
         tag: u64,
         kernels: &mut [Box<dyn Processor>],
         consumer: &mut Option<Box<dyn Consumer>>,
@@ -148,11 +151,12 @@ impl ChainRunner {
             device,
             emit: &mut emit,
             gpu: gpu.clone(),
+            cancelled: cancelled.clone(),
         };
         kernels[kernel_idx].finish(ctx)?;
         let items = emit.into_items();
         for next_item in items {
-            Self::run_item_streaming(
+            Self::run_item_streaming(cancelled, 
                 tag,
                 kernels,
                 consumer,
@@ -165,7 +169,7 @@ impl ChainRunner {
                 progress,
             )?;
         }
-        Self::run_finish_streaming(
+        Self::run_finish_streaming(cancelled, 
             tag,
             kernels,
             consumer,
@@ -199,12 +203,13 @@ impl Runner for ChainRunner {
                 port: 0,
                 device,
                 gpu: gpu.clone(),
+                cancelled: self.cancelled.clone(),
                 emit: &mut emit,
             };
             producer.produce(ctx)?;
             let items = emit.into_items();
             for item in items {
-                Self::run_item_streaming(
+                Self::run_item_streaming(&self.cancelled, 
                     tag,
                     kernels,
                     &mut self.consumer,
@@ -217,7 +222,7 @@ impl Runner for ChainRunner {
                     &progress,
                 )?;
             }
-            Self::run_finish_streaming(
+            Self::run_finish_streaming(&self.cancelled, 
                 tag,
                 kernels,
                 &mut self.consumer,
@@ -228,7 +233,7 @@ impl Runner for ChainRunner {
                 &progress,
             )?;
         } else if inputs.is_empty() {
-            Self::run_finish_streaming(
+            Self::run_finish_streaming(&self.cancelled, 
                 tag,
                 kernels,
                 &mut self.consumer,
@@ -257,7 +262,7 @@ impl Runner for ChainRunner {
                                 routed.port
                             );
                         }
-                        Self::run_item_streaming(
+                        Self::run_item_streaming(&self.cancelled, 
                             tag,
                             kernels,
                             &mut self.consumer,
@@ -275,7 +280,7 @@ impl Runner for ChainRunner {
                         tracing::debug!(
                             "[pixors] {name}: received None after {item_count} items, entering finish phase…"
                         );
-                        Self::run_finish_streaming(
+                        Self::run_finish_streaming(&self.cancelled, 
                             tag,
                             kernels,
                             &mut self.consumer,

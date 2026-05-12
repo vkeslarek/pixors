@@ -1,6 +1,7 @@
 use crate::data::device::Device;
 use crate::error::Error;
 use crate::gpu::context::GpuContext;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Context passed to every Producer / Processor invocation.
@@ -9,9 +10,14 @@ pub struct ProcessorContext<'a> {
     pub device: Device,
     pub emit: &'a mut crate::graph::emitter::Emitter<crate::graph::item::Item>,
     pub gpu: Option<Arc<GpuContext>>,
+    pub cancelled: Arc<AtomicBool>,
 }
 
 impl<'a> ProcessorContext<'a> {
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+
     pub fn ensure_cpu(&self) -> Result<(), Error> {
         if self.device == Device::Cpu {
             Ok(())

@@ -48,6 +48,9 @@ impl Producer for ImageStreamSource {
             .take()
             .ok_or_else(|| Error::internal("ImageStreamSource: stream already consumed"))?;
         loop {
+            if ctx.is_cancelled() {
+                return Ok(());
+            }
             let items = stream.drain(256)?;
             if items.is_empty() {
                 break;
