@@ -100,7 +100,7 @@ impl App {
                         let th = (img_h - py).min(TILE_SIZE);
                         guard.insert(
                             0,
-                            u64::MAX,
+                            0,
                             TileGridPos {
                                 mip_level: mip,
                                 tx,
