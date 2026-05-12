@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use pixors_engine::data::buffer::Buffer;
-use pixors_engine::error::Error;
-use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
+use crate::cache::disk_cache::DiskCache;
+use crate::data::buffer::Buffer;
+use crate::error::Error;
+use crate::graph::item::Item;
+use crate::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
 static CW_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
@@ -13,10 +14,16 @@ static CW_IN_PORTS: InPortSpecification = InPortSpecification {
     ports: PortGroup::Fixed(CW_INPUTS),
 };
 
-/// Writes tiles to disk as raw bytes, organised by MIP level.
+/// Writes tiles to a DiskCache (disk + in-memory LRU).
 #[derive(Debug, Clone)]
 pub struct CacheWriter {
-    pub cache_dir: PathBuf,
+    pub cache: Arc<DiskCache>,
+}
+
+impl CacheWriter {
+    pub fn new(cache: Arc<DiskCache>) -> Self {
+        Self { cache }
+    }
 }
 
 impl Consumer for CacheWriter {
@@ -29,7 +36,7 @@ impl Consumer for CacheWriter {
     }
 
     fn consume(&mut self, item: Item) -> Result<(), Error> {
-        let tile = pixors_engine::stage::ProcessorContext::take_tile(item)?;
+        let tile = crate::stage::ProcessorContext::take_tile(item)?;
         let mip = tile.coord.mip_level;
         let tx = tile.coord.tx;
         let ty = tile.coord.ty;
@@ -52,14 +59,11 @@ impl Consumer for CacheWriter {
             )));
         }
 
-        let dir = self.cache_dir.join(format!("mip_{mip}"));
-        std::fs::create_dir_all(&dir)?;
-        let path = dir.join(format!("tile_{mip}_{tx}_{ty}.raw"));
-        std::fs::write(&path, data)?;
-        tracing::debug!(
-            "[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {w}×{h} to {}",
-            path.display()
-        );
+        self.cache
+            .write_tile(mip, tx, ty, data)
+            .map_err(|e| Error::internal(format!("CacheWriter: {e}")))?;
+
+        tracing::debug!("[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {w}×{h}",);
         Ok(())
     }
 }

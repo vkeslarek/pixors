@@ -99,12 +99,11 @@ impl TileCache {
     }
 
     pub fn get(&self, key: &TileGridPos) -> Option<&CachedTile> {
-        if self.active_generation > 0 {
-            if let Some(t) = self.overlay.get(key)
-                && t.layer == self.active_generation
-            {
-                return Some(t);
-            }
+        if self.active_generation > 0
+            && let Some(t) = self.overlay.get(key)
+            && t.layer == self.active_generation
+        {
+            return Some(t);
         }
         self.base.get(key)
     }
@@ -112,7 +111,7 @@ impl TileCache {
     pub fn tiles_in_range(
         &self,
         mip: u32,
-        range: &pixors_ops::source::cache_reader::TileRange,
+        range: &pixors_engine::cache::cache_reader::TileRange,
     ) -> Vec<(TileGridPos, &CachedTile)> {
         let mut res = Vec::new();
         for ty in range.ty_start..range.ty_end {
@@ -138,7 +137,7 @@ impl TileCache {
     pub fn has_all_tiles(
         &self,
         mip: u32,
-        range: &pixors_ops::source::cache_reader::TileRange,
+        range: &pixors_engine::cache::cache_reader::TileRange,
     ) -> bool {
         for ty in range.ty_start..range.ty_end {
             for tx in range.tx_start..range.tx_end {

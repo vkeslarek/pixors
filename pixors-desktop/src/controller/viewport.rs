@@ -3,9 +3,9 @@ use std::sync::Arc;
 use pixors_document::action::PipelineMode;
 use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile};
 use pixors_document::{SessionId, TILE_SIZE};
+use pixors_engine::cache::cache_reader::TileRange;
 use pixors_engine::data::tile::TileGridPos;
 use pixors_engine::stage::Stage;
-use pixors_ops::source::cache_reader::TileRange;
 
 use crate::app::App;
 use crate::viewport::tile_cache::CachedTile;
@@ -123,6 +123,7 @@ impl App {
         }
 
         let config = CompileConfig {
+            disk_caches: tab.transient.disk_caches.clone(),
             cache_dir: tab.transient.cache_dir.clone(),
             display_format: tab.display_format,
             display_color_space: tab.display_color_space,

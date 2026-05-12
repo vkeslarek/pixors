@@ -185,7 +185,7 @@ impl ViewportPipeline {
 pub struct ViewportPrimitive {
     pub(super) camera: CameraUniform,
     pub(super) cache: Option<Arc<Mutex<TileCache>>>,
-    pub(super) visible_range: pixors_ops::source::cache_reader::TileRange,
+    pub(super) visible_range: pixors_engine::cache::cache_reader::TileRange,
 }
 
 impl Clone for ViewportPrimitive {

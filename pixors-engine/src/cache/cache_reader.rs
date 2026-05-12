@@ -1,13 +1,14 @@
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use pixors_engine::common::color::space::ColorSpace;
-use pixors_engine::common::pixel::meta::PixelMeta;
-use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
-use pixors_engine::data::buffer::Buffer;
-use pixors_engine::data::tile::{Tile, TileCoord};
-use pixors_engine::error::Error;
-use pixors_engine::graph::item::Item;
-use pixors_engine::stage::{
+use crate::cache::disk_cache::DiskCache;
+use crate::common::color::space::ColorSpace;
+use crate::common::pixel::meta::PixelMeta;
+use crate::common::pixel::{AlphaPolicy, PixelFormat};
+use crate::data::buffer::Buffer;
+use crate::data::tile::{Tile, TileCoord};
+use crate::error::Error;
+use crate::graph::item::Item;
+use crate::stage::{
     DataKind, OutPortSpecification, PortDeclaration, PortGroup, ProcessorContext, Producer,
 };
 
@@ -28,10 +29,10 @@ pub struct TileRange {
     pub ty_end: u32,
 }
 
-/// Reads tiles from a disk cache written by [`CacheWriter`](crate::sink::cache_writer::CacheWriter).
+/// Reads tiles from a DiskCache (LRU first, disk fallback).
 #[derive(Debug, Clone)]
 pub struct CacheReader {
-    pub cache_dir: PathBuf,
+    pub cache: Arc<DiskCache>,
     pub mip_level: u32,
     pub tile_size: u32,
     pub image_width: u32,
@@ -83,29 +84,12 @@ impl Producer for CacheReader {
         };
 
         let meta = PixelMeta::new(self.pixel_format, self.color_space, AlphaPolicy::Straight);
-        let dir = self.cache_dir.join(format!("mip_{}", self.mip_level));
-
-        if !dir.is_dir() {
-            tracing::warn!(
-                "[pixors] cache_reader: cache dir does not exist: {}",
-                dir.display()
-            );
-            return Ok(());
-        }
 
         for ty in ty_start..ty_end {
             for tx in tx_start..tx_end {
-                let path = dir.join(format!("tile_{}_{}_{}.raw", self.mip_level, tx, ty));
-                let bytes = match std::fs::read(&path) {
-                    Ok(b) => b,
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                    Err(e) => {
-                        tracing::warn!(
-                            "[pixors] cache_reader: failed to read {}: {e}",
-                            path.display()
-                        );
-                        continue;
-                    }
+                let bytes = match self.cache.read_tile(self.mip_level, tx, ty) {
+                    Some(b) => b,
+                    None => continue,
                 };
                 let coord = TileCoord::new(
                     self.mip_level,

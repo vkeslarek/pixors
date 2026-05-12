@@ -1,6 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use pixors_engine::cache::disk_cache::DiskCache;
+
+use pixors_engine::cache::cache_reader::{CacheReader, TileRange};
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::data_transform::to_neighborhood::TileToNeighborhood;
@@ -9,7 +13,6 @@ use pixors_engine::stage::Stage;
 use pixors_ops::processor::blur::Blur;
 use pixors_ops::processor::color::ColorConvert;
 use pixors_ops::processor::compose::Compose;
-use pixors_ops::source::cache_reader::{CacheReader, TileRange};
 
 use crate::document::transform::{InputScope, Operation, OutputMode, Transform};
 use crate::document::{BlendSpec, Document, LayerNode, NodeId};
@@ -20,8 +23,10 @@ use pixors_image::image::BlendMode;
 /// Runtime configuration supplied by the caller (controller / MCP).
 /// Separates caller-specific settings from pure document logic.
 pub struct CompileConfig {
-    /// Root cache directory for this tab (layer tile caches live as subdirs).
+    /// Root cache directory for this session (layer tile caches live as subdirs).
     pub cache_dir: PathBuf,
+    /// Per-layer disk caches (LRU-backed), owned by the session.
+    pub disk_caches: HashMap<NodeId, Arc<DiskCache>>,
     pub display_format: PixelFormat,
     pub display_color_space: ColorSpace,
     pub working_format: PixelFormat,
@@ -201,9 +206,17 @@ fn compile_layer_content(layer: &LayerNode, ctx: &mut CompileCtx) -> StageId {
     use crate::document::PixelSource;
     match &layer.source {
         PixelSource::PrimaryAsset { .. } => {
-            let cache_dir = ctx.layer_cache_dir(layer.id);
+            let disk = ctx
+                .config
+                .disk_caches
+                .get(&layer.id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let dir = ctx.layer_cache_dir(layer.id);
+                    Arc::new(DiskCache::new(dir, 64 * 1024 * 1024))
+                });
             ctx.graph.add_stage(Stage::Producer(Box::new(CacheReader {
-                cache_dir,
+                cache: disk,
                 mip_level: ctx.req.mip_level,
                 tile_size: ctx.config.tile_size,
                 image_width: ctx.config.img_w,

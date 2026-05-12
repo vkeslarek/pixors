@@ -4,8 +4,8 @@ use std::sync::Arc;
 use pixors_document::action::PipelineMode;
 use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile_preview};
 use pixors_document::{NodeId, Operation, SessionId, TILE_SIZE};
+use pixors_engine::cache::cache_reader::TileRange;
 use pixors_engine::stage::Stage;
-use pixors_ops::source::cache_reader::TileRange;
 
 use crate::app::App;
 use crate::panel::filter as filters_panel;
@@ -145,7 +145,7 @@ impl App {
         mip: u32,
         range: TileRange,
     ) {
-        let (img_w, img_h, cache_dir, active_layer, df, dcs, wf, wcs) = self
+        let (img_w, img_h, cache_dir, active_layer, df, dcs, wf, wcs, disk_caches) = self
             .state
             .session(session_id)
             .and_then(|t| {
@@ -158,6 +158,7 @@ impl App {
                     t.display_color_space,
                     t.working_format,
                     t.working_color_space,
+                    t.transient.disk_caches.clone(),
                 ))
             })
             .unwrap_or((
@@ -169,9 +170,11 @@ impl App {
                 pixors_engine::common::color::space::ColorSpace::SRGB,
                 pixors_engine::common::pixel::PixelFormat::RgbaF16,
                 pixors_engine::common::color::space::ColorSpace::ACES_CG,
+                Default::default(),
             ));
 
         let config = CompileConfig {
+            disk_caches: disk_caches.clone(),
             cache_dir,
             display_format: df,
             display_color_space: dcs,

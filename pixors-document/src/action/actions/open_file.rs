@@ -1,12 +1,12 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+use pixors_engine::cache::cache_writer::CacheWriter;
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
 use pixors_engine::stage::Stage;
 use pixors_image::image::{BlendMode, open_image};
-use pixors_image::sink::cache_writer::CacheWriter;
 use pixors_image::source::image_stream::ImageStreamSource;
 use pixors_ops::processor::color::ColorConvert;
 use pixors_ops::processor::mip_downsample::MipDownsample;
@@ -64,7 +64,8 @@ impl Action for OpenFile {
             .join("pixors")
             .join(format!("session_{:016x}", session_id.0));
 
-        // Build document first so we have real NodeIds for cache paths.
+        let mut transient = Transient::new(cache_dir.clone());
+
         let mut document = Document::new(CanvasInfo {
             width: w,
             height: h,
@@ -97,8 +98,6 @@ impl Action for OpenFile {
         }
         document.layers = layers;
 
-        // One ExecGraph with N independent chains — one per page.
-        // Each chain: ImageStreamSource → ScanLineToTile → ColorConvert → MipDownsample → CacheWriter
         let mut graph = ExecGraph::new();
         for layer in &document.layers {
             let page = match &layer.source {
@@ -147,10 +146,10 @@ impl Action for OpenFile {
                     to_port: 0,
                 },
             );
-            let layer_cache = cache_dir.join(format!("layer_{:016x}", layer.id.0));
-            let writer = graph.add_stage(Stage::Consumer(Box::new(CacheWriter {
-                cache_dir: layer_cache,
-            })));
+            let disk = transient.get_or_create_disk_cache(layer.id);
+            let writer = graph.add_stage(Stage::Consumer(Box::new(
+                pixors_engine::cache::cache_writer::CacheWriter::new(disk),
+            )));
             graph.add_edge(
                 mip,
                 writer,
@@ -161,7 +160,6 @@ impl Action for OpenFile {
             );
         }
 
-        let mut transient = Transient::new(cache_dir);
         transient.view = ViewState {
             active_mip: 0,
             loading: true,

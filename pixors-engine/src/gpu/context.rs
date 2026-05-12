@@ -33,7 +33,7 @@ pub fn gpu_available() -> bool {
 
 pub fn max_texture_dim() -> u32 {
     try_init()
-        .and_then(|ctx| Some(ctx.device().limits().max_texture_dimension_2d))
+        .map(|ctx| ctx.device().limits().max_texture_dimension_2d)
         .unwrap_or(8192)
 }
 

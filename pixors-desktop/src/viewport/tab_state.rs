@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, RwLock};
 
 use pixors_document::SessionId;
-use pixors_ops::source::cache_reader::TileRange;
+use pixors_engine::cache::cache_reader::TileRange;
 
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;

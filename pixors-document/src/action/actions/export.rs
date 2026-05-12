@@ -1,6 +1,6 @@
+use pixors_engine::cache::cache_reader::TileRange;
 use pixors_engine::stage::Stage;
 use pixors_image::codec::EncoderConfig;
-use pixors_ops::source::cache_reader::TileRange;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::render::compiler::{CompileConfig, RenderRequest, compile};
@@ -47,6 +47,7 @@ impl Action for Export {
         };
 
         let config = CompileConfig {
+            disk_caches: tab.transient.disk_caches.clone(),
             cache_dir: tab.transient.cache_dir.clone(),
             display_format: tab.display_format,
             display_color_space: tab.display_color_space,

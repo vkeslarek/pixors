@@ -43,6 +43,7 @@ impl EditorState {
 
     pub fn close(&mut self, id: SessionId) {
         if let Some(pos) = self.sessions.iter().position(|s| s.id == id) {
+            self.sessions[pos].transient.cleanup_disk_caches();
             let title = self.sessions[pos]
                 .document
                 .assets
