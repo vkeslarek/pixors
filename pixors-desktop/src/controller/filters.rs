@@ -24,6 +24,11 @@ impl App {
                 });
                 if let Some((session_id, generation)) = info {
                     self.dispatcher.cancel_background(session_id);
+                    if let Some(cache) = self.viewport_tabs.get(&session_id).map(|vt| &vt.cache)
+                        && let Ok(mut guard) = cache.lock()
+                    {
+                        guard.clear_generation(1);
+                    }
                     let (mip, range) = self
                         .viewport_tabs
                         .get(&session_id)
