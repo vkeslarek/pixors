@@ -1,3 +1,4 @@
+use crate::util::{lock_or_recover, read_or_recover, write_or_recover};
 use std::sync::{Arc, Mutex, RwLock};
 
 use iced::keyboard;
@@ -33,7 +34,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         cursor: mouse::Cursor,
     ) -> Option<shader::Action<Msg>> {
         let vp_state = self.viewport_state.as_ref()?;
-        let mut state = vp_state.write().unwrap();
+        let mut state = write_or_recover(vp_state);
 
         if self.redraw_seq != state.last_generation {
             tracing::debug!(
@@ -124,7 +125,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
                 },
             };
         };
-        let mut state = vp_state.write().unwrap();
+        let mut state = write_or_recover(vp_state);
 
         let old_mip = state.current_mip;
 
@@ -242,7 +243,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         let Some(ref vp_state) = self.viewport_state else {
             return mouse::Interaction::default();
         };
-        let state = vp_state.read().unwrap();
+        let state = read_or_recover(vp_state);
         if state.dragging {
             mouse::Interaction::Grabbing
         } else {

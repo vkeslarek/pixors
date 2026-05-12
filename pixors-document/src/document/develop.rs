@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::NodeId;
+use super::transform::Operation;
 
 /// Ordered chain of global adjustments applied to the primary asset
-/// BEFORE the layer stack. Empty in Phase 10 — slot for future.
+/// BEFORE the layer stack. Uses the same Operation type as transforms.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DevelopState {
     pub adjustments: Vec<DevelopAdjustment>,
@@ -12,12 +13,6 @@ pub struct DevelopState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DevelopAdjustment {
     pub id: NodeId,
-    pub adjustment: Adjustment,
+    pub op: Operation,
     pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Adjustment {
-    Blur { radius: f32 },
-    Exposure { ev: f32 },
 }

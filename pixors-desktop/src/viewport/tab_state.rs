@@ -1,3 +1,4 @@
+use crate::util::{lock_or_recover, read_or_recover, write_or_recover};
 use std::sync::{Arc, Mutex, RwLock};
 
 use pixors_document::SessionId;
@@ -22,8 +23,8 @@ impl ViewportTab {
     }
 
     pub fn init_for_image(&self, img_w: u32, img_h: u32) {
-        self.cache.lock().unwrap().signal_new_img(img_w, img_h);
-        let mut vs = self.state.write().unwrap();
+        lock_or_recover(&self.cache).signal_new_img(img_w, img_h);
+        let mut vs = write_or_recover(&self.state);
         vs.camera.img_w = img_w as f32;
         vs.camera.img_h = img_h as f32;
     }

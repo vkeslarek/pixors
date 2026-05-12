@@ -9,6 +9,7 @@ pub mod modal;
 pub mod page;
 pub mod panel;
 mod theme;
+mod util;
 mod viewport;
 
 use app::App;

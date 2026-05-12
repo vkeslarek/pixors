@@ -1,3 +1,4 @@
+use crate::util::{lock_or_recover, read_or_recover, write_or_recover};
 use pixors_document::SessionId;
 use pixors_engine::cache::cache_reader::TileRange;
 
@@ -13,7 +14,7 @@ impl App {
                 && let Ok(mut guard) = vtab.cache.lock()
                 && let Some((img_w, img_h)) = guard.take_new_img()
             {
-                let mut vs = vtab.state.write().unwrap();
+                let mut vs = write_or_recover(&vtab.state);
                 vs.camera.img_w = img_w as f32;
                 vs.camera.img_h = img_h as f32;
                 vs.camera.fit();
@@ -31,7 +32,7 @@ impl App {
             }
 
             if let Some(queue) = self.viewport_tabs.get(&tab.id).map(|vt| &vt.mip_queue) {
-                let mut sigs = queue.lock().unwrap();
+                let mut sigs = lock_or_recover(queue);
                 if !sigs.is_empty() {
                     for (session_id, mip, range) in sigs.drain(..) {
                         mip_requests.push((session_id, mip, range));

@@ -1,3 +1,4 @@
+use crate::util::{lock_or_recover, read_or_recover, write_or_recover};
 use std::sync::{Arc, Mutex};
 
 use iced::widget::shader;
@@ -165,7 +166,7 @@ impl ViewportPipeline {
         let Some(tex) = &self.tiled_texture else {
             return;
         };
-        let guard = tex.lock().unwrap();
+        let guard = lock_or_recover(tex);
         let dims = guard.dims();
         if self.texture_dims == Some(dims) && self.use_linear == use_linear {
             return;
@@ -264,7 +265,7 @@ impl shader::Primitive for ViewportPrimitive {
         );
 
         if let Some(ref tex_arc) = pipeline.tiled_texture {
-            let tex = tex_arc.lock().unwrap();
+            let tex = lock_or_recover(tex_arc);
             let mut pending = cache.take_pending_keys_for_mip(mip);
 
             let tiles: Vec<_> = if full_reload {

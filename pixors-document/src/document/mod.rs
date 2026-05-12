@@ -7,7 +7,7 @@ pub mod transform;
 
 pub use asset::{AssetId, AssetStore};
 pub use canvas::CanvasInfo;
-pub use develop::{Adjustment, DevelopAdjustment, DevelopState};
+pub use develop::{DevelopAdjustment, DevelopState};
 pub use layer::{BlendSpec, LayerNode, Mask, PixelSource};
 pub use transform::{CompositePosition, InputScope, Operation, OutputMode, Transform};
 
