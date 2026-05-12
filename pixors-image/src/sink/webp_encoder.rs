@@ -50,6 +50,21 @@ impl Consumer for WebPEncoderStage {
             Buffer::Cpu(v) => v.as_slice(),
             Buffer::Gpu(_) => return Err(Error::internal("WebPEncoderStage requires CPU tiles")),
         };
+        let expected = tile.coord.width as usize * tile.coord.height as usize * 4;
+        tracing::info!(
+            "[webp-encoder] tile px={} py={} w={} h={} data.len={} expected={} img_sz={}x{}",
+            tile.coord.px, tile.coord.py,
+            tile.coord.width, tile.coord.height,
+            data.len(), expected,
+            self.img_w, self.img_h,
+        );
+        if data.len() != expected {
+            tracing::error!(
+                "[webp-encoder] MISMATCH: tile at ({},{}): data.len={} expected={} ({}x{} bpp=4)",
+                tile.coord.px, tile.coord.py, data.len(), expected,
+                tile.coord.width, tile.coord.height,
+            );
+        }
         self.img_w = self.img_w.max(tile.coord.px + tile.coord.width);
         self.img_h = self.img_h.max(tile.coord.py + tile.coord.height);
         let iw = self.img_w as usize;
@@ -76,6 +91,17 @@ impl Consumer for WebPEncoderStage {
         if self.img_w == 0 || self.img_h == 0 {
             return Err(Error::internal("no image data for WebP export"));
         }
+        let expected = self.img_w as usize * self.img_h as usize * 4;
+        if self.buffer.len() != expected {
+            tracing::error!(
+                "[webp-encoder] FINISH buffer mismatch: buffer.len={} expected={expected} ({}x{} bpp=4)",
+                self.buffer.len(), self.img_w, self.img_h,
+            );
+        }
+        tracing::info!(
+            "[webp-encoder] FINISH encoding {}x{} buffer.len={}",
+            self.img_w, self.img_h, self.buffer.len(),
+        );
         let enc = Encoder::from_rgba(&self.buffer, self.img_w, self.img_h);
         let webp_data = enc.encode(self.quality);
 
