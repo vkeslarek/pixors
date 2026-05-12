@@ -24,13 +24,26 @@ impl App {
                 });
                 if let Some((tab_id, generation)) = info {
                     self.dispatcher.cancel_background(tab_id);
-                    let mip = self
+                    let (mip, range) = self
                         .viewport_tabs
                         .get(&tab_id)
                         .and_then(|vt| vt.state.read().ok())
-                        .map(|vs| vs.current_mip)
-                        .unwrap_or(0);
-                    self.run_blur_preview(tab_id, v as u32, generation, mip);
+                        .map(|vs| {
+                            let m = vs.current_mip;
+                            let extra_pad = (v as u32).div_ceil(TILE_SIZE) + 1;
+                            let r = vs.camera.padded_tile_range(m, TILE_SIZE, 3 + extra_pad);
+                            (m, r)
+                        })
+                        .unwrap_or((
+                            0,
+                            TileRange {
+                                tx_start: 0,
+                                tx_end: 0,
+                                ty_start: 0,
+                                ty_end: 0,
+                            },
+                        ));
+                    self.run_blur_preview(tab_id, v as u32, generation, mip, range);
                 }
             }
             filters_panel::Msg::CommitBlur(v) => {
@@ -119,7 +132,14 @@ impl App {
         }
     }
 
-    fn run_blur_preview(&mut self, tab_id: TabId, radius: u32, generation: u64, mip: u32) {
+    fn run_blur_preview(
+        &mut self,
+        tab_id: TabId,
+        radius: u32,
+        generation: u64,
+        mip: u32,
+        range: TileRange,
+    ) {
         let (img_w, img_h, cache_dir, active_layer) = self
             .state
             .tab(tab_id)
@@ -133,10 +153,6 @@ impl App {
             })
             .unwrap_or((1, 1, PathBuf::new(), NodeId(0)));
 
-        let mip_scale = 1u32 << mip;
-        let mip_w = img_w.div_ceil(mip_scale);
-        let mip_h = img_h.div_ceil(mip_scale);
-
         let config = CompileConfig {
             cache_dir,
             display_format: self.state.display_format,
@@ -149,12 +165,7 @@ impl App {
         };
 
         let req = RenderRequest {
-            viewport: TileRange {
-                tx_start: 0,
-                tx_end: mip_w.div_ceil(TILE_SIZE),
-                ty_start: 0,
-                ty_end: mip_h.div_ceil(TILE_SIZE),
-            },
+            viewport: range,
             mip_level: mip,
             up_to: None,
         };

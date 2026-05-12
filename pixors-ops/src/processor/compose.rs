@@ -131,6 +131,9 @@ impl Compose {
         let Some(slots) = self.grid.remove(&key) else {
             return;
         };
+        if slots.iter().any(|s| s.is_none()) {
+            return;
+        }
         let tiles: Vec<(u16, Tile)> = slots
             .into_iter()
             .enumerate()
