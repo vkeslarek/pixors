@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use pixors_engine::common::color::space::ColorSpace;
+use pixors_engine::common::pixel::PixelFormat;
+
 use crate::document::Document;
 use crate::document::NodeId;
 use crate::history::History;
@@ -45,6 +48,10 @@ pub struct Session {
     pub document: Document,
     pub history: History,
     pub transient: Transient,
+    pub working_format: PixelFormat,
+    pub working_color_space: ColorSpace,
+    pub display_format: PixelFormat,
+    pub display_color_space: ColorSpace,
 }
 
 impl Session {

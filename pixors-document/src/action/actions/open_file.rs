@@ -1,7 +1,8 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use pixors_engine::common::pixel::AlphaPolicy;
+use pixors_engine::common::color::space::ColorSpace;
+use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
 use pixors_engine::stage::Stage;
 use pixors_image::image::{BlendMode, open_image};
@@ -67,8 +68,8 @@ impl Action for OpenFile {
         let mut document = Document::new(CanvasInfo {
             width: w,
             height: h,
-            working_color_space: state.working_color_space,
-            working_format: state.working_format,
+            working_color_space: ColorSpace::ACES_CG,
+            working_format: PixelFormat::RgbaF16,
         });
         document.assets.primary_path = Some(self.path.clone());
 
@@ -123,8 +124,8 @@ impl Action for OpenFile {
                 },
             );
             let color = graph.add_stage(Stage::Processor(Box::new(ColorConvert {
-                target_format: state.working_format,
-                target_color_space: state.working_color_space,
+                target_format: PixelFormat::RgbaF16,
+                target_color_space: ColorSpace::ACES_CG,
                 target_alpha: AlphaPolicy::Straight,
             })));
             graph.add_edge(
@@ -175,6 +176,10 @@ impl Action for OpenFile {
             document,
             history: Default::default(),
             transient,
+            working_format: pixors_engine::common::pixel::PixelFormat::RgbaF16,
+            working_color_space: pixors_engine::common::color::space::ColorSpace::ACES_CG,
+            display_format: pixors_engine::common::pixel::PixelFormat::Rgba8,
+            display_color_space: pixors_engine::common::color::space::ColorSpace::SRGB,
         };
         *self.pending_tab.lock().unwrap() = Some(new_session);
 

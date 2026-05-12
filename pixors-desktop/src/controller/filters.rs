@@ -140,7 +140,7 @@ impl App {
         mip: u32,
         range: TileRange,
     ) {
-        let (img_w, img_h, cache_dir, active_layer) = self
+        let (img_w, img_h, cache_dir, active_layer, df, dcs, wf, wcs) = self
             .state
             .session(session_id)
             .and_then(|t| {
@@ -149,16 +149,29 @@ impl App {
                     t.document.canvas.height,
                     t.transient.cache_dir.clone(),
                     t.transient.active_node?,
+                    t.display_format,
+                    t.display_color_space,
+                    t.working_format,
+                    t.working_color_space,
                 ))
             })
-            .unwrap_or((1, 1, PathBuf::new(), NodeId(0)));
+            .unwrap_or((
+                1,
+                1,
+                PathBuf::new(),
+                NodeId(0),
+                pixors_engine::common::pixel::PixelFormat::Rgba8,
+                pixors_engine::common::color::space::ColorSpace::SRGB,
+                pixors_engine::common::pixel::PixelFormat::RgbaF16,
+                pixors_engine::common::color::space::ColorSpace::ACES_CG,
+            ));
 
         let config = CompileConfig {
             cache_dir,
-            display_format: self.state.display_format,
-            display_color_space: self.state.display_color_space,
-            working_format: self.state.working_format,
-            working_color_space: self.state.working_color_space,
+            display_format: df,
+            display_color_space: dcs,
+            working_format: wf,
+            working_color_space: wcs,
             tile_size: TILE_SIZE,
             img_w,
             img_h,

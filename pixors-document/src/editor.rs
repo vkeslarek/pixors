@@ -1,6 +1,3 @@
-use pixors_engine::common::color::space::ColorSpace;
-use pixors_engine::common::pixel::PixelFormat;
-
 use super::session::Session;
 use super::tab::SessionId;
 
@@ -8,10 +5,6 @@ pub struct EditorState {
     pub sessions: Vec<Session>,
     pub active: Option<SessionId>,
     pub next_session_id: u64,
-    pub working_format: PixelFormat,
-    pub working_color_space: ColorSpace,
-    pub display_format: PixelFormat,
-    pub display_color_space: ColorSpace,
 }
 
 impl EditorState {
@@ -20,10 +13,6 @@ impl EditorState {
             sessions: Vec::new(),
             active: None,
             next_session_id: 0,
-            working_format: PixelFormat::RgbaF16,
-            working_color_space: ColorSpace::ACES_CG,
-            display_format: PixelFormat::Rgba8,
-            display_color_space: ColorSpace::SRGB,
         }
     }
 

@@ -48,10 +48,10 @@ impl Action for Export {
 
         let config = CompileConfig {
             cache_dir: tab.transient.cache_dir.clone(),
-            display_format: state.display_format,
-            display_color_space: state.display_color_space,
-            working_format: state.working_format,
-            working_color_space: state.working_color_space,
+            display_format: tab.display_format,
+            display_color_space: tab.display_color_space,
+            working_format: tab.working_format,
+            working_color_space: tab.working_color_space,
             tile_size: TILE_SIZE,
             img_w,
             img_h,
