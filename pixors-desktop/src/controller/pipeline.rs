@@ -19,6 +19,12 @@ impl App {
             }
             PipelineEvent::Done { tag } => {
                 let session_id = SessionId(tag);
+                // Push pending ingest session if this was an OpenFile pipeline
+                if let Some(session) = self.pending_ingest.take()
+                    && session.id == session_id
+                {
+                    self.state.push(session);
+                }
                 self.dispatcher
                     .on_pipeline_done(&mut self.state, session_id);
                 if let Some(tab) = self.state.session_mut(session_id) {

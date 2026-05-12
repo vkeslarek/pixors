@@ -2,6 +2,7 @@ pub mod action;
 pub mod document;
 pub mod editor;
 pub mod history;
+pub mod ingest;
 pub mod mutation;
 pub mod render;
 pub mod session;

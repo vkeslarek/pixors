@@ -15,7 +15,7 @@ use crate::page::{
 use crate::panel::{filter as filters_panel, layers as layers_panel};
 use pixors_document::EditorState;
 use pixors_document::SessionId;
-use pixors_document::action::{Action, Dispatcher};
+use pixors_document::action::Dispatcher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneKind {
@@ -26,7 +26,6 @@ pub enum PaneKind {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Msg {
-    Action(Arc<dyn Action>),
     MenuBar(menu_bar::Msg),
     WorkspaceBar(workspace_bar::Msg),
     Toolbar(toolbar::Msg),
@@ -68,6 +67,7 @@ pub struct App {
     /// Live blur radius during slider drag — overrides the document value so the
     /// slider thumb tracks the drag. Cleared on CommitBlur / CancelPreview.
     pub blur_preview_radius: Option<f32>,
+    pub pending_ingest: Option<pixors_document::Session>,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
@@ -108,6 +108,7 @@ impl Default for App {
             filter_panel: crate::panel::filter::FilterPanelState::default(),
             viewport_tabs: HashMap::new(),
             blur_preview_radius: None,
+            pending_ingest: None,
         };
         app.update_status_from_active_tab();
         app

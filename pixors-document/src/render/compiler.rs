@@ -108,6 +108,24 @@ pub fn compile_preview(
     ctx.finish()
 }
 
+/// Compile a full-document export graph at mip=0.
+/// The caller provides the encoding sink (PNG, TIFF, etc.).
+pub fn compile_export(doc: &Document, config: &CompileConfig, sink: Stage) -> ExecGraph {
+    let ntx = config.img_w.div_ceil(config.tile_size);
+    let nty = config.img_h.div_ceil(config.tile_size);
+    let req = RenderRequest {
+        viewport: TileRange {
+            tx_start: 0,
+            tx_end: ntx,
+            ty_start: 0,
+            ty_end: nty,
+        },
+        mip_level: 0,
+        up_to: None,
+    };
+    compile(doc, &req, config, sink)
+}
+
 // ── Compiler context ─────────────────────────────────────────────────────────
 
 struct CompileCtx<'a> {

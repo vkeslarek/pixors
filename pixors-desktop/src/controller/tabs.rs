@@ -12,13 +12,7 @@ impl App {
             }
             tab_bar::Msg::Close(id) => {
                 self.viewport_tabs.remove(&id);
-
-                if let Err(e) = self.dispatcher.dispatch(
-                    Arc::new(pixors_document::action::actions::close_tab::CloseTab(id)),
-                    &mut self.state,
-                ) {
-                    self.push_error(e);
-                }
+                self.state.close(id);
                 self.dispatcher.cleanup_tab(id);
                 self.update_status_from_active_tab();
             }

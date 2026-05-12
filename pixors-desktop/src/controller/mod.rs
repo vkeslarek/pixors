@@ -42,11 +42,6 @@ impl App {
 
     pub fn update(&mut self, msg: Msg) {
         match msg {
-            Msg::Action(action) => {
-                if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
-                    self.push_error(e);
-                }
-            }
             Msg::KeyPressed(event) => self.handle_keyboard(event),
             Msg::OpenFile => self.open_file_dialog(),
             Msg::Tick => self.handle_tick(),

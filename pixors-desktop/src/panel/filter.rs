@@ -265,13 +265,13 @@ fn build_filter_rows<'a>(
             state.drag_over == Some(i) && state.drag_from.is_some_and(|from| from != i);
         let is_expanded = state.expanded.contains(&i);
 
-            let el = if !t.enabled {
-                build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Disabled)
-            } else if is_expanded {
-                build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Expanded)
-            } else {
-                build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Collapsed)
-            };
+        let el = if !t.enabled {
+            build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Disabled)
+        } else if is_expanded {
+            build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Expanded)
+        } else {
+            build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Collapsed)
+        };
 
         let wrapper = container(el).style(move |_| {
             if is_hover_target {
@@ -334,7 +334,12 @@ fn build_filter_row<'a>(
     let base_color = transform_color(t);
     let (color, icon_border, title_color, subtitle_color, num_color, eye_icon) = match &style {
         RowStyle::Disabled => (
-            Color::from_rgba(base_color.r * 0.5, base_color.g * 0.5, base_color.b * 0.5, 0.6),
+            Color::from_rgba(
+                base_color.r * 0.5,
+                base_color.g * 0.5,
+                base_color.b * 0.5,
+                0.6,
+            ),
             None,
             TEXT_MUTED,
             TEXT_MUTED,
@@ -349,33 +354,51 @@ fn build_filter_row<'a>(
             ACCENT,
             EYE,
         ),
-        RowStyle::Collapsed => (base_color, None, TEXT_SECONDARY, TEXT_MUTED, TEXT_MUTED, EYE),
+        RowStyle::Collapsed => (
+            base_color,
+            None,
+            TEXT_SECONDARY,
+            TEXT_MUTED,
+            TEXT_MUTED,
+            EYE,
+        ),
     };
 
     let subtitle = transform_subtitle(t);
     let title = t.op.label().to_string();
     let title_font = if matches!(style, RowStyle::Expanded) {
-        iced::Font { weight: iced::font::Weight::Bold, ..Default::default() }
+        iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..Default::default()
+        }
     } else {
         iced::Font::default()
     };
 
-    let icon_sq = container(Space::new().width(Length::Fixed(28.0)).height(Length::Fixed(28.0)))
-        .style(move |_| {
-            let mut s = container::Style {
-                background: Some(Background::Color(color)),
-                border: Border::default().rounded(3),
-                ..Default::default()
-            };
-            if let Some((w, c)) = icon_border {
-                s.border.width = w;
-                s.border.color = c;
-            }
-            s
-        });
+    let icon_sq = container(
+        Space::new()
+            .width(Length::Fixed(28.0))
+            .height(Length::Fixed(28.0)),
+    )
+    .style(move |_| {
+        let mut s = container::Style {
+            background: Some(Background::Color(color)),
+            border: Border::default().rounded(3),
+            ..Default::default()
+        };
+        if let Some((w, c)) = icon_border {
+            s.border.width = w;
+            s.border.color = c;
+        }
+        s
+    });
 
     let mut info_rows: Vec<Element<Msg>> = vec![
-        text(title).size(11).color(title_color).font(title_font).into(),
+        text(title)
+            .size(11)
+            .color(title_color)
+            .font(title_font)
+            .into(),
     ];
 
     if matches!(style, RowStyle::Collapsed) {
@@ -385,10 +408,13 @@ fn build_filter_row<'a>(
                 format!("{}%", (blend.opacity * 100.0) as u32)
             }
         };
-        info_rows.push(row![
-            text(subtitle).size(9).color(subtitle_color),
-            text(opacity).size(9).color(ACCENT),
-        ].into());
+        info_rows.push(
+            row![
+                text(subtitle).size(9).color(subtitle_color),
+                text(opacity).size(9).color(ACCENT),
+            ]
+            .into(),
+        );
     } else {
         info_rows.push(text(subtitle).size(9).color(subtitle_color).into());
     }
@@ -417,7 +443,10 @@ fn build_filter_row<'a>(
             text(num.to_string())
                 .size(9)
                 .color(num_color)
-                .font(iced::Font { family: iced::font::Family::Monospace, ..Default::default() }),
+                .font(iced::Font {
+                    family: iced::font::Family::Monospace,
+                    ..Default::default()
+                }),
             Space::new().width(Length::Fixed(8.0)),
             icon_sq,
             Space::new().width(Length::Fixed(8.0)),

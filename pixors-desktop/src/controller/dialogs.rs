@@ -47,17 +47,46 @@ impl App {
                         tab.transient.view.loading = true;
                         tab.transient.view.progress = 0.0;
 
-                        let action = Arc::new(pixors_document::action::actions::export::Export {
-                            tab: session_id,
-                            save_path: save_path.clone(),
-                            config: config.clone(),
-                            dpi: None,
-                            icc_profile: None,
-                        });
+                        let encoder_sink = match &config {
+                            pixors_image::codec::EncoderConfig::Png(png_cfg) => {
+                                pixors_engine::stage::Stage::Consumer(Box::new(
+                                    pixors_image::sink::png_encoder_v2::PngEncoderV2::new(
+                                        save_path.clone(),
+                                        png_cfg.clone(),
+                                        None,
+                                        None,
+                                    ),
+                                ))
+                            }
+                            pixors_image::codec::EncoderConfig::Tiff(tiff_cfg) => {
+                                pixors_engine::stage::Stage::Consumer(Box::new(
+                                    pixors_image::sink::tiff_encoder::TiffEncoderStage::new(
+                                        save_path.clone(),
+                                        tiff_cfg.clone(),
+                                        None,
+                                        None,
+                                    ),
+                                ))
+                            }
+                        };
 
-                        if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
-                            self.push_error(e);
-                        }
+                        let compile_config = pixors_document::render::compiler::CompileConfig {
+                            disk_caches: tab.transient.disk_caches.clone(),
+                            cache_dir: tab.transient.cache_dir.clone(),
+                            display_format: tab.display_format,
+                            display_color_space: tab.display_color_space,
+                            working_format: tab.working_format,
+                            working_color_space: tab.working_color_space,
+                            tile_size: pixors_document::TILE_SIZE,
+                            img_w: tab.document.canvas.width,
+                            img_h: tab.document.canvas.height,
+                        };
+                        let graph = pixors_document::render::compiler::compile_export(
+                            &tab.document,
+                            &compile_config,
+                            encoder_sink,
+                        );
+                        let _ = self.dispatcher.run_graph(graph, Some(session_id));
                     }
                 }
             }
@@ -133,15 +162,14 @@ impl App {
             .pick_file();
 
         if let Some(path) = path {
-            if let Err(e) = self.dispatcher.dispatch(
-                Arc::new(pixors_document::action::actions::open_file::OpenFile::new(
-                    path,
-                )),
-                &mut self.state,
-            ) {
-                self.push_error(e);
-            } else {
-                self.update_status_from_active_tab();
+            match pixors_document::ingest::prepare_ingest(&path, &mut self.state) {
+                Ok(result) => {
+                    let session_id = result.session_id;
+                    self.pending_ingest = Some(result.session);
+                    let _ = self.dispatcher.run_graph(result.graph, Some(session_id));
+                    self.update_status_from_active_tab();
+                }
+                Err(e) => self.push_error(e),
             }
         }
     }

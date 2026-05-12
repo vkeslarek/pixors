@@ -57,11 +57,6 @@ impl App {
                         ));
                     self.run_blur_preview_generic(session_id, &op, generation, mip, range);
                 }
-                Effect::DispatchAction(action) => {
-                    if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
-                        self.push_error(e);
-                    }
-                }
                 Effect::RunGraph { graph, session_id } => {
                     let _ = self.dispatcher.run_graph(graph, session_id);
                 }
@@ -85,6 +80,14 @@ impl App {
                 }
                 Effect::ShowFilterSearch => self.show_filter_search = true,
                 Effect::TogglePane(kind) => self.toggle_pane(kind),
+                Effect::SelectLayer {
+                    session_id,
+                    layer_id,
+                } => {
+                    if let Some(tab) = self.state.session_mut(session_id) {
+                        tab.transient.active_node = Some(layer_id);
+                    }
+                }
                 Effect::PushError(msg) => self.push_error(msg),
                 Effect::None => {}
             }

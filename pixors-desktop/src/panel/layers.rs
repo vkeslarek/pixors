@@ -25,12 +25,13 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
     };
     match msg {
         Msg::Close => vec![Effect::TogglePane(crate::app::PaneKind::Layers)],
-        Msg::Select(id) => vec![Effect::DispatchAction(std::sync::Arc::new(
-            pixors_document::action::actions::select_layer::SelectLayer {
-                tab: session_id,
-                layer: id,
-            },
-        ))],
+        Msg::Select(id) => {
+            // Direct state mutation — not a Document mutation
+            vec![Effect::SelectLayer {
+                session_id,
+                layer_id: id,
+            }]
+        }
         Msg::ToggleVisibility(id) => {
             let visible = ctx
                 .layers

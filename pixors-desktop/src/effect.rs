@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use pixors_document::SessionId;
 use pixors_document::mutation::Mutation;
+use pixors_document::{NodeId, SessionId};
 use pixors_engine::graph::graph::ExecGraph;
 
 use crate::app::PaneKind;
@@ -14,8 +14,6 @@ pub enum Effect {
     /// Preview a mutation: run compile_preview with its preview_op.
     /// Called repeatedly during slider drag.
     Preview(Arc<dyn Mutation>),
-    /// Action dispatched directly (Export, OpenFile — I/O operations).
-    DispatchAction(Arc<dyn pixors_document::action::Action>),
     /// Run a background pipeline graph.
     RunGraph {
         graph: ExecGraph,
@@ -31,6 +29,11 @@ pub enum Effect {
     ShowFilterSearch,
     /// Toggle a pane open/closed.
     TogglePane(PaneKind),
+    /// Select a layer in the layers panel (UI state, not a document mutation).
+    SelectLayer {
+        session_id: SessionId,
+        layer_id: NodeId,
+    },
     /// Push an error toast.
     PushError(String),
     /// No effect.
