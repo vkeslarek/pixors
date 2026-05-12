@@ -46,6 +46,35 @@ pub struct EncoderDescriptor {
 pub enum EncoderConfig {
     Png(PngExportConfig),
     Tiff(TiffExportConfig),
+    Jpeg(JpegExportConfig),
+    WebP(WebPExportConfig),
+}
+
+// ── JPEG export config ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JpegExportConfig {
+    pub quality: u8,
+}
+
+impl Default for JpegExportConfig {
+    fn default() -> Self {
+        Self { quality: 90 }
+    }
+}
+
+// ── WebP export config ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebPExportConfig {
+    pub lossless: bool,
+    pub quality: f32,
+}
+
+impl Default for WebPExportConfig {
+    fn default() -> Self {
+        Self { lossless: false, quality: 85.0 }
+    }
 }
 
 // ── PNG export config ──────────────────────────────────────────────────────────

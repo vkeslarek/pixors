@@ -51,20 +51,28 @@ impl App {
                             pixors_image::codec::EncoderConfig::Png(png_cfg) => {
                                 pixors_engine::stage::Stage::Consumer(Box::new(
                                     pixors_image::sink::png_encoder_v2::PngEncoderV2::new(
-                                        save_path.clone(),
-                                        png_cfg.clone(),
-                                        None,
-                                        None,
+                                        save_path.clone(), png_cfg.clone(), None, None,
                                     ),
                                 ))
                             }
                             pixors_image::codec::EncoderConfig::Tiff(tiff_cfg) => {
                                 pixors_engine::stage::Stage::Consumer(Box::new(
                                     pixors_image::sink::tiff_encoder::TiffEncoderStage::new(
-                                        save_path.clone(),
-                                        tiff_cfg.clone(),
-                                        None,
-                                        None,
+                                        save_path.clone(), tiff_cfg.clone(), None, None,
+                                    ),
+                                ))
+                            }
+                            pixors_image::codec::EncoderConfig::Jpeg(jpeg_cfg) => {
+                                pixors_engine::stage::Stage::Consumer(Box::new(
+                                    pixors_image::sink::jpeg_encoder::JpegEncoderStage::new(
+                                        save_path.clone(), &config,
+                                    ),
+                                ))
+                            }
+                            pixors_image::codec::EncoderConfig::WebP(_webp_cfg) => {
+                                pixors_engine::stage::Stage::Consumer(Box::new(
+                                    pixors_image::sink::webp_encoder::WebPEncoderStage::new(
+                                        save_path.clone(), &config,
                                     ),
                                 ))
                             }
@@ -158,7 +166,7 @@ impl App {
 
     pub(crate) fn open_file_dialog(&mut self) {
         let path = rfd::FileDialog::new()
-            .add_filter("Images", &["png", "tiff", "tif", "jpg", "jpeg"])
+            .add_filter("Images", &["png", "tiff", "tif", "jpg", "jpeg", "webp"])
             .pick_file();
 
         if let Some(path) = path {

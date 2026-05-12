@@ -12,6 +12,7 @@ use crate::exif::Metadata;
 use crate::jpeg;
 use crate::png;
 use crate::tiff;
+use crate::webp;
 
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
@@ -164,6 +165,13 @@ pub fn open_image(path: impl AsRef<Path>) -> Result<Image, Error> {
         return Ok(Image {
             desc,
             decoder: Arc::new(jpeg::JpegDecoder),
+            path: path.to_path_buf(),
+        });
+    }
+    if let Ok(desc) = webp::WebPDecoder.decode(path) {
+        return Ok(Image {
+            desc,
+            decoder: Arc::new(webp::WebPDecoder),
             path: path.to_path_buf(),
         });
     }
