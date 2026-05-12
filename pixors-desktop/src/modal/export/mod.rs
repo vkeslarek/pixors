@@ -1,14 +1,16 @@
 pub mod components;
+pub mod jpeg;
 pub mod png;
 pub mod presets;
 pub mod tiff;
 pub mod view;
+pub mod webp;
 
 use iced::Element;
 use pixors_image::codec::{
-    EncoderConfig, PngBitDepth, PngColorType, PngCompression, PngExportConfig, PngFilter,
-    PngInterlace, TiffBitDepth, TiffByteOrder, TiffColorType, TiffCompression, TiffExportConfig,
-    TiffLayout, TiffPredictor, TiffVariant,
+    EncoderConfig, JpegExportConfig, PngBitDepth, PngColorType, PngCompression, PngExportConfig,
+    PngFilter, PngInterlace, TiffBitDepth, TiffByteOrder, TiffColorType, TiffCompression,
+    TiffExportConfig, TiffLayout, TiffPredictor, TiffVariant, WebPExportConfig,
 };
 
 use presets::{
@@ -20,6 +22,8 @@ use presets::{
 pub enum ExportFormat {
     Png,
     Tiff,
+    Jpeg,
+    WebP,
 }
 
 impl ExportFormat {
@@ -27,6 +31,8 @@ impl ExportFormat {
         match self {
             ExportFormat::Png => "PNG",
             ExportFormat::Tiff => "TIFF",
+            ExportFormat::Jpeg => "JPEG",
+            ExportFormat::WebP => "WebP",
         }
     }
 }
@@ -65,6 +71,11 @@ pub enum Msg {
     TiffEmbedDpi(bool),
     TiffEmbedIcc(bool),
     TiffEmbedExif(bool),
+    // JPEG
+    JpegQuality(u8),
+    // WebP  
+    WebPLossless(bool),
+    WebPQuality(f32),
     // Actions
     Export,
     Cancel,
@@ -75,6 +86,8 @@ pub struct ExportDialog {
     pub format: ExportFormat,
     pub png: PngExportConfig,
     pub tiff: TiffExportConfig,
+    pub jpeg: JpegExportConfig,
+    pub webp: WebPExportConfig,
     pub rows_per_strip_str: String,
     pub tile_width_str: String,
     pub tile_height_str: String,
@@ -99,6 +112,8 @@ impl Default for ExportDialog {
             format: ExportFormat::Png,
             png: PngExportConfig::default(),
             tiff,
+            jpeg: JpegExportConfig::default(),
+            webp: WebPExportConfig::default(),
             rows_per_strip_str,
             tile_width_str,
             tile_height_str,
@@ -232,6 +247,11 @@ impl ExportDialog {
             Msg::TiffEmbedDpi(v) => self.tiff.embed_dpi = v,
             Msg::TiffEmbedIcc(v) => self.tiff.embed_icc = v,
             Msg::TiffEmbedExif(v) => self.tiff.embed_exif = v,
+            // JPEG
+            Msg::JpegQuality(v) => self.jpeg.quality = v,
+            // WebP
+            Msg::WebPLossless(v) => self.webp.lossless = v,
+            Msg::WebPQuality(v) => self.webp.quality = v,
             Msg::Export | Msg::Cancel => {}
         }
         self.validate();
@@ -250,7 +270,6 @@ impl ExportDialog {
                     self.error = Some("Tile dimensions must be multiples of 16.".to_string());
                     return;
                 }
-
                 if let TiffCompression::Deflate {
                     predictor: TiffPredictor::FloatingPoint,
                     ..
@@ -265,7 +284,7 @@ impl ExportDialog {
                     );
                 }
             }
-            ExportFormat::Png => {}
+            ExportFormat::Png | ExportFormat::Jpeg | ExportFormat::WebP => {}
         }
     }
 
@@ -278,6 +297,8 @@ impl ExportDialog {
         match self.format {
             ExportFormat::Png => EncoderConfig::Png(self.png.clone()),
             ExportFormat::Tiff => EncoderConfig::Tiff(self.tiff.clone()),
+            ExportFormat::Jpeg => EncoderConfig::Jpeg(self.jpeg.clone()),
+            ExportFormat::WebP => EncoderConfig::WebP(self.webp.clone()),
         }
     }
 
@@ -285,6 +306,8 @@ impl ExportDialog {
         match self.format {
             ExportFormat::Png => "png",
             ExportFormat::Tiff => "tiff",
+            ExportFormat::Jpeg => "jpg",
+            ExportFormat::WebP => "webp",
         }
     }
 

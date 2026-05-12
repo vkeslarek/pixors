@@ -27,6 +27,8 @@ fn card_view(dialog: &ExportDialog) -> Element<'_, Msg> {
     let options = match dialog.format {
         ExportFormat::Png => super::png::png_options(dialog),
         ExportFormat::Tiff => super::tiff::tiff_options(dialog),
+        ExportFormat::Jpeg => super::jpeg::jpeg_options(dialog),
+        ExportFormat::WebP => super::webp::webp_options(dialog),
     };
 
     // Error line

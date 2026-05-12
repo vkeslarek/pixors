@@ -10,68 +10,41 @@ pub fn section_label(label: &'static str) -> Element<'static, Msg> {
 }
 
 pub fn format_toggle(current: &ExportFormat) -> Element<'_, Msg> {
-    let png_selected = matches!(current, ExportFormat::Png);
-    let tiff_selected = matches!(current, ExportFormat::Tiff);
-
-    let btn = |label: &'static str, selected: bool, msg: Msg, is_left: bool| {
+    let btn = |label: &'static str, format: ExportFormat, is_left: bool, is_right: bool| {
+        let selected = *current == format;
         let (bg, fg, border_col) = if selected {
             (ACCENT, Color::WHITE, ACCENT)
         } else {
             (BG_SURFACE, TEXT_SECONDARY, BORDER)
         };
 
+        let radius = if is_left {
+            iced::border::Radius { top_left: 6.0, top_right: 0.0, bottom_right: 0.0, bottom_left: 6.0 }
+        } else if is_right {
+            iced::border::Radius { top_left: 0.0, top_right: 6.0, bottom_right: 6.0, bottom_left: 0.0 }
+        } else {
+            iced::border::Radius { top_left: 0.0, top_right: 0.0, bottom_right: 0.0, bottom_left: 0.0 }
+        };
+
         button(text(label).size(13).color(fg))
-            .padding([6, 24])
+            .padding([6, 18])
             .style(move |_, status| {
-                let actual_bg = if !selected && matches!(status, button::Status::Hovered) {
-                    BG_HOVER
-                } else {
-                    bg
-                };
-
-                let radius = if is_left {
-                    iced::border::Radius {
-                        top_left: 6.0,
-                        top_right: 0.0,
-                        bottom_right: 0.0,
-                        bottom_left: 6.0,
-                    }
-                } else {
-                    iced::border::Radius {
-                        top_left: 0.0,
-                        top_right: 6.0,
-                        bottom_right: 6.0,
-                        bottom_left: 0.0,
-                    }
-                };
-
+                let actual_bg = if !selected && matches!(status, button::Status::Hovered) { BG_HOVER } else { bg };
                 button::Style {
                     background: Some(Background::Color(actual_bg)),
-                    border: Border {
-                        color: border_col,
-                        width: 1.0,
-                        radius,
-                    },
+                    border: Border { color: border_col, width: 1.0, radius },
                     text_color: fg,
                     ..Default::default()
                 }
             })
-            .on_press(msg)
+            .on_press(Msg::FormatChanged(format))
     };
 
     row![
-        btn(
-            "PNG",
-            png_selected,
-            Msg::FormatChanged(ExportFormat::Png),
-            true
-        ),
-        btn(
-            "TIFF",
-            tiff_selected,
-            Msg::FormatChanged(ExportFormat::Tiff),
-            false
-        )
+        btn("PNG", ExportFormat::Png, true, false),
+        btn("TIFF", ExportFormat::Tiff, false, false),
+        btn("JPEG", ExportFormat::Jpeg, false, false),
+        btn("WebP", ExportFormat::WebP, false, true),
     ]
     .into()
 }
