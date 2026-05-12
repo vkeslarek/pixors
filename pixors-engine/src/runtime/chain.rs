@@ -254,7 +254,7 @@ impl Runner for ChainRunner {
             let mut item_count = 0u64;
             loop {
                 if self.cancelled.load(Ordering::Relaxed) {
-                    tracing::info!("[pixors] {name}: cancelled after {item_count} items");
+                    tracing::debug!("[pixors] {name}: cancelled after {item_count} items");
                     return Ok(());
                 }
                 let t_recv = std::time::Instant::now();
