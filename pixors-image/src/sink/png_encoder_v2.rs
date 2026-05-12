@@ -80,6 +80,18 @@ impl Consumer for PngEncoderV2 {
     }
 
     fn finish(&mut self) -> Result<(), Error> {
+        const MAX_PIXELS: usize = 128 * 1024 * 1024; // ~512 MB at RGBA8
+        let iw = self.image_width as usize;
+        let ih = self.image_height as usize;
+        if iw * ih > MAX_PIXELS {
+            return Err(Error::internal(format!(
+                "PNG export too large: {}x{} = {} pixels (max {})",
+                iw,
+                ih,
+                iw * ih,
+                MAX_PIXELS
+            )));
+        }
         let meta = self
             .meta
             .take()

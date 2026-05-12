@@ -1,8 +1,8 @@
 use crate::data::device::Device;
 use crate::error::Error;
 use crate::gpu::context::GpuContext;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Context passed to every Producer / Processor invocation.
 pub struct ProcessorContext<'a> {

@@ -80,6 +80,17 @@ impl Consumer for TiffEncoderStage {
     }
 
     fn finish(&mut self) -> Result<(), Error> {
+        const MAX_PIXELS: usize = 128 * 1024 * 1024;
+        let (iw, ih) = (self.image_width as usize, self.image_height as usize);
+        if iw * ih > MAX_PIXELS {
+            return Err(Error::internal(format!(
+                "TIFF export too large: {}x{} = {} pixels (max {})",
+                iw,
+                ih,
+                iw * ih,
+                MAX_PIXELS
+            )));
+        }
         let meta = self
             .meta
             .take()
