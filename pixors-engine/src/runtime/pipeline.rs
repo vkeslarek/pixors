@@ -42,9 +42,9 @@ impl Pipeline {
         };
 
         validate_ports(&g)?;
-        let order = g.toposort().map_err(Error::internal)?;
-        let mut devs = assign_devices(&g, &order, gpu_ok);
+        let mut devs = assign_devices(&g, gpu_ok);
         insert_transfers(&mut g, &mut devs);
+        let order = g.toposort().map_err(Error::internal)?;
         let (chains, node_chain) = detect_chains(&g, &devs, &order);
         let (mut ch_in, mut ch_out) = build_channels(&g, &order, &node_chain, chains.len());
         let total_work = compute_work_total(&g, &order);
@@ -304,51 +304,46 @@ fn inport_count(g: &ExecGraph, id: StageId, group: &PortGroup) -> usize {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn assign_devices(g: &ExecGraph, order: &[StageId], gpu_ok: bool) -> HashMap<StageId, Device> {
+fn assign_devices(g: &ExecGraph, gpu_ok: bool) -> HashMap<StageId, Device> {
+    let n = g.node_count();
     let mut devs: HashMap<StageId, Device> = HashMap::new();
 
     // Pass 1: fixed devices (Cpu, Gpu)
-    for &id in order {
+    for id in 0..n {
         match g.stage(id).hints().device {
-            Device::Cpu => {
-                devs.insert(id, Device::Cpu);
-            }
-            Device::Gpu => {
-                devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu });
-            }
+            Device::Cpu => { devs.insert(id, Device::Cpu); }
+            Device::Gpu => { devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu }); }
             Device::Either => {}
         }
     }
 
     // Pass 2: Either — prefer match with already-assigned neighbors.
-    // Processed in topological order, so upstream neighbors are already assigned.
-    for &id in order {
-        if devs.contains_key(&id) {
-            continue;
-        }
+    // Single pass is sufficient for DAGs since neighbors are already processed
+    // in their natural index order (lower indices = added earlier).
+    for id in 0..n {
+        if devs.contains_key(&id) { continue; }
         let hints = g.stage(id).hints();
         if let Some(pref) = hints.preference {
-            let effective = if pref == Device::Gpu && !gpu_ok {
-                Device::Cpu
-            } else {
-                pref
-            };
+            let effective = if pref == Device::Gpu && !gpu_ok { Device::Cpu } else { pref };
             devs.insert(id, effective);
             continue;
         }
-        // Gather adjacent devices
         let mut adj_devs: Vec<Device> = Vec::new();
         for e in g.edges_out(id).chain(g.edges_in(id)) {
             let other = if e.from == id { e.to } else { e.from };
-            if let Some(&d) = devs.get(&other) {
-                adj_devs.push(d);
-            }
+            if let Some(&d) = devs.get(&other) { adj_devs.push(d); }
         }
         if !adj_devs.is_empty() && adj_devs.iter().all(|&d| d == adj_devs[0]) {
             devs.insert(id, adj_devs[0]);
         } else {
             devs.insert(id, if gpu_ok { Device::Gpu } else { Device::Cpu });
         }
+    }
+
+    // Fallback: ensure every node has a device entry.
+    for id in 0..g.node_count() {
+        devs.entry(id)
+            .or_insert(if gpu_ok { Device::Gpu } else { Device::Cpu });
     }
 
     devs
