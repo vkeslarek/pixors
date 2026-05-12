@@ -26,6 +26,7 @@ pub struct TileCache {
     new_img: Option<(u32, u32)>,
     pub active_dims: (u32, u32),
     pub active_mip: u32,
+    pub active_generation: u64,
 }
 
 impl TileCache {
@@ -37,6 +38,7 @@ impl TileCache {
             new_img: None,
             active_dims: (1, 1),
             active_mip: 0,
+            active_generation: 0,
         }))
     }
 
@@ -92,7 +94,14 @@ impl TileCache {
     }
 
     pub fn get(&self, key: &TileGridPos) -> Option<&CachedTile> {
-        self.overlay.get(key).or_else(|| self.base.get(key))
+        if self.active_generation > 0 {
+            if let Some(t) = self.overlay.get(key)
+                && t.layer == self.active_generation
+            {
+                return Some(t);
+            }
+        }
+        self.base.get(key)
     }
 
     pub fn tiles_in_range(
@@ -156,6 +165,7 @@ impl TileCache {
         self.new_img = None;
         self.active_dims = (1, 1);
         self.active_mip = 0;
+        self.active_generation = 0;
     }
 
     pub fn clear_generation(&mut self, generation: u64) {

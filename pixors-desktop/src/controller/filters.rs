@@ -27,7 +27,7 @@ impl App {
                     if let Some(cache) = self.viewport_tabs.get(&session_id).map(|vt| &vt.cache)
                         && let Ok(mut guard) = cache.lock()
                     {
-                        guard.clear_generation(1);
+                        guard.active_generation = generation;
                     }
                     let (mip, range) = self
                         .viewport_tabs
@@ -102,7 +102,7 @@ impl App {
                         if let Some(cache) = self.viewport_tabs.get(&tid).map(|vt| &vt.cache)
                             && let Ok(mut guard) = cache.lock()
                         {
-                            guard.clear_generation(u64::MAX);
+                            guard.active_generation = 0;
                         }
                         self.recomposite_current_view(tid);
                     }
@@ -234,7 +234,7 @@ impl App {
         if let Some(cache) = self.viewport_tabs.get(&session_id).map(|vt| &vt.cache)
             && let Ok(mut guard) = cache.lock()
         {
-            guard.clear_generation(generation);
+            guard.active_generation = 0;
         }
 
         // Re-queue the current mip to restore base tiles on screen.
