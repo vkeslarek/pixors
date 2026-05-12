@@ -80,6 +80,7 @@ impl App {
             .filter(|l| tab.layer_cache_dir(l.id).exists())
             .collect();
         if visible.is_empty() {
+            let version = tab.transient.redraw_seq;
             // Write transparent tiles so the viewport clears instead of showing stale data.
             let cw = tab.document.canvas.width;
             let ch = tab.document.canvas.height;
@@ -100,7 +101,7 @@ impl App {
                         let th = (img_h - py).min(TILE_SIZE);
                         guard.insert(
                             0,
-                            0,
+                            version,
                             TileGridPos {
                                 mip_level: mip,
                                 tx,
