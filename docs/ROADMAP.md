@@ -15,7 +15,7 @@ or scoped — phases exist to communicate intent and dependencies, not deadlines
 Phase 9 delivered the core engine architecture:
 - `Action` trait + `Dispatcher` with per-tab pipeline locking
 - `ActionChain` typed wrapper; `Dispatcher::run_graph()` for viewport-only pipelines
-- `pixors-state` cleaned to headless model layer (no GUI deps, no viewport display code)
+- `pixors-document` cleaned to headless model layer (no GUI deps, no viewport display code)
 - Viewport display state (TileCache, Camera, ViewportState, TileCacheSink, TileCacheSource) moved to `pixors-desktop`
 - GPU buffer race condition fixed: input `Arc<GpuBuffer>` retained in `EncoderSlot::keep_alive_gpu` until after `queue.submit()`; `pool.recycle_pending()` guarded by `device.poll(Wait)`
 - Export modal UI (PNG + TIFF, full config)

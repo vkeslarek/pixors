@@ -154,8 +154,8 @@ fn compile_layer_stack(layers: &[LayerNode], ctx: &mut CompileCtx) -> StageId {
 
     let compose = ctx.graph.add_stage(Stage::Processor(Box::new(Compose::new(
         n as u16,
-        visible.iter().map(|l| l.blend.mode).rev().collect(),
-        visible.iter().map(|l| l.blend.opacity).rev().collect(),
+        visible.iter().map(|l| l.blend.mode).collect(),
+        visible.iter().map(|l| l.blend.opacity).collect(),
     ))));
 
     for (i, layer) in visible.iter().enumerate() {
@@ -165,7 +165,7 @@ fn compile_layer_stack(layers: &[LayerNode], ctx: &mut CompileCtx) -> StageId {
             compose,
             EdgePorts {
                 from_port: 0,
-                to_port: (n - 1 - i) as u16,
+                to_port: i as u16,
             },
         );
     }

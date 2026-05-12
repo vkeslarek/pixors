@@ -24,12 +24,12 @@ Pixors is an open-source image editor — Rust engine + React frontend, shipped 
 │   └── src/                  # common/image, source/image_stream, sink/{png_encoder*,tiff_encoder,cache_writer}
 ├── pixors-ops/                # Operations: Blur, Compose, MipDownsample, MipFilter, CacheReader
 │   └── src/                  # operation/{blur,compose,mip_*}, source/cache_reader
-├── pixors-state/              # Headless application state: EditorState, tabs, actions, dispatcher, tile cache
+├── pixors-document/              # Headless application state: EditorState, tabs, actions, dispatcher, tile cache
 │   └── src/                  # state/{editor,tab,history,viewport_cache,camera}, action/{mod,dispatcher,actions/*}, viewport_cache_{source,sink}.rs
 ├── pixors-desktop/            # Desktop GUI (Iced): renders state, no business logic
 │   └── src/                  # main.rs, app.rs, controller.rs, components/, pages/, widgets/, dialog/, viewport/, icons.rs, theme.rs
 │                             # viewport/{pipeline,program,sink,tiled_texture}.rs (GPU atlas + screen render)
-├── pixors-mcp/                # MCP server (TypeScript/Node): drives pixors-state headlessly over stdio
+├── pixors-mcp/                # MCP server (TypeScript/Node): drives pixors-document headlessly over stdio
 │   └── src/                  # MCP tool handlers → dispatch Actions against EditorState
 └── pixors-ui/                 # React + TypeScript + Vite frontend (future web UI)
 ```
@@ -41,10 +41,10 @@ pixors-engine  ←  pixors-color  ←  pixors-image  ←  pixors-ops
      ↑                ↑                                   ↑
 pixors-shader  ───────┘                                   │
                                                           │
-pixors-state  ──────────────── pixors-engine, pixors-color, pixors-image, pixors-ops
+pixors-document  ──────────────── pixors-engine, pixors-color, pixors-image, pixors-ops
      ↑
-pixors-desktop  ─── pixors-state  (+ direct deps on engine/color/image/ops for viewport stages)
-pixors-mcp      ─── pixors-state  (headless, no GUI)
+pixors-desktop  ─── pixors-document  (+ direct deps on engine/color/image/ops for viewport stages)
+pixors-mcp      ─── pixors-document  (headless, no GUI)
 ```
 
 - **`pixors-engine`** — No internal deps. Defines all traits (`Stage`, `Producer`, `Processor`, `Consumer`, `GpuKernel`, `Runner`, `Pixel`, `Component`, `ImageDecoder`, `PageStream`, `ImageEncoder`) and supporting types (`Device`, `Buffer`, `Tile`, `ScanLine`, `TileBlock`, `Neighborhood`, `PixelFormat`, `ColorSpace`, `TransferFn`, `PixelMeta`, `AlphaPolicy`, `DataKind`, `PortSpecification`, `StageHints`, `ProcessorContext`, `Item`, `ExecGraph`, `Pipeline`, `ChainRunner`, `Scheduler`, `GpuContext`, `Upload`, `Download`, `DataTransformNode` variants).
@@ -52,9 +52,9 @@ pixors-mcp      ─── pixors-state  (headless, no GUI)
 - **`pixors-color`** — Depends on `pixors-engine`, `pixors-shader`. `ColorConvert` stage (CPU+GPU), `ColorConversion` engine, pixel model structs (`Rgba<T>`, `Rgb<T>`, `Gray<T>`, `Cmyk<T>`, `YCbCr<T>`, `Lab<T>`).
 - **`pixors-image`** — Depends on `pixors-engine`, `pixors-color`. `Image` struct, `ImageDescriptor`, `PageInfo`, `Dpi`, codec traits, PNG/TIFF codecs, `ImageStreamSource`, `PngEncoder`, `PngEncoderV2`, `TiffEncoderStage`, `CacheWriter`.
 - **`pixors-ops`** — Depends on `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-shader`. `Blur`, `Compose`, `MipDownsample`, `MipFilter`, `CacheReader`.
-- **`pixors-state`** — Depends on `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-ops`. `EditorState`, `Tab`, `ViewportCache`, `Camera`, `Action` trait, `Dispatcher`, concrete actions (`OpenFile`, `BlurPreview`, `Export`, …), `ViewportCacheSource`/`ViewportCacheSink` pipeline stages. **No GUI deps (no iced, no wgpu, no rfd).** Designed to be driven headlessly by MCP or CLI.
-- **`pixors-desktop`** — Depends on `pixors-state` + direct deps on engine/color/image/ops for viewport-specific stages. Iced `App` struct, all UI components and widgets, `ViewportSink` (GPU→screen stage), `TiledTexture` (GPU atlas), wgpu render pipeline. Pure view layer — contains zero business logic.
-- **`pixors-mcp`** — TypeScript/Node MCP server. Calls into `pixors-state` (via FFI or subprocess) to dispatch `Action`s without a window.
+- **`pixors-document`** — Depends on `pixors-engine`, `pixors-color`, `pixors-image`, `pixors-ops`. `EditorState`, `Tab`, `ViewportCache`, `Camera`, `Action` trait, `Dispatcher`, concrete actions (`OpenFile`, `BlurPreview`, `Export`, …), `ViewportCacheSource`/`ViewportCacheSink` pipeline stages. **No GUI deps (no iced, no wgpu, no rfd).** Designed to be driven headlessly by MCP or CLI.
+- **`pixors-desktop`** — Depends on `pixors-document` + direct deps on engine/color/image/ops for viewport-specific stages. Iced `App` struct, all UI components and widgets, `ViewportSink` (GPU→screen stage), `TiledTexture` (GPU atlas), wgpu render pipeline. Pure view layer — contains zero business logic.
+- **`pixors-mcp`** — TypeScript/Node MCP server. Calls into `pixors-document` (via FFI or subprocess) to dispatch `Action`s without a window.
 
 ## Code Style
 
@@ -139,9 +139,9 @@ These are non-negotiable. Violations are bugs, not shortcuts.
 - `MipFilter` — pass‑through filter by mip level.
 - `CacheReader` — reads tiles from disk LZ4 cache.
 
-### pixors-state — Headless Application State
+### pixors-document — Headless Application State
 
-**Why it exists**: MCP server and future CLI/automation need to open files, run pipelines, and mutate state without a window. `pixors-state` is the model layer — it knows nothing about Iced widgets, wgpu textures, GPU atlases, file dialogs, or rendering. Any consumer that can hold an `EditorState` and call `Dispatcher::dispatch()` is a valid frontend.
+**Why it exists**: MCP server and future CLI/automation need to open files, run pipelines, and mutate state without a window. `pixors-document` is the model layer — it knows nothing about Iced widgets, wgpu textures, GPU atlases, file dialogs, or rendering. Any consumer that can hold an `EditorState` and call `Dispatcher::dispatch()` is a valid frontend.
 
 - **`EditorState`** — owns `Vec<Tab>`, `active: Option<TabId>`, pipeline lock, working/display format+color space.
 - **`Tab`** — one open image: `ImageDescriptor`, `ViewportCache` (in-memory tile buffer), `Camera` (tile range / MIP math), layers, undo history, pipeline signals.
@@ -152,14 +152,14 @@ These are non-negotiable. Violations are bugs, not shortcuts.
 - **Concrete actions** (`action/actions/`): `OpenFile`, `BlurPreview`, `BlurCancel`, `Export`, `RequestMipFetch`, `SwitchTab`, `CloseTab`.
 - **`ViewportCacheSource` / `ViewportCacheSink`** — pipeline `Stage` impls for reading/writing the in-memory tile cache. Live in state (not desktop) because MCP pipelines also need tile I/O without a screen.
 
-**Do NOT add to pixors-state**: Iced types, wgpu handles, rfd dialogs, GPU texture atlases, window/event loop state.
+**Do NOT add to pixors-document**: Iced types, wgpu handles, rfd dialogs, GPU texture atlases, window/event loop state.
 
 ### pixors-desktop — Desktop GUI
 
 Pure view layer. No business logic. Renders `EditorState` via Iced, manages GPU texture atlas.
 
 - **Framework**: iced 0.14
-- **`App` struct**: holds `Dispatcher` + `EditorState` (both from `pixors-state`) plus all UI component states (tab bar, toolbar, panels, dialogs).
+- **`App` struct**: holds `Dispatcher` + `EditorState` (both from `pixors-document`) plus all UI component states (tab bar, toolbar, panels, dialogs).
 - **`Msg` enum**: all UI events — `Action(Arc<dyn Action>)`, `PipelineEvent`, component-specific messages.
 - **Update loop** (`controller.rs`): routes `Msg` → calls `dispatcher.dispatch()`, updates component state, triggers redraws.
 - **Viewport GPU** (`viewport/`): `ViewportSink` (GPU→screen stage), `TiledTexture` (wgpu texture atlas), `ViewportPipeline` (wgpu render pipeline, tiled fragment shader, `CameraUniform`).
@@ -167,13 +167,13 @@ Pure view layer. No business logic. Renders `EditorState` via Iced, manages GPU 
 - **Dialogs** (`dialog/`): `ExportDialog` (format, bit depth, compression, DPI, ICC options).
 - **Widgets** (`widgets/`): Iced extensions (`LoadingBar`, `Tooltip`, `Pill`, …).
 
-**Do NOT add to pixors-desktop**: `EditorState` mutations, pipeline construction, action business logic, tile cache management. All of those belong in `pixors-state`.
+**Do NOT add to pixors-desktop**: `EditorState` mutations, pipeline construction, action business logic, tile cache management. All of those belong in `pixors-document`.
 
 **UI Guidelines**: See [UI.md](UI.md) for detailed rules on component standardisation, Modals vs Dialogs, and UX architecture.
 
 ### State ↔ Desktop boundary rules
 
-| Lives in `pixors-state` | Lives in `pixors-desktop` |
+| Lives in `pixors-document` | Lives in `pixors-desktop` |
 |---|---|
 | `EditorState`, `Tab`, `ViewportCache` | `App` struct, `Msg` enum |
 | `Action` trait + concrete actions | Iced widgets and component state |
@@ -262,17 +262,17 @@ Pure view layer. No business logic. Renders `EditorState` via Iced, manages GPU 
 | `pixors-ops/src/operation/mip_downsample.rs` | `MipDownsample` stage (recursive 2×2) |
 | `pixors-ops/src/operation/mip_filter.rs` | `MipFilter` stage (pass‑through filter) |
 | `pixors-ops/src/source/cache_reader.rs` | `CacheReader` (reads tiles from disk LZ4 cache) |
-| `pixors-state/src/state/editor.rs` | `EditorState` — owns all tabs, pipeline lock, working/display format |
-| `pixors-state/src/state/tab.rs` | `Tab` — one open image: descriptor, cache, camera, layers, history |
-| `pixors-state/src/state/viewport_cache.rs` | `ViewportCache` — two-tier (base/overlay) in-memory tile cache |
-| `pixors-state/src/state/camera.rs` | `Camera` — tile range math (MIP level, visible tiles, zoom/pan) |
-| `pixors-state/src/state/history.rs` | `History` — undo/redo snapshot stack |
-| `pixors-state/src/action/mod.rs` | `Action` trait, `PreparedAction`, `PipelineMode` |
-| `pixors-state/src/action/dispatcher.rs` | `Dispatcher` — action lifecycle, pipeline dispatch, per-tab locking |
-| `pixors-state/src/action/actions/` | Concrete actions: `OpenFile`, `BlurPreview`, `BlurCancel`, `Export`, `RequestMipFetch`, `SwitchTab`, `CloseTab` |
-| `pixors-state/src/viewport_cache_sink.rs` | `ViewportCacheSink` — pipeline stage: writes tiles to in-memory cache |
-| `pixors-state/src/viewport_cache_source.rs` | `ViewportCacheSource` — pipeline stage: reads tiles from in-memory cache |
-| `pixors-state/src/path_builder.rs` | `PathBuilder` — constructs `ExecGraph` from `Arc<dyn Stage>` |
+| `pixors-document/src/state/editor.rs` | `EditorState` — owns all tabs, pipeline lock, working/display format |
+| `pixors-document/src/state/tab.rs` | `Tab` — one open image: descriptor, cache, camera, layers, history |
+| `pixors-document/src/state/viewport_cache.rs` | `ViewportCache` — two-tier (base/overlay) in-memory tile cache |
+| `pixors-document/src/state/camera.rs` | `Camera` — tile range math (MIP level, visible tiles, zoom/pan) |
+| `pixors-document/src/state/history.rs` | `History` — undo/redo snapshot stack |
+| `pixors-document/src/action/mod.rs` | `Action` trait, `PreparedAction`, `PipelineMode` |
+| `pixors-document/src/action/dispatcher.rs` | `Dispatcher` — action lifecycle, pipeline dispatch, per-tab locking |
+| `pixors-document/src/action/actions/` | Concrete actions: `OpenFile`, `BlurPreview`, `BlurCancel`, `Export`, `RequestMipFetch`, `SwitchTab`, `CloseTab` |
+| `pixors-document/src/viewport_cache_sink.rs` | `ViewportCacheSink` — pipeline stage: writes tiles to in-memory cache |
+| `pixors-document/src/viewport_cache_source.rs` | `ViewportCacheSource` — pipeline stage: reads tiles from in-memory cache |
+| `pixors-document/src/path_builder.rs` | `PathBuilder` — constructs `ExecGraph` from `Arc<dyn Stage>` |
 | `pixors-desktop/src/main.rs` | App entry point, tracing config |
 | `pixors-desktop/src/app.rs` | `App` struct + subscriptions (tick, keyboard, pipeline events) |
 | `pixors-desktop/src/controller.rs` | `App::update()` — routes `Msg`, calls dispatcher |

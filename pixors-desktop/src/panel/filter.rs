@@ -62,7 +62,7 @@ impl FilterPanelState {
             Msg::SetBlur(v) => {
                 self.dragging_radius = Some(*v);
             }
-            Msg::CommitBlur(_) | Msg::CancelPreview => {
+            Msg::CancelPreview => {
                 self.dragging_radius = None;
             }
             _ => {}
@@ -513,7 +513,7 @@ fn build_filter_controls<'a>(
                     slider(1.0..=64.0, r, Msg::SetBlur)
                         .width(Length::Fill)
                         .step(0.5)
-                        .on_release(Msg::CommitBlur(0.0)),
+                        .on_release(Msg::CommitBlur(r)),
                 ]
                 .spacing(4)
                 .into(),

@@ -6,6 +6,7 @@ use crate::theme::{
 };
 use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
+use pixors_document::Operation;
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -19,6 +20,7 @@ pub enum Msg {
 pub struct FilterItem {
     pub name: String,
     pub category: String,
+    pub op: Operation,
 }
 
 pub struct FilterSearch {
@@ -37,23 +39,27 @@ impl FilterSearch {
     pub fn new() -> Self {
         Self {
             query: String::new(),
-            selected_index: 2, // Default to Lens Blur as per UI screenshot
+            selected_index: 2,
             items: vec![
                 FilterItem {
                     name: "Gaussian Blur".to_string(),
                     category: "Blur".to_string(),
+                    op: Operation::Blur { radius: 5.0 },
                 },
                 FilterItem {
                     name: "Motion Blur".to_string(),
                     category: "Blur".to_string(),
+                    op: Operation::Blur { radius: 10.0 },
                 },
                 FilterItem {
                     name: "Lens Blur".to_string(),
                     category: "Blur".to_string(),
+                    op: Operation::Blur { radius: 8.0 },
                 },
                 FilterItem {
                     name: "Radial Blur".to_string(),
                     category: "Blur".to_string(),
+                    op: Operation::Blur { radius: 12.0 },
                 },
             ],
         }

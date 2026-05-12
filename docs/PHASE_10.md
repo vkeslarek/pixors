@@ -30,7 +30,7 @@ the encode pipeline in isolation and provides a working baseline to build on.
 
 ### 0.1 · What is broken
 
-`Export::prepare()` in `pixors-state/src/action/actions/export.rs` opens the
+`Export::prepare()` in `pixors-document/src/action/actions/export.rs` opens the
 **original source file** via `open_image(&self.source_path)` and streams raw
 scanlines through `ImageStreamSource → ScanLineToTile → ColorConvert → Encoder`.
 
@@ -73,11 +73,11 @@ between `EncoderConfig` and actual tile pixel format cause silent format errors.
 
 ---
 
-## 1 · State model changes (`pixors-state`)
+## 1 · State model changes (`pixors-document`)
 
 ### 1.1 · `Layer` gains a filter stack
 
-**File:** `pixors-state/src/tab.rs`
+**File:** `pixors-document/src/tab.rs`
 
 ```rust
 pub struct Layer {
@@ -105,12 +105,12 @@ Remove the field. Any callers in `pixors-desktop/src/controller.rs` that read
 
 ### 1.3 · `BlendMode` unification
 
-`pixors-state/src/tab.rs` currently defines its own `BlendMode { Normal, Multiply }`.
+`pixors-document/src/tab.rs` currently defines its own `BlendMode { Normal, Multiply }`.
 `pixors-image/src/image.rs` defines a separate `BlendMode { Normal, Source, Over }`.
 `pixors-ops/src/processor/compose.rs` imports from `pixors-image`.
 
 Consolidate: move `BlendMode` to `pixors-engine` (it is a pipeline concept, not an
-image-format concept). Both `pixors-image` and `pixors-state` re-export from there.
+image-format concept). Both `pixors-image` and `pixors-document` re-export from there.
 
 ```rust
 // pixors-engine/src/common/blend.rs  (new file)
@@ -127,12 +127,12 @@ pub enum BlendMode {
 
 ---
 
-## 2 · New actions (`pixors-state/src/action/actions/`)
+## 2 · New actions (`pixors-document/src/action/actions/`)
 
 ### 2.1 · `SetLayerVisibility`
 
 ```rust
-// pixors-state/src/action/actions/set_layer_visibility.rs
+// pixors-document/src/action/actions/set_layer_visibility.rs
 #[derive(Debug)]
 pub struct SetLayerVisibility {
     pub tab: TabId,
@@ -396,7 +396,7 @@ For single-page images (the Phase 10 common case), `layer_0/` holds the only con
 the layer subdirectory. The `LayerSource::FilePage { page }` field maps 1:1 to the
 page written by the decoder.
 
-**File to update:** `pixors-state/src/action/actions/open_file.rs`
+**File to update:** `pixors-document/src/action/actions/open_file.rs`
 
 Change `CacheWriter` destination from `tab.cache_dir` to
 `tab.cache_dir.join(format!("layer_{:016x}", layer_id.0))`.
@@ -543,7 +543,7 @@ by cancelling), call `dispatcher.cancel_background(tab_id)`, clear the overlay i
 
 ---
 
-## 6 · Export via composite (`pixors-state`)
+## 6 · Export via composite (`pixors-document`)
 
 ### 6.1 · Problem today
 
@@ -572,7 +572,7 @@ The key difference from the display pipeline: use **MIP-0** (full resolution) an
 ### 6.3 · `Export` action changes
 
 ```rust
-// pixors-state/src/action/actions/export.rs
+// pixors-document/src/action/actions/export.rs
 impl Action for Export {
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
         let tab = state.tab(self.tab).ok_or("tab not found")?;
@@ -587,7 +587,7 @@ impl Action for Export {
 ```
 
 Extract the graph construction into a shared function usable by both the export
-action and the desktop display. If the function needs to live in `pixors-state`
+action and the desktop display. If the function needs to live in `pixors-document`
 (because `Export` is there), keep it there. The desktop's `build_display_graph` in
 controller can duplicate the pattern without sharing code.
 
@@ -964,7 +964,7 @@ Implement in this order to avoid integration pain:
 ### `pixors-ops`
 - `src/processor/compose.rs` — `opacities: Vec<f32>` field, opacity pre-multiply in blend loop
 
-### `pixors-state`
+### `pixors-document`
 - `src/tab.rs` — `LayerFilter` enum, `filters: Vec<LayerFilter>` on `Layer`, remove `FilterState` from `Tab`
 - `src/action/actions/mod.rs` — add new action modules
 - `src/action/actions/set_layer_visibility.rs` — new

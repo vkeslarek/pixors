@@ -68,10 +68,12 @@ impl Processor for Compose {
         };
 
         if ctx.port >= self.layer_count {
-            return Err(Error::internal(format!(
-                "Compose: port {} out of bounds (layer_count {})",
-                ctx.port, self.layer_count,
-            )));
+            tracing::warn!(
+                "Compose: port {} >= layer_count {}, dropping tile",
+                ctx.port,
+                self.layer_count,
+            );
+            return Ok(());
         }
         let slots = self
             .grid

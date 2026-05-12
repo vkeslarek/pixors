@@ -3,13 +3,13 @@ use std::sync::{Arc, Mutex};
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::data_transform::to_tile::ScanLineToTile;
+use pixors_engine::graph::graph::{EdgePorts, ExecGraph};
 use pixors_engine::stage::Stage;
 use pixors_image::codec::EncoderConfig;
 use pixors_image::image::open_image;
 use pixors_image::source::image_stream::ImageStreamSource;
 use pixors_ops::processor::color::ColorConvert;
 
-use crate::PathBuilder;
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::{EditorState, TabId};
 
@@ -59,21 +59,48 @@ impl Action for Export {
             )),
         };
 
-        let graph = PathBuilder::new()
-            .src(Stage::Producer(Box::new(ImageStreamSource {
-                stream,
-                image_height: self.image_height,
-            })))
-            .data_xform(Stage::Processor(Box::new(ScanLineToTile::new(
-                TILE_SIZE, w, h,
-            ))))
-            .op(Stage::Processor(Box::new(ColorConvert {
-                target_format: PixelFormat::Rgba8,
-                target_color_space: ColorSpace::SRGB,
-                target_alpha: AlphaPolicy::Straight,
-            })))
-            .sink(encoder_sink)
-            .compile();
+        let mut graph = ExecGraph::new();
+
+        let src = graph.add_stage(Stage::Producer(Box::new(ImageStreamSource {
+            stream,
+            image_height: self.image_height,
+        })));
+
+        let scanline = graph.add_stage(Stage::Processor(Box::new(ScanLineToTile::new(
+            TILE_SIZE, w, h,
+        ))));
+        graph.add_edge(
+            src,
+            scanline,
+            EdgePorts {
+                from_port: 0,
+                to_port: 0,
+            },
+        );
+
+        let color = graph.add_stage(Stage::Processor(Box::new(ColorConvert {
+            target_format: PixelFormat::Rgba8,
+            target_color_space: ColorSpace::SRGB,
+            target_alpha: AlphaPolicy::Straight,
+        })));
+        graph.add_edge(
+            scanline,
+            color,
+            EdgePorts {
+                from_port: 0,
+                to_port: 0,
+            },
+        );
+
+        let sink = graph.add_stage(encoder_sink);
+        graph.add_edge(
+            color,
+            sink,
+            EdgePorts {
+                from_port: 0,
+                to_port: 0,
+            },
+        );
 
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Apply,

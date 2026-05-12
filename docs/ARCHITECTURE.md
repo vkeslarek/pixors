@@ -28,9 +28,9 @@ pixors/
 ├── pixors-color/      # Color space conversion, pixel types
 ├── pixors-image/      # Image codecs (PNG, TIFF), Image stream, CacheWriter
 ├── pixors-ops/        # Operations: Blur, Compose, MipDownsample, MipFilter, CacheReader
-├── pixors-state/      # Editor model: EditorState, actions, Dispatcher, TileCache, Camera
+├── pixors-document/      # Editor model: EditorState, actions, Dispatcher, TileCache, Camera
 ├── pixors-desktop/    # Iced GUI: viewport, widgets, panels, dialogs
-└── pixors-mcp/        # TypeScript MCP server (calls pixors-state headlessly)
+└── pixors-mcp/        # TypeScript MCP server (calls pixors-document headlessly)
 ```
 
 Dependency order (no cycles):
@@ -43,7 +43,7 @@ pixors-shader → pixors-color
                     ↑
                 pixors-ops
                     ↑
-                pixors-state
+                pixors-document
                     ↑
         pixors-desktop   pixors-mcp
 ```
@@ -128,9 +128,9 @@ OpenFile action
 | `pixors-engine/src/runtime/chain.rs` | `ChainRunner`, progress reporting |
 | `pixors-engine/src/gpu/scheduler.rs` | GPU dispatch, buffer pool, readback |
 | `pixors-engine/src/stage/node.rs` | `Stage` trait, `StageHints` |
-| `pixors-state/src/action/mod.rs` | `Action` trait, `Dispatcher`, `PreparedAction` |
-| `pixors-state/src/state/tab.rs` | `Tab`, `TabId` |
-| `pixors-state/src/state/editor.rs` | `EditorState` |
+| `pixors-document/src/action/mod.rs` | `Action` trait, `Dispatcher`, `PreparedAction` |
+| `pixors-document/src/state/tab.rs` | `Tab`, `TabId` |
+| `pixors-document/src/state/editor.rs` | `EditorState` |
 | `pixors-desktop/src/controller.rs` | `App::update()` — message routing |
 | `pixors-desktop/src/viewport/pipeline.rs` | `ViewportPrimitive` — GPU texture upload |
 | `pixors-desktop/src/viewport/program.rs` | `ViewportProgram` — camera, pan, zoom |

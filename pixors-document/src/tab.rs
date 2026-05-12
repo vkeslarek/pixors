@@ -32,9 +32,6 @@ impl Tab {
             .join(format!("layer_{:016x}", node_id.0))
     }
 
-    pub fn title(&self) -> &str {
-        "untitled"
-    }
     pub fn desc_width(&self) -> u32 {
         self.document.canvas.width
     }

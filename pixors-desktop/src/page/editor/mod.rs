@@ -13,12 +13,16 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
     let canvas_w = active.map(|t| t.document.canvas.width).unwrap_or(0);
     let canvas_h = active.map(|t| t.document.canvas.height).unwrap_or(0);
     let tab_id = app.state.active_id();
-    let active_cache = tab_id.and_then(|id| app.tile_caches.get(&id)).cloned();
-    let viewport_state = tab_id.and_then(|id| app.viewport_states.get(&id)).cloned();
+    let active_cache = tab_id
+        .and_then(|id| app.viewport_tabs.get(&id))
+        .map(|vt| vt.cache.clone());
+    let viewport_state = tab_id
+        .and_then(|id| app.viewport_tabs.get(&id))
+        .map(|vt| vt.state.clone());
     let redraw_seq = active.map(|t| t.session.redraw_seq).unwrap_or(0);
     let mip_fetch_queue = tab_id
-        .and_then(|id| app.mip_queues.get(&id))
-        .cloned()
+        .and_then(|id| app.viewport_tabs.get(&id))
+        .map(|vt| vt.mip_queue.clone())
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
     let loading = active.map(|t| t.session.view.loading).unwrap_or(false);
     let progress = active.map(|t| t.session.view.progress).unwrap_or(0.0);

@@ -6,7 +6,6 @@ use iced::widget::pane_grid::{self, Configuration};
 use iced::widget::{column, container, row, text};
 use iced::{Background, Color, Element, Length, Subscription};
 use pixors_engine::runtime::event::PipelineEvent;
-use pixors_ops::source::cache_reader::TileRange;
 use tokio::sync::broadcast;
 
 use crate::page::{
@@ -14,8 +13,6 @@ use crate::page::{
     menu_bar, status_bar, workspace_bar,
 };
 use crate::panel::{filter as filters_panel, layers as layers_panel};
-use crate::viewport::tile_cache::TileCache;
-use crate::viewport::viewport_state::ViewportState;
 use pixors_document::EditorState;
 use pixors_document::TabId;
 use pixors_document::action::{Action, Dispatcher};
@@ -67,12 +64,7 @@ pub struct App {
     pub show_filter_search: bool,
     pub filter_search: crate::modal::filter_search::FilterSearch,
     pub filter_panel: crate::panel::filter::FilterPanelState,
-    /// Per-tab RAM tile cache (desktop display layer).
-    pub tile_caches: HashMap<TabId, Arc<Mutex<TileCache>>>,
-    /// Per-tab viewport/camera state.
-    pub viewport_states: HashMap<TabId, Arc<RwLock<ViewportState>>>,
-    /// Per-tab queue of tile requests from the viewport draw loop.
-    pub mip_queues: HashMap<TabId, Arc<Mutex<Vec<(TabId, u32, TileRange)>>>>,
+    pub viewport_tabs: HashMap<TabId, crate::viewport::tab_state::ViewportTab>,
     /// Live blur radius during slider drag — overrides the document value so the
     /// slider thumb tracks the drag. Cleared on CommitBlur / CancelPreview.
     pub blur_preview_radius: Option<f32>,
@@ -114,9 +106,7 @@ impl Default for App {
             show_filter_search: false,
             filter_search: crate::modal::filter_search::FilterSearch::default(),
             filter_panel: crate::panel::filter::FilterPanelState::default(),
-            tile_caches: HashMap::new(),
-            viewport_states: HashMap::new(),
-            mip_queues: HashMap::new(),
+            viewport_tabs: HashMap::new(),
             blur_preview_radius: None,
         };
         app.update_status_from_active_tab();

@@ -83,7 +83,8 @@ impl App {
                         tab.session.view.progress = 1.0;
                     }
                     // If this tab has no viewport state yet, it was just opened.
-                    if self.state.tab(tab_id).is_some() && !self.tile_caches.contains_key(&tab_id) {
+                    if self.state.tab(tab_id).is_some() && !self.viewport_tabs.contains_key(&tab_id)
+                    {
                         self.init_viewport_for_tab(tab_id);
                     }
                 }
@@ -117,7 +118,12 @@ impl App {
             Msg::FilterSearch(m) => match m {
                 crate::modal::filter_search::Msg::Close => self.show_filter_search = false,
                 crate::modal::filter_search::Msg::Apply(idx) => {
-                    let _item = self.filter_search.items.get(idx).cloned();
+                    let op = self
+                        .filter_search
+                        .items
+                        .get(idx)
+                        .map(|item| item.op.clone())
+                        .unwrap_or(pixors_document::Operation::Blur { radius: 5.0 });
                     self.filter_search
                         .update(crate::modal::filter_search::Msg::Apply(idx));
                     self.show_filter_search = false;
@@ -138,7 +144,7 @@ impl App {
                                 layer: layer_id,
                                 transform: pixors_document::Transform {
                                     id: new_id,
-                                    op: pixors_document::Operation::Blur { radius: 5.0 },
+                                    op,
                                     input: pixors_document::InputScope::Layer,
                                     output: pixors_document::OutputMode::Replace {
                                         blend: pixors_document::BlendSpec {
@@ -168,10 +174,7 @@ impl App {
                     self.update_status_from_active_tab();
                 }
                 tab_bar::Msg::Close(id) => {
-                    // Desktop cleanup first, before state removes the tab.
-                    self.tile_caches.remove(&id);
-                    self.viewport_states.remove(&id);
-                    self.mip_queues.remove(&id);
+                    self.viewport_tabs.remove(&id);
                     unregister_tile_cache(id.0);
 
                     if let Err(e) = self.dispatcher.dispatch(
@@ -266,15 +269,13 @@ impl App {
         };
         let img_w = tab.document.canvas.width;
         let img_h = tab.document.canvas.height;
-        let _cache_dir = tab.session.cache_dir.clone();
-        let _display_format = self.state.display_format;
-        let _display_color_space = self.state.display_color_space;
 
-        let tile_cache = TileCache::new();
+        let vtab = crate::viewport::tab_state::ViewportTab::new();
+        vtab.init_for_image(img_w, img_h);
 
         // Register sink callback (pipeline → RAM cache).
         {
-            let cache = tile_cache.clone();
+            let cache = vtab.cache.clone();
             register_tile_cache(
                 tab_id.0,
                 Box::new(move |generation, mip, tx, ty, px, py, tw, th, bytes| {
@@ -300,18 +301,7 @@ impl App {
             );
         }
 
-        tile_cache.lock().unwrap().signal_new_img(img_w, img_h);
-
-        let mut vs = ViewportState::default();
-        vs.camera.img_w = img_w as f32;
-        vs.camera.img_h = img_h as f32;
-
-        let mip_queue = Arc::new(std::sync::Mutex::new(Vec::new()));
-
-        self.tile_caches.insert(tab_id, tile_cache);
-        self.viewport_states
-            .insert(tab_id, Arc::new(std::sync::RwLock::new(vs)));
-        self.mip_queues.insert(tab_id, mip_queue);
+        self.viewport_tabs.insert(tab_id, vtab);
 
         // Trigger full mip-0 fetch so tiles appear immediately.
         let ntx = img_w.div_ceil(TILE_SIZE);
@@ -331,13 +321,13 @@ impl App {
         let mut mip_requests: Vec<(TabId, u32, TileRange)> = Vec::new();
 
         for tab in &mut self.state.tabs {
-            if let Some(cache) = self.tile_caches.get(&tab.id)
+            if let Some(cache) = self.viewport_tabs.get(&tab.id).map(|vt| &vt.cache)
                 && cache.lock().is_ok_and(|g| g.has_pending())
             {
                 tab.session.redraw_seq = tab.session.redraw_seq.wrapping_add(1);
             }
 
-            if let Some(queue) = self.mip_queues.get(&tab.id) {
+            if let Some(queue) = self.viewport_tabs.get(&tab.id).map(|vt| &vt.mip_queue) {
                 let mut sigs = queue.lock().unwrap();
                 if !sigs.is_empty() {
                     for (tab_id, mip, range) in sigs.drain(..) {
@@ -348,7 +338,7 @@ impl App {
         }
 
         for (tab_id, mip, range) in mip_requests {
-            if let Some(cache) = self.tile_caches.get(&tab_id)
+            if let Some(cache) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.cache)
                 && let Ok(guard) = cache.lock()
                 && guard.has_all_tiles(mip, &range)
             {
@@ -376,7 +366,7 @@ impl App {
             let scale = 1u32 << mip;
             let img_w = cw.div_ceil(scale);
             let img_h = ch.div_ceil(scale);
-            if let Some(cache) = self.tile_caches.get(&tab_id)
+            if let Some(cache) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.cache)
                 && let Ok(mut guard) = cache.lock()
             {
                 for ty in range.ty_start..range.ty_end {
@@ -571,9 +561,9 @@ impl App {
 
     fn recomposite_current_view(&mut self, tab_id: TabId) {
         let (mip, range) = self
-            .viewport_states
+            .viewport_tabs
             .get(&tab_id)
-            .and_then(|vs| vs.read().ok())
+            .and_then(|vt| vt.state.read().ok())
             .map(|vs| {
                 let m = vs.current_mip;
                 let r = vs.camera.padded_tile_range(m, TILE_SIZE, 3);
@@ -604,34 +594,17 @@ impl App {
                 if let Some((tab_id, generation)) = info {
                     self.dispatcher.cancel_background(tab_id);
                     let mip = self
-                        .viewport_states
+                        .viewport_tabs
                         .get(&tab_id)
-                        .and_then(|vs| vs.read().ok())
+                        .and_then(|vt| vt.state.read().ok())
                         .map(|vs| vs.current_mip)
                         .unwrap_or(0);
                     self.run_blur_preview(tab_id, v as u32, generation, mip);
                 }
             }
-            filters_panel::Msg::CommitBlur(_v) => {
+            filters_panel::Msg::CommitBlur(v) => {
                 self.blur_preview_radius = None;
-                let radius = self.filter_panel.dragging_radius.take().unwrap_or_else(|| {
-                    self.state
-                        .active_tab()
-                        .and_then(|t| {
-                            t.session
-                                .active_node
-                                .and_then(|id| t.document.find_layer(id))
-                                .and_then(|l| {
-                                    l.transforms.iter().find_map(|t| match &t.op {
-                                        pixors_document::Operation::Blur { radius } => {
-                                            Some(*radius)
-                                        }
-                                        _ => None,
-                                    })
-                                })
-                        })
-                        .unwrap_or(3.0)
-                });
+                let radius = v;
                 let action = self.state.active_tab_mut().and_then(|tab| {
                     let tab_id = tab.id;
                     let layer_id = tab.session.active_node?;
@@ -714,9 +687,9 @@ impl App {
         let generation = tab.session.redraw_seq.wrapping_add(1);
 
         let (mip, range) = self
-            .viewport_states
+            .viewport_tabs
             .get(&tab_id)
-            .and_then(|vs| vs.read().ok())
+            .and_then(|vt| vt.state.read().ok())
             .map(|vs| {
                 let m = vs.current_mip;
                 let r = vs.camera.padded_tile_range(m, TILE_SIZE, 1);
@@ -733,14 +706,14 @@ impl App {
             ));
 
         // Clear overlay tiles directly — no pipeline needed.
-        if let Some(cache) = self.tile_caches.get(&tab_id)
+        if let Some(cache) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.cache)
             && let Ok(mut guard) = cache.lock()
         {
             guard.clear_generation(generation);
         }
 
         // Re-queue the current mip to restore base tiles on screen.
-        if let Some(queue) = self.mip_queues.get(&tab_id)
+        if let Some(queue) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.mip_queue)
             && let Ok(mut sigs) = queue.lock()
         {
             sigs.push((tab_id, mip, range));
@@ -773,7 +746,7 @@ impl App {
                     self.dispatcher.cancel_background(tab_id);
                 }
                 Effect::ClearOverlay(tab_id) => {
-                    if let Some(cache) = self.tile_caches.get(&tab_id)
+                    if let Some(cache) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.cache)
                         && let Ok(mut guard) = cache.lock()
                     {
                         let generation = self
@@ -799,22 +772,15 @@ impl App {
                         && let Some(t) = layer.transforms.iter().find(|t| t.id == transform_id)
                     {
                         let _ = self.dispatcher.dispatch(
-                            Arc::new(pixors_document::mutation::impls::UpdateTransformOp {
+                            Arc::new(pixors_document::mutation::impls::SetTransformEnabled {
                                 tab: tab_id,
                                 layer: layer_id,
                                 transform_id: t.id,
-                                before: t.op.clone(),
-                                after: t.op.clone(),
+                                before: t.enabled,
+                                after: enabled,
                             }),
                             &mut self.state,
                         );
-                        if let Some(tab) = self.state.tab_mut(tab_id)
-                            && let Some(layer) = tab.document.find_layer_mut(layer_id)
-                            && let Some(transform) =
-                                layer.transforms.iter_mut().find(|t| t.id == transform_id)
-                        {
-                            transform.enabled = enabled;
-                        }
                     }
                 }
                 Effect::ReorderTransforms {
@@ -823,14 +789,20 @@ impl App {
                     from,
                     to,
                 } => {
-                    if let Some(tab) = self.state.tab_mut(tab_id)
-                        && let Some(layer) = tab.document.find_layer_mut(layer_id)
-                        && from < layer.transforms.len()
-                        && to < layer.transforms.len()
+                    if let Some(tab) = self.state.tab(tab_id)
+                        && let Some(_layer) = tab.document.find_layer(layer_id)
+                        && from < _layer.transforms.len()
+                        && to < _layer.transforms.len()
                     {
-                        let t = layer.transforms.remove(from);
-                        layer.transforms.insert(to, t);
-                        tab.session.redraw_seq += 1;
+                        let _ = self.dispatcher.dispatch(
+                            Arc::new(pixors_document::mutation::impls::ReorderTransform {
+                                tab: tab_id,
+                                layer: layer_id,
+                                from,
+                                to,
+                            }),
+                            &mut self.state,
+                        );
                         self.recomposite_current_view(tab_id);
                     }
                 }

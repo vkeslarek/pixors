@@ -292,3 +292,73 @@ impl DocumentMutation for UpdateTransformOp {
     }
 }
 impl_document_action!(UpdateTransformOp, tab);
+
+// SetTransformEnabled
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetTransformEnabled {
+    pub tab: TabId,
+    pub layer: NodeId,
+    pub transform_id: NodeId,
+    pub before: bool,
+    pub after: bool,
+}
+#[typetag::serde]
+impl DocumentMutation for SetTransformEnabled {
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && let Some(t) = l.transforms.iter_mut().find(|t| t.id == self.transform_id)
+        {
+            t.enabled = self.after;
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && let Some(t) = l.transforms.iter_mut().find(|t| t.id == self.transform_id)
+        {
+            t.enabled = self.before;
+        }
+    }
+    fn label(&self) -> &str {
+        if self.after {
+            "Enable Filter"
+        } else {
+            "Disable Filter"
+        }
+    }
+}
+impl_document_action!(SetTransformEnabled, tab);
+
+// ReorderTransform
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderTransform {
+    pub tab: TabId,
+    pub layer: NodeId,
+    pub from: usize,
+    pub to: usize,
+}
+#[typetag::serde]
+impl DocumentMutation for ReorderTransform {
+    fn apply(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && self.from < l.transforms.len()
+            && self.to < l.transforms.len()
+        {
+            let t = l.transforms.remove(self.from);
+            l.transforms.insert(self.to, t);
+        }
+    }
+    fn undo(&self, doc: &mut Document) {
+        if let Some(l) = doc.find_layer_mut(self.layer)
+            && self.from < l.transforms.len()
+            && self.to < l.transforms.len()
+            && self.from != self.to
+        {
+            let t = l.transforms.remove(self.to);
+            l.transforms.insert(self.from, t);
+        }
+    }
+    fn label(&self) -> &str {
+        "Reorder Filter"
+    }
+}
+impl_document_action!(ReorderTransform, tab);
