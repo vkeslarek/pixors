@@ -7,7 +7,6 @@ pub mod render;
 pub mod session;
 pub mod tab;
 
-pub use action::ActionChain;
 pub use document::{
     AssetId, AssetStore, BlendSpec, CanvasInfo, CompositePosition, DevelopAdjustment, DevelopState,
     Document, InputScope, LayerNode, Mask, NodeId, Operation, OutputMode, PixelSource, Transform,

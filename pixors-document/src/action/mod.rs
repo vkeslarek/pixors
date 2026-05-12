@@ -56,42 +56,6 @@ pub trait Action: std::fmt::Debug + Send + Sync + 'static {
     }
 }
 
-/// Typed chain of actions. Replaces raw `Vec<Arc<dyn Action>>` at callsites.
-pub struct ActionChain {
-    actions: Vec<Arc<dyn Action>>,
-}
-
-impl ActionChain {
-    pub fn single(a: impl Action + 'static) -> Self {
-        Self {
-            actions: vec![Arc::new(a)],
-        }
-    }
-
-    pub fn then(mut self, a: impl Action + 'static) -> Self {
-        self.actions.push(Arc::new(a));
-        self
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn Action>> {
-        self.actions.iter()
-    }
-
-    pub fn len(&self) -> usize {
-        self.actions.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.actions.is_empty()
-    }
-}
-
-impl From<Arc<dyn Action>> for ActionChain {
-    fn from(a: Arc<dyn Action>) -> Self {
-        Self { actions: vec![a] }
-    }
-}
-
 pub struct TabDispatcher {
     pub locked: bool,
 }

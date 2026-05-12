@@ -265,13 +265,13 @@ fn build_filter_rows<'a>(
             state.drag_over == Some(i) && state.drag_from.is_some_and(|from| from != i);
         let is_expanded = state.expanded.contains(&i);
 
-        let el = if !t.enabled {
-            build_disabled_filter_row(i, &num, t, blur_preview_radius, is_expanded)
-        } else if is_expanded {
-            build_expanded_filter_row(i, &num, t, blur_preview_radius)
-        } else {
-            build_collapsed_filter_row(i, &num, t, blur_preview_radius)
-        };
+            let el = if !t.enabled {
+                build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Disabled)
+            } else if is_expanded {
+                build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Expanded)
+            } else {
+                build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Collapsed)
+            };
 
         let wrapper = container(el).style(move |_| {
             if is_hover_target {
@@ -318,130 +318,85 @@ fn transform_subtitle(t: &Transform) -> String {
     }
 }
 
-fn build_collapsed_filter_row<'a>(
-    idx: usize,
-    num: &str,
-    t: &'a Transform,
-    _blur_preview_radius: Option<f32>,
-) -> Element<'a, Msg> {
-    let color = transform_color(t);
-    let subtitle = transform_subtitle(t);
-    let title = t.op.label().to_string();
-    let opacity = match &t.output {
-        pixors_document::OutputMode::Replace { blend }
-        | pixors_document::OutputMode::Composite { blend, .. } => {
-            format!("{}%", (blend.opacity * 100.0) as u32)
-        }
-    };
-
-    let icon_sq = container(
-        Space::new()
-            .width(Length::Fixed(28.0))
-            .height(Length::Fixed(28.0)),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(color)),
-        border: Border::default().rounded(3),
-        ..Default::default()
-    });
-
-    let info = column![
-        text(title).size(11).color(TEXT_SECONDARY),
-        row![
-            text(subtitle).size(9).color(TEXT_MUTED),
-            text(opacity).size(9).color(ACCENT),
-        ]
-    ]
-    .spacing(2);
-
-    let actions = row![
-        crate::components::icon_button::icon_button(EYE)
-            .size(12)
-            .on_press(Msg::ToggleEnabled(t.id)),
-        crate::components::icon_button::icon_button(TRASH)
-            .size(12)
-            .on_press(Msg::RemoveFilter(t.id)),
-    ]
-    .spacing(6)
-    .align_y(Alignment::Center);
-
-    let grip = mouse_area(
-        container(text(GRIP_VERTICAL).font(LUCIDE).size(12).color(TEXT_MUTED)).padding([4, 4]),
-    )
-    .on_press(Msg::DragStart(idx));
-
-    let content_btn = button(
-        row![
-            Space::new().width(Length::Fixed(4.0)),
-            text(num.to_string())
-                .size(9)
-                .color(TEXT_MUTED)
-                .font(iced::Font {
-                    family: iced::font::Family::Monospace,
-                    ..Default::default()
-                }),
-            Space::new().width(Length::Fixed(8.0)),
-            icon_sq,
-            Space::new().width(Length::Fixed(8.0)),
-            info,
-        ]
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding(0)
-    .style(|_, _| button::Style::default())
-    .on_press(Msg::ToggleExpand(idx));
-
-    container(row![grip, content_btn, actions].align_y(Alignment::Center))
-        .padding([6, 8])
-        .style(|_| container::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border::default().rounded(4),
-            ..Default::default()
-        })
-        .into()
+enum RowStyle {
+    Collapsed,
+    Expanded,
+    Disabled,
 }
 
-fn build_expanded_filter_row<'a>(
+fn build_filter_row<'a>(
     idx: usize,
     num: &str,
     t: &'a Transform,
     blur_preview_radius: Option<f32>,
+    style: RowStyle,
 ) -> Element<'a, Msg> {
-    let color = transform_color(t);
-    let subtitle = transform_subtitle(t);
-    let title = t.op.label().to_string();
-    let _opacity1 = match &t.output {
-        pixors_document::OutputMode::Replace { blend }
-        | pixors_document::OutputMode::Composite { blend, .. } => blend.opacity,
+    let base_color = transform_color(t);
+    let (color, icon_border, title_color, subtitle_color, num_color, eye_icon) = match &style {
+        RowStyle::Disabled => (
+            Color::from_rgba(base_color.r * 0.5, base_color.g * 0.5, base_color.b * 0.5, 0.6),
+            None,
+            TEXT_MUTED,
+            TEXT_MUTED,
+            TEXT_MUTED,
+            EYE_OFF,
+        ),
+        RowStyle::Expanded => (
+            base_color,
+            Some((2.0, ACCENT)),
+            TEXT_PRIMARY,
+            TEXT_MUTED,
+            ACCENT,
+            EYE,
+        ),
+        RowStyle::Collapsed => (base_color, None, TEXT_SECONDARY, TEXT_MUTED, TEXT_MUTED, EYE),
     };
 
-    let icon_sq = container(
-        Space::new()
-            .width(Length::Fixed(28.0))
-            .height(Length::Fixed(28.0)),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(color)),
-        border: Border {
-            radius: 3.0.into(),
-            width: 2.0,
-            color: ACCENT,
-        },
-        ..Default::default()
-    });
+    let subtitle = transform_subtitle(t);
+    let title = t.op.label().to_string();
+    let title_font = if matches!(style, RowStyle::Expanded) {
+        iced::Font { weight: iced::font::Weight::Bold, ..Default::default() }
+    } else {
+        iced::Font::default()
+    };
 
-    let info = column![
-        text(title).size(11).color(TEXT_PRIMARY).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..Default::default()
-        }),
-        row![text(subtitle).size(9).color(TEXT_MUTED)]
-    ]
-    .spacing(2);
+    let icon_sq = container(Space::new().width(Length::Fixed(28.0)).height(Length::Fixed(28.0)))
+        .style(move |_| {
+            let mut s = container::Style {
+                background: Some(Background::Color(color)),
+                border: Border::default().rounded(3),
+                ..Default::default()
+            };
+            if let Some((w, c)) = icon_border {
+                s.border.width = w;
+                s.border.color = c;
+            }
+            s
+        });
+
+    let mut info_rows: Vec<Element<Msg>> = vec![
+        text(title).size(11).color(title_color).font(title_font).into(),
+    ];
+
+    if matches!(style, RowStyle::Collapsed) {
+        let opacity = match &t.output {
+            pixors_document::OutputMode::Replace { blend }
+            | pixors_document::OutputMode::Composite { blend, .. } => {
+                format!("{}%", (blend.opacity * 100.0) as u32)
+            }
+        };
+        info_rows.push(row![
+            text(subtitle).size(9).color(subtitle_color),
+            text(opacity).size(9).color(ACCENT),
+        ].into());
+    } else {
+        info_rows.push(text(subtitle).size(9).color(subtitle_color).into());
+    }
+
+    let info = column(info_rows).spacing(2);
 
     let actions = row![
-        crate::components::icon_button::icon_button(EYE)
+        crate::components::icon_button::icon_button(eye_icon)
             .size(12)
             .on_press(Msg::ToggleEnabled(t.id)),
         crate::components::icon_button::icon_button(TRASH)
@@ -461,11 +416,8 @@ fn build_expanded_filter_row<'a>(
             Space::new().width(Length::Fixed(4.0)),
             text(num.to_string())
                 .size(9)
-                .color(ACCENT)
-                .font(iced::Font {
-                    family: iced::font::Family::Monospace,
-                    ..Default::default()
-                }),
+                .color(num_color)
+                .font(iced::Font { family: iced::font::Family::Monospace, ..Default::default() }),
             Space::new().width(Length::Fixed(8.0)),
             icon_sq,
             Space::new().width(Length::Fixed(8.0)),
@@ -482,16 +434,26 @@ fn build_expanded_filter_row<'a>(
         .align_y(Alignment::Center)
         .padding([6, 8]);
 
-    let controls = build_filter_controls(t, blur_preview_radius);
-
-    container(column![header, controls])
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(BG_ELEVATED)),
-            border: Border::default().rounded(4),
-            ..Default::default()
-        })
-        .into()
+    if matches!(style, RowStyle::Expanded) {
+        let controls = build_filter_controls(t, blur_preview_radius);
+        container(column![header, controls])
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(BG_ELEVATED)),
+                border: Border::default().rounded(4),
+                ..Default::default()
+            })
+            .into()
+    } else {
+        container(header)
+            .padding([6, 8])
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border::default().rounded(4),
+                ..Default::default()
+            })
+            .into()
+    }
 }
 
 fn build_filter_controls<'a>(
@@ -555,87 +517,6 @@ fn build_filter_controls<'a>(
             right: 8.0,
             bottom: 12.0,
             left: 8.0,
-        })
-        .into()
-}
-
-fn build_disabled_filter_row<'a>(
-    idx: usize,
-    num: &str,
-    t: &'a Transform,
-    _blur_preview_radius: Option<f32>,
-    _is_expanded: bool,
-) -> Element<'a, Msg> {
-    let color = Color::from_rgba(
-        transform_color(t).r * 0.5,
-        transform_color(t).g * 0.5,
-        transform_color(t).b * 0.5,
-        0.6,
-    );
-    let subtitle = transform_subtitle(t);
-    let title = t.op.label().to_string();
-
-    let icon_sq = container(
-        Space::new()
-            .width(Length::Fixed(28.0))
-            .height(Length::Fixed(28.0)),
-    )
-    .style(move |_| container::Style {
-        background: Some(Background::Color(color)),
-        border: Border::default().rounded(3),
-        ..Default::default()
-    });
-
-    let info = column![
-        text(title).size(11).color(TEXT_MUTED),
-        text(subtitle).size(9).color(TEXT_MUTED),
-    ]
-    .spacing(2);
-
-    let actions = row![
-        crate::components::icon_button::icon_button(EYE_OFF)
-            .size(12)
-            .on_press(Msg::ToggleEnabled(t.id)),
-        crate::components::icon_button::icon_button(TRASH)
-            .size(12)
-            .on_press(Msg::RemoveFilter(t.id)),
-    ]
-    .spacing(6)
-    .align_y(Alignment::Center);
-
-    let grip = mouse_area(
-        container(text(GRIP_VERTICAL).font(LUCIDE).size(12).color(TEXT_MUTED)).padding([4, 4]),
-    )
-    .on_press(Msg::DragStart(idx));
-
-    let content_btn = button(
-        row![
-            Space::new().width(Length::Fixed(4.0)),
-            text(num.to_string())
-                .size(9)
-                .color(TEXT_MUTED)
-                .font(iced::Font {
-                    family: iced::font::Family::Monospace,
-                    ..Default::default()
-                }),
-            Space::new().width(Length::Fixed(8.0)),
-            icon_sq,
-            Space::new().width(Length::Fixed(8.0)),
-            info,
-        ]
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding(0)
-    .style(|_, _| button::Style::default())
-    .on_press(Msg::ToggleExpand(idx));
-
-    container(row![grip, content_btn, actions].align_y(Alignment::Center))
-        .padding([6, 8])
-        .style(|_| container::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border::default().rounded(4),
-            ..Default::default()
         })
         .into()
 }
