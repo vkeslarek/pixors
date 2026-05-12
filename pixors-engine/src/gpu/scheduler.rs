@@ -59,6 +59,14 @@ impl Scheduler {
         dispatch_x: u32,
         dispatch_y: u32,
     ) -> Result<GpuBuffer, String> {
+        tracing::info!(
+            "[buf] #{} dispatch_one ins=[{}] out_sz={}req={} grid={}x{}",
+            out_buf.id,
+            inputs.iter().map(|b| format!("#{} sz={}/{}", b.id, b.requested_size, b.allocated_size)).collect::<Vec<_>>().join(", "),
+            out_buf.allocated_size,
+            out_buf.requested_size,
+            dispatch_x, dispatch_y,
+        );
         self.record_dispatch(kernel, inputs, out_buf.buffer(), dispatch_x, dispatch_y);
         Ok(out_buf)
     }
@@ -186,6 +194,10 @@ impl Scheduler {
         let aligned_len = (original_len + 3) & !3; // round to COPY_BUFFER_ALIGNMENT (4)
         let mut buf = self.allocate_buffer(aligned_len);
         buf.requested_size = original_len; // download truncates back to original
+        tracing::info!(
+            "[buf] #{} upload_bytes data_len={} aligned={} allocated={} req={}",
+            buf.id, original_len, aligned_len, buf.allocated_size, buf.requested_size,
+        );
         if aligned_len as usize == data.len() {
             self.queue.write_buffer(buf.buffer(), 0, data);
         } else {
@@ -295,6 +307,9 @@ impl Scheduler {
     /// Read a slice of bytes from a GPU buffer at the given offset.
     pub fn read_from_buffer(&self, src: &wgpu::Buffer, offset: u64, size: u64) -> Vec<u8> {
         let size_aligned = (size + 3) & !3;
+        tracing::info!(
+            "[buf] read_from_buffer offset={offset} size={size} aligned={size_aligned}",
+        );
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("read-staging"),
             size: size_aligned,

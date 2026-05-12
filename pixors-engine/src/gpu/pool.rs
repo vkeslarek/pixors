@@ -1,6 +1,11 @@
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_BUF_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_buf_id() -> u64 { NEXT_BUF_ID.fetch_add(1, Ordering::Relaxed) }
 
 pub struct BufferPool {
     device: Arc<wgpu::Device>,
@@ -24,7 +29,12 @@ impl BufferPool {
         let queue = self.free.entry(key).or_default();
 
         if let Some(buf) = queue.pop() {
+            let id = next_buf_id();
+            tracing::info!(
+                "[buf] #{id} acquire RECYCLED class={class_size} req={size} usage={usage:?}",
+            );
             return GpuBuffer {
+                id,
                 allocated_size: class_size,
                 requested_size: size,
                 usage,
@@ -33,14 +43,20 @@ impl BufferPool {
             };
         }
 
+        let id = next_buf_id();
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("pooled"),
+            label: Some(&format!("buf-{id}")),
             size: class_size,
             usage,
             mapped_at_creation: false,
         });
 
+        tracing::info!(
+            "[buf] #{id} acquire NEW class={class_size} req={size} usage={usage:?}",
+        );
+
         GpuBuffer {
+            id,
             allocated_size: class_size,
             requested_size: size,
             usage,
@@ -64,6 +80,7 @@ impl BufferPool {
 }
 
 pub struct GpuBuffer {
+    pub id: u64,
     pub allocated_size: u64,
     pub requested_size: u64,
     pub usage: wgpu::BufferUsages,
@@ -74,6 +91,7 @@ pub struct GpuBuffer {
 impl std::fmt::Debug for GpuBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GpuBuffer")
+            .field("id", &self.id)
             .field("allocated_size", &self.allocated_size)
             .field("requested_size", &self.requested_size)
             .field("usage", &self.usage)
