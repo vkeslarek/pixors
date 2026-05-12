@@ -72,6 +72,11 @@ impl TileCache {
                 );
             }
         } else {
+            // Overlay writes: only accept the current generation. Reject stale
+            // tiles from cancelled preview pipelines.
+            if generation != self.active_generation {
+                return;
+            }
             if let Some(existing) = self.overlay.get(&key)
                 && existing.layer > generation
             {
