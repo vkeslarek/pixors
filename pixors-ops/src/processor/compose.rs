@@ -242,6 +242,14 @@ fn gpu_compose(
         acc = Arc::new(out);
     }
 
+    let expected = w as u64 * h as u64 * fmt.bytes_per_pixel() as u64;
+    if acc.requested_size != expected {
+        tracing::error!(
+            "[compose] GPU output size mismatch: requested_size={} expected={expected} (w={w} h={h} bpp={})",
+            acc.requested_size, fmt.bytes_per_pixel(),
+        );
+    }
+
     emit.emit(Item::Tile(Tile::new(out_coord, meta, Buffer::Gpu(acc))));
     Ok(())
 }
@@ -306,6 +314,13 @@ fn cpu_compose(
 
             write_pixel(result, bpp, &mut out[off..]);
         }
+    }
+
+    if out.len() != w * h * bpp {
+        tracing::error!(
+            "[compose] CPU output size mismatch: out.len={} expected={} (w={w} h={h} bpp={bpp})",
+            out.len(), w * h * bpp,
+        );
     }
 
     emit.emit(Item::Tile(Tile::new(coord, meta, Buffer::cpu(out))));
