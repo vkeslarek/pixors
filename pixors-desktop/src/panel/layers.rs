@@ -1,6 +1,6 @@
 use iced::widget::{column, container, mouse_area, row, slider, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
-use pixors_document::TabId;
+use pixors_document::SessionId;
 use pixors_document::document::{LayerNode, NodeId};
 
 use crate::effect::Effect;
@@ -15,19 +15,19 @@ pub enum Msg {
 }
 
 pub struct LayersContext<'a> {
-    pub active_tab_id: Option<TabId>,
+    pub active_tab_id: Option<SessionId>,
     pub layers: &'a [LayerNode],
 }
 
 pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
-    let Some(tab_id) = ctx.active_tab_id else {
+    let Some(session_id) = ctx.active_tab_id else {
         return vec![];
     };
     match msg {
         Msg::Close => vec![Effect::TogglePane(crate::app::PaneKind::Layers)],
         Msg::Select(id) => vec![Effect::Dispatch(std::sync::Arc::new(
             pixors_document::action::actions::select_layer::SelectLayer {
-                tab: tab_id,
+                tab: session_id,
                 layer: id,
             },
         ))],
@@ -41,13 +41,13 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
             vec![
                 Effect::Dispatch(std::sync::Arc::new(
                     pixors_document::mutation::impls::SetLayerVisible {
-                        tab: tab_id,
+                        tab: session_id,
                         layer: id,
                         before: visible,
                         after: !visible,
                     },
                 )),
-                Effect::QueueDisplayRefresh(tab_id),
+                Effect::QueueDisplayRefresh(session_id),
             ]
         }
         Msg::SetOpacity(id, opacity) => {
@@ -60,13 +60,13 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
             vec![
                 Effect::Dispatch(std::sync::Arc::new(
                     pixors_document::mutation::impls::SetLayerOpacity {
-                        tab: tab_id,
+                        tab: session_id,
                         layer: id,
                         before,
                         after: opacity,
                     },
                 )),
-                Effect::QueueDisplayRefresh(tab_id),
+                Effect::QueueDisplayRefresh(session_id),
             ]
         }
     }

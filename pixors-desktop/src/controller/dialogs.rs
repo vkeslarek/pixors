@@ -40,15 +40,15 @@ impl App {
                         )
                         .save_file()
                     {
-                        let Some(tab) = self.state.active_tab_mut() else {
+                        let Some(tab) = self.state.active_session_mut() else {
                             return;
                         };
-                        let tab_id = tab.id;
-                        tab.session.view.loading = true;
-                        tab.session.view.progress = 0.0;
+                        let session_id = tab.id;
+                        tab.transient.view.loading = true;
+                        tab.transient.view.progress = 0.0;
 
                         let action = Arc::new(pixors_document::action::actions::export::Export {
-                            tab: tab_id,
+                            tab: session_id,
                             save_path: save_path.clone(),
                             config: config.clone(),
                             dpi: None,
@@ -90,18 +90,20 @@ impl App {
                 self.show_filter_search = false;
 
                 if let (Some(tab), Some(layer_id)) = (
-                    self.state.active_tab(),
-                    self.state.active_tab().and_then(|t| t.session.active_node),
+                    self.state.active_session(),
+                    self.state
+                        .active_session()
+                        .and_then(|t| t.transient.active_node),
                 ) {
-                    let tab_id = tab.id;
+                    let session_id = tab.id;
                     let new_id = self
                         .state
-                        .tab_mut(tab_id)
+                        .session_mut(session_id)
                         .map(|t| t.document.alloc_node_id())
                         .unwrap_or(pixors_document::NodeId(0));
                     let _ = self.dispatcher.dispatch(
                         Arc::new(pixors_document::mutation::impls::AddTransform {
-                            tab: tab_id,
+                            tab: session_id,
                             layer: layer_id,
                             transform: pixors_document::Transform {
                                 id: new_id,
@@ -118,7 +120,7 @@ impl App {
                         }),
                         &mut self.state,
                     );
-                    self.recomposite_current_view(tab_id);
+                    self.recomposite_current_view(session_id);
                 }
             }
             other => self.filter_search.update(other),

@@ -9,25 +9,25 @@ use crate::app::{App, Msg, PaneKind};
 use crate::theme::{BG_SURFACE, TEXT_MUTED};
 
 pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
-    let active = app.state.active_tab();
+    let active = app.state.active_session();
     let canvas_w = active.map(|t| t.document.canvas.width).unwrap_or(0);
     let canvas_h = active.map(|t| t.document.canvas.height).unwrap_or(0);
-    let tab_id = app.state.active_id();
-    let active_cache = tab_id
+    let session_id = app.state.active_id();
+    let active_cache = session_id
         .and_then(|id| app.viewport_tabs.get(&id))
         .map(|vt| vt.cache.clone());
-    let viewport_state = tab_id
+    let viewport_state = session_id
         .and_then(|id| app.viewport_tabs.get(&id))
         .map(|vt| vt.state.clone());
-    let redraw_seq = active.map(|t| t.session.redraw_seq).unwrap_or(0);
-    let mip_fetch_queue = tab_id
+    let redraw_seq = active.map(|t| t.transient.redraw_seq).unwrap_or(0);
+    let mip_fetch_queue = session_id
         .and_then(|id| app.viewport_tabs.get(&id))
         .map(|vt| vt.mip_queue.clone())
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
-    let loading = active.map(|t| t.session.view.loading).unwrap_or(false);
-    let progress = active.map(|t| t.session.view.progress).unwrap_or(0.0);
+    let loading = active.map(|t| t.transient.view.loading).unwrap_or(false);
+    let progress = active.map(|t| t.transient.view.progress).unwrap_or(0.0);
 
-    let canvas = if let Some(tab_id) = tab_id {
+    let canvas = if let Some(session_id) = session_id {
         let viewport = crate::page::editor::viewport::view(
             app.tabs.view(&app.state).map(Msg::TabBar),
             canvas_w,
@@ -35,7 +35,7 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             active_cache,
             redraw_seq,
             mip_fetch_queue,
-            Some(tab_id),
+            Some(session_id),
             viewport_state,
         );
 
@@ -105,18 +105,21 @@ fn pane_content<'a>(
             // Use the tab's layers directly (they live in EditorState which is pinned).
             let layers = app
                 .state
-                .active_tab()
+                .active_session()
                 .map(|t| t.document.layers.as_slice())
                 .unwrap_or(&[]);
-            let active_id = app.state.active_tab().and_then(|t| t.session.active_node);
+            let active_id = app
+                .state
+                .active_session()
+                .and_then(|t| t.transient.active_node);
             crate::panel::layers::view_slice(layers, active_id).map(Msg::LayersPanel)
         }
         PaneKind::Filters => {
             let transforms = app
                 .state
-                .active_tab()
+                .active_session()
                 .and_then(|t| {
-                    t.session
+                    t.transient
                         .active_node
                         .and_then(|id| t.document.layers.iter().find(|l| l.id == id))
                         .map(|l| l.transforms.as_slice())

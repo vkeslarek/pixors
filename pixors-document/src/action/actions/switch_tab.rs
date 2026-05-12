@@ -1,11 +1,11 @@
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::{EditorState, TabId};
+use crate::{EditorState, SessionId};
 
 #[derive(Debug)]
-pub struct SwitchTab(pub TabId);
+pub struct SwitchTab(pub SessionId);
 
 impl Action for SwitchTab {
-    fn target_tab(&self) -> Option<TabId> {
+    fn target_tab(&self) -> Option<SessionId> {
         None
     }
 

@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex, RwLock};
 
-use pixors_document::TabId;
+use pixors_document::SessionId;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::viewport::tile_cache::TileCache;
@@ -9,7 +9,7 @@ use crate::viewport::viewport_state::ViewportState;
 pub struct ViewportTab {
     pub cache: Arc<Mutex<TileCache>>,
     pub state: Arc<RwLock<ViewportState>>,
-    pub mip_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
+    pub mip_queue: Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>,
 }
 
 impl ViewportTab {

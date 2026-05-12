@@ -1,12 +1,13 @@
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::PixelFormat;
 
-use super::tab::{Tab, TabId};
+use super::session::Session;
+use super::tab::SessionId;
 
 pub struct EditorState {
-    pub tabs: Vec<Tab>,
-    pub active: Option<TabId>,
-    pub next_tab_id: u64,
+    pub sessions: Vec<Session>,
+    pub active: Option<SessionId>,
+    pub next_session_id: u64,
     pub working_format: PixelFormat,
     pub working_color_space: ColorSpace,
     pub display_format: PixelFormat,
@@ -16,9 +17,9 @@ pub struct EditorState {
 impl EditorState {
     pub fn new() -> Self {
         Self {
-            tabs: Vec::new(),
+            sessions: Vec::new(),
             active: None,
-            next_tab_id: 0,
+            next_session_id: 0,
             working_format: PixelFormat::RgbaF16,
             working_color_space: ColorSpace::ACES_CG,
             display_format: PixelFormat::Rgba8,
@@ -26,18 +27,15 @@ impl EditorState {
         }
     }
 
-    pub fn alloc_tab_id(&mut self) -> TabId {
-        let id = TabId(self.next_tab_id);
-        self.next_tab_id += 1;
+    pub fn alloc_session_id(&mut self) -> SessionId {
+        let id = SessionId(self.next_session_id);
+        self.next_session_id += 1;
         id
     }
 
-    pub fn push_tab(&mut self, tab: Tab) {
-        let id = tab.id;
-        if tab.document.canvas.width <= 1 {
-            // CanvasInfo defaults set via EditorState, no mutation needed
-        }
-        let title = tab
+    pub fn push(&mut self, session: Session) {
+        let id = session.id;
+        let title = session
             .document
             .assets
             .primary_path
@@ -46,17 +44,17 @@ impl EditorState {
             .and_then(|n| n.to_str())
             .unwrap_or("untitled")
             .to_string();
-        self.tabs.push(tab);
+        self.sessions.push(session);
         self.active = Some(id);
         tracing::info!(
-            "[state] push_tab id={id:?} title=\"{title}\" tab_count={} active={id:?}",
-            self.tabs.len(),
+            "[state] push id={id:?} title=\"{title}\" count={} active={id:?}",
+            self.sessions.len(),
         );
     }
 
-    pub fn close(&mut self, id: TabId) {
-        if let Some(pos) = self.tabs.iter().position(|t| t.id == id) {
-            let title = self.tabs[pos]
+    pub fn close(&mut self, id: SessionId) {
+        if let Some(pos) = self.sessions.iter().position(|s| s.id == id) {
+            let title = self.sessions[pos]
                 .document
                 .assets
                 .primary_path
@@ -65,67 +63,67 @@ impl EditorState {
                 .and_then(|n| n.to_str())
                 .unwrap_or("untitled")
                 .to_string();
-            self.tabs.remove(pos);
+            self.sessions.remove(pos);
             let old_active = self.active;
             if self.active == Some(id) {
                 self.active = self
-                    .tabs
+                    .sessions
                     .get(pos)
-                    .or_else(|| self.tabs.get(pos.saturating_sub(1)))
-                    .map(|t| t.id);
+                    .or_else(|| self.sessions.get(pos.saturating_sub(1)))
+                    .map(|s| s.id);
             }
             tracing::info!(
-                "[state] close_tab id={id:?} title=\"{title}\" active {:?}→{:?} tab_count={}",
+                "[state] close id={id:?} title=\"{title}\" active {:?}→{:?} count={}",
                 old_active,
                 self.active,
-                self.tabs.len(),
+                self.sessions.len(),
             );
         } else {
-            tracing::warn!("[state] close_tab id={id:?} not found");
+            tracing::warn!("[state] close id={id:?} not found");
         }
     }
 
-    pub fn switch(&mut self, id: TabId) {
+    pub fn switch(&mut self, id: SessionId) {
         let old = self.active;
         self.active = Some(id);
         if old != self.active {
             let title = self
-                .tab(id)
-                .and_then(|t| t.document.assets.primary_path.as_ref())
+                .session(id)
+                .and_then(|s| s.document.assets.primary_path.as_ref())
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("untitled");
-            tracing::info!("[state] switch_tab {:?}→{id:?} title=\"{title}\"", old);
+            tracing::info!("[state] switch {:?}→{id:?} title=\"{title}\"", old);
         }
     }
 
-    pub fn swap_tabs(&mut self, a: usize, b: usize) {
-        if a < self.tabs.len() && b < self.tabs.len() {
-            self.tabs.swap(a, b);
+    pub fn swap(&mut self, a: usize, b: usize) {
+        if a < self.sessions.len() && b < self.sessions.len() {
+            self.sessions.swap(a, b);
         }
     }
 
-    pub fn active_tab(&self) -> Option<&Tab> {
-        self.active.and_then(|id| self.tab(id))
+    pub fn active_session(&self) -> Option<&Session> {
+        self.active.and_then(|id| self.session(id))
     }
 
-    pub fn active_tab_mut(&mut self) -> Option<&mut Tab> {
-        self.active.and_then(|id| self.tab_mut(id))
+    pub fn active_session_mut(&mut self) -> Option<&mut Session> {
+        self.active.and_then(|id| self.session_mut(id))
     }
 
-    pub fn tab(&self, id: TabId) -> Option<&Tab> {
-        self.tabs.iter().find(|t| t.id == id)
+    pub fn session(&self, id: SessionId) -> Option<&Session> {
+        self.sessions.iter().find(|s| s.id == id)
     }
 
-    pub fn tab_mut(&mut self, id: TabId) -> Option<&mut Tab> {
-        self.tabs.iter_mut().find(|t| t.id == id)
+    pub fn session_mut(&mut self, id: SessionId) -> Option<&mut Session> {
+        self.sessions.iter_mut().find(|s| s.id == id)
     }
 
-    pub fn tabs(&self) -> &[Tab] {
-        &self.tabs
+    pub fn all_sessions(&self) -> &[Session] {
+        &self.sessions
     }
 
-    pub fn active_id(&self) -> Option<TabId> {
+    pub fn active_id(&self) -> Option<SessionId> {
         self.active
     }
 }

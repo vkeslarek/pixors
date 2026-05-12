@@ -14,7 +14,7 @@ use crate::page::{
 };
 use crate::panel::{filter as filters_panel, layers as layers_panel};
 use pixors_document::EditorState;
-use pixors_document::TabId;
+use pixors_document::SessionId;
 use pixors_document::action::{Action, Dispatcher};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +64,7 @@ pub struct App {
     pub show_filter_search: bool,
     pub filter_search: crate::modal::filter_search::FilterSearch,
     pub filter_panel: crate::panel::filter::FilterPanelState,
-    pub viewport_tabs: HashMap<TabId, crate::viewport::tab_state::ViewportTab>,
+    pub viewport_tabs: HashMap<SessionId, crate::viewport::tab_state::ViewportTab>,
     /// Live blur radius during slider drag — overrides the document value so the
     /// slider thumb tracks the drag. Cleared on CommitBlur / CancelPreview.
     pub blur_preview_radius: Option<f32>,
@@ -117,7 +117,7 @@ impl Default for App {
 impl App {
     pub fn active_file_path(&self) -> Option<&std::path::Path> {
         self.state
-            .active_tab()
+            .active_session()
             .and_then(|t| t.document.assets.primary_path.as_deref())
     }
 

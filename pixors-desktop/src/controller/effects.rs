@@ -15,24 +15,24 @@ impl App {
                 Effect::RunGraph {
                     graph,
                     mode,
-                    tab_id,
+                    session_id,
                 } => {
-                    let _ = self.dispatcher.run_graph(graph, mode, tab_id);
+                    let _ = self.dispatcher.run_graph(graph, mode, session_id);
                 }
-                Effect::QueueDisplayRefresh(tab_id) => {
-                    self.recomposite_current_view(tab_id);
+                Effect::QueueDisplayRefresh(session_id) => {
+                    self.recomposite_current_view(session_id);
                 }
-                Effect::CancelBackground(tab_id) => {
-                    self.dispatcher.cancel_background(tab_id);
+                Effect::CancelBackground(session_id) => {
+                    self.dispatcher.cancel_background(session_id);
                 }
-                Effect::ClearOverlay(tab_id) => {
-                    if let Some(cache) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.cache)
+                Effect::ClearOverlay(session_id) => {
+                    if let Some(cache) = self.viewport_tabs.get(&session_id).map(|vt| &vt.cache)
                         && let Ok(mut guard) = cache.lock()
                     {
                         let generation = self
                             .state
-                            .tab(tab_id)
-                            .map(|t| t.session.redraw_seq)
+                            .session(session_id)
+                            .map(|t| t.transient.redraw_seq)
                             .unwrap_or(0);
                         guard.clear_generation(generation);
                     }
@@ -42,18 +42,18 @@ impl App {
                 }
                 Effect::TogglePane(kind) => self.toggle_pane(kind),
                 Effect::ToggleTransformEnabled {
-                    tab_id,
+                    session_id,
                     layer_id,
                     transform_id,
                     enabled,
                 } => {
-                    if let Some(tab) = self.state.tab(tab_id)
+                    if let Some(tab) = self.state.session(session_id)
                         && let Some(layer) = tab.document.find_layer(layer_id)
                         && let Some(t) = layer.transforms.iter().find(|t| t.id == transform_id)
                     {
                         let _ = self.dispatcher.dispatch(
                             Arc::new(pixors_document::mutation::impls::SetTransformEnabled {
-                                tab: tab_id,
+                                tab: session_id,
                                 layer: layer_id,
                                 transform_id: t.id,
                                 before: t.enabled,
@@ -64,26 +64,26 @@ impl App {
                     }
                 }
                 Effect::ReorderTransforms {
-                    tab_id,
+                    session_id,
                     layer_id,
                     from,
                     to,
                 } => {
-                    if let Some(tab) = self.state.tab(tab_id)
+                    if let Some(tab) = self.state.session(session_id)
                         && let Some(_layer) = tab.document.find_layer(layer_id)
                         && from < _layer.transforms.len()
                         && to < _layer.transforms.len()
                     {
                         let _ = self.dispatcher.dispatch(
                             Arc::new(pixors_document::mutation::impls::ReorderTransform {
-                                tab: tab_id,
+                                tab: session_id,
                                 layer: layer_id,
                                 from,
                                 to,
                             }),
                             &mut self.state,
                         );
-                        self.recomposite_current_view(tab_id);
+                        self.recomposite_current_view(session_id);
                     }
                 }
                 Effect::PushError(msg) => self.push_error(msg),

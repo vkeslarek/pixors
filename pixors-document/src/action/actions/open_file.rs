@@ -12,14 +12,14 @@ use pixors_ops::processor::mip_downsample::MipDownsample;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::document::{BlendSpec, CanvasInfo, Document, LayerNode, PixelSource};
-use crate::session::SessionState;
-use crate::{EditorState, Tab, TabId, TabView};
+use crate::session::Transient;
+use crate::{EditorState, Session, SessionId, ViewState};
 
 use crate::TILE_SIZE;
 
 pub struct OpenFile {
     pub path: std::path::PathBuf,
-    pending_tab: Mutex<Option<Tab>>,
+    pending_tab: Mutex<Option<Session>>,
 }
 
 impl fmt::Debug for OpenFile {
@@ -40,7 +40,7 @@ impl OpenFile {
 }
 
 impl Action for OpenFile {
-    fn target_tab(&self) -> Option<TabId> {
+    fn target_tab(&self) -> Option<SessionId> {
         None
     }
 
@@ -58,10 +58,10 @@ impl Action for OpenFile {
             tracing::info!("[pixors] exif: {:20} = {}", meta.label(), meta.value_str());
         }
 
-        let tab_id = state.alloc_tab_id();
+        let session_id = state.alloc_session_id();
         let cache_dir = std::env::temp_dir()
             .join("pixors")
-            .join(format!("tab_{:016x}", tab_id.0));
+            .join(format!("session_{:016x}", session_id.0));
 
         // Build document first so we have real NodeIds for cache paths.
         let mut document = Document::new(CanvasInfo {
@@ -160,36 +160,36 @@ impl Action for OpenFile {
             );
         }
 
-        let mut session = SessionState::new(cache_dir);
-        session.view = TabView {
+        let mut transient = Transient::new(cache_dir);
+        transient.view = ViewState {
             active_mip: 0,
             loading: true,
             progress: 0.0,
         };
         if let Some(first) = document.layers.first() {
-            session.active_node = Some(first.id);
+            transient.active_node = Some(first.id);
         }
 
-        let tab = Tab {
-            id: tab_id,
+        let new_session = Session {
+            id: session_id,
             document,
             history: Default::default(),
-            session,
+            transient,
         };
-        *self.pending_tab.lock().unwrap() = Some(tab);
+        *self.pending_tab.lock().unwrap() = Some(new_session);
 
         Ok(PreparedAction::Pipeline {
             mode: PipelineMode::Background,
             graph,
-            routed_tab: Some(tab_id),
+            routed_tab: Some(session_id),
         })
     }
 
     fn apply(&self, state: &mut EditorState, status: PipelineStatus) {
         match status {
             PipelineStatus::Done => {
-                if let Some(tab) = self.pending_tab.lock().unwrap().take() {
-                    state.push_tab(tab);
+                if let Some(s) = self.pending_tab.lock().unwrap().take() {
+                    state.push(s);
                 }
             }
             PipelineStatus::Error(e) => tracing::error!("OpenFile failed: {e}"),

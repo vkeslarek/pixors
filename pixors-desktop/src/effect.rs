@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pixors_document::action::PipelineMode;
-use pixors_document::{NodeId, TabId};
+use pixors_document::{NodeId, SessionId};
 use pixors_engine::graph::graph::ExecGraph;
 
 use crate::app::PaneKind;
@@ -15,28 +15,28 @@ pub enum Effect {
     RunGraph {
         graph: ExecGraph,
         mode: PipelineMode,
-        tab_id: Option<TabId>,
+        session_id: Option<SessionId>,
     },
     /// Cancel in-flight background pipeline and re-request display tiles.
-    QueueDisplayRefresh(TabId),
+    QueueDisplayRefresh(SessionId),
     /// Cancel a running background pipeline for a tab.
-    CancelBackground(TabId),
+    CancelBackground(SessionId),
     /// Clear overlay generation tiles from the tile cache.
-    ClearOverlay(TabId),
+    ClearOverlay(SessionId),
     /// Open the filter search modal.
     ShowFilterSearch,
     /// Toggle a pane open/closed.
     TogglePane(PaneKind),
     /// Toggle a transform's enabled state (dispatches UpdateTransformOp and mutates).
     ToggleTransformEnabled {
-        tab_id: TabId,
+        session_id: SessionId,
         layer_id: NodeId,
         transform_id: NodeId,
         enabled: bool,
     },
     /// Reorder transforms within a layer (direct mutation, then redraw).
     ReorderTransforms {
-        tab_id: TabId,
+        session_id: SessionId,
         layer_id: NodeId,
         from: usize,
         to: usize,

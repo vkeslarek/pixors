@@ -4,13 +4,13 @@ use pixors_ops::source::cache_reader::TileRange;
 
 use crate::action::{Action, PipelineMode, PipelineStatus, PreparedAction};
 use crate::render::compiler::{CompileConfig, RenderRequest, compile};
-use crate::{EditorState, TabId};
+use crate::{EditorState, SessionId};
 
 use crate::TILE_SIZE;
 
 #[derive(Debug)]
 pub struct Export {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub save_path: std::path::PathBuf,
     pub config: EncoderConfig,
     pub dpi: Option<pixors_image::image::Dpi>,
@@ -18,12 +18,12 @@ pub struct Export {
 }
 
 impl Action for Export {
-    fn target_tab(&self) -> Option<TabId> {
+    fn target_tab(&self) -> Option<SessionId> {
         Some(self.tab)
     }
 
     fn prepare(&self, state: &mut EditorState) -> Result<PreparedAction, String> {
-        let tab = state.tab(self.tab).ok_or("tab not found")?;
+        let tab = state.session(self.tab).ok_or("tab not found")?;
         let img_w = tab.document.canvas.width;
         let img_h = tab.document.canvas.height;
 
@@ -47,7 +47,7 @@ impl Action for Export {
         };
 
         let config = CompileConfig {
-            cache_dir: tab.session.cache_dir.clone(),
+            cache_dir: tab.transient.cache_dir.clone(),
             display_format: state.display_format,
             display_color_space: state.display_color_space,
             working_format: state.working_format,
@@ -80,8 +80,8 @@ impl Action for Export {
     }
 
     fn apply(&self, state: &mut EditorState, status: PipelineStatus) {
-        if let Some(tab) = state.tab_mut(self.tab) {
-            tab.session.view.loading = false;
+        if let Some(tab) = state.session_mut(self.tab) {
+            tab.transient.view.loading = false;
         }
         match status {
             PipelineStatus::Done => {

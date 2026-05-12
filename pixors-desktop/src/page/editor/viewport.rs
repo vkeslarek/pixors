@@ -9,7 +9,7 @@ use crate::components::pill::pill;
 use crate::viewport::program::ViewportProgram;
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
-use pixors_document::TabId;
+use pixors_document::SessionId;
 
 pub fn view<'a, Msg: 'a>(
     tabs_view: Element<'a, Msg>,
@@ -17,15 +17,15 @@ pub fn view<'a, Msg: 'a>(
     canvas_h: u32,
     active_cache: Option<Arc<Mutex<TileCache>>>,
     redraw_seq: u64,
-    mip_fetch_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
-    tab_id: Option<TabId>,
+    mip_fetch_queue: Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>,
+    session_id: Option<SessionId>,
     viewport_state: Option<Arc<RwLock<ViewportState>>>,
 ) -> Element<'a, Msg> {
     let program = ViewportProgram {
         cache: active_cache,
         redraw_seq,
         mip_fetch_queue,
-        tab_id,
+        session_id,
         viewport_state,
     };
 

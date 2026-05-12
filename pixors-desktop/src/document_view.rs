@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 
-use pixors_document::document::Document;
-use pixors_document::document::NodeId;
+use pixors_document::Transient;
 use pixors_document::document::canvas::CanvasInfo;
 use pixors_document::document::layer::{LayerNode, PixelSource};
 use pixors_document::document::transform::Transform;
-use pixors_document::session::SessionState;
+use pixors_document::document::{Document, NodeId};
 use pixors_image::image::BlendMode;
 
 // ── LayerPanelItem ──────────────────────────────────────────────────────
@@ -92,16 +91,19 @@ impl ParamSpec {
 
 // ── DocumentView ────────────────────────────────────────────────────────
 
-/// Derived, widget-ready view of a Document + SessionState.
+/// Derived, widget-ready view of a Document + Transient.
 /// No internal cache — computed eagerly.
 pub struct DocumentView<'a> {
     document: &'a Document,
-    session: &'a SessionState,
+    transient: &'a Transient,
 }
 
 impl<'a> DocumentView<'a> {
-    pub fn new(document: &'a Document, session: &'a SessionState) -> Self {
-        Self { document, session }
+    pub fn new(document: &'a Document, transient: &'a Transient) -> Self {
+        Self {
+            document,
+            transient,
+        }
     }
 
     pub fn layers_panel(&self) -> Vec<LayerPanelItem> {
@@ -126,7 +128,7 @@ impl<'a> DocumentView<'a> {
     }
 
     pub fn active_layer(&self) -> Option<&LayerNode> {
-        self.session
+        self.transient
             .active_node
             .and_then(|id| self.document.find_layer(id))
     }

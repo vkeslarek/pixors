@@ -1,4 +1,4 @@
-use pixors_document::TabId;
+use pixors_document::SessionId;
 use pixors_engine::runtime::event::PipelineEvent;
 
 use crate::app::App;
@@ -12,35 +12,38 @@ impl App {
                 } else {
                     1.0
                 };
-                let tab_id = TabId(tag);
-                if let Some(tab) = self.state.tab_mut(tab_id) {
-                    tab.session.view.progress = p;
+                let session_id = SessionId(tag);
+                if let Some(tab) = self.state.session_mut(session_id) {
+                    tab.transient.view.progress = p;
                 }
             }
             PipelineEvent::Done { tag } => {
-                let tab_id = TabId(tag);
-                self.dispatcher.on_pipeline_done(&mut self.state, tab_id);
-                if let Some(tab) = self.state.tab_mut(tab_id) {
-                    tab.session.view.loading = false;
-                    tab.session.view.progress = 1.0;
+                let session_id = SessionId(tag);
+                self.dispatcher
+                    .on_pipeline_done(&mut self.state, session_id);
+                if let Some(tab) = self.state.session_mut(session_id) {
+                    tab.transient.view.loading = false;
+                    tab.transient.view.progress = 1.0;
                 }
-                if self.state.tab(tab_id).is_some() && !self.viewport_tabs.contains_key(&tab_id) {
-                    self.init_viewport_for_tab(tab_id);
+                if self.state.session(session_id).is_some()
+                    && !self.viewport_tabs.contains_key(&session_id)
+                {
+                    self.init_viewport_for_tab(session_id);
                 }
             }
             PipelineEvent::Error { tag, message } => {
-                let tab_id = TabId(tag);
+                let session_id = SessionId(tag);
                 self.dispatcher
-                    .on_pipeline_error(&mut self.state, tab_id, message.clone());
-                if let Some(tab) = self.state.tab_mut(tab_id) {
-                    tab.session.view.loading = false;
+                    .on_pipeline_error(&mut self.state, session_id, message.clone());
+                if let Some(tab) = self.state.session_mut(session_id) {
+                    tab.transient.view.loading = false;
                 }
                 self.push_error(message);
             }
             PipelineEvent::Cancelled { tag } => {
-                let tab_id = TabId(tag);
-                if let Some(tab) = self.state.tab_mut(tab_id) {
-                    tab.session.view.loading = false;
+                let session_id = SessionId(tag);
+                if let Some(tab) = self.state.session_mut(session_id) {
+                    tab.transient.view.loading = false;
                 }
             }
         }

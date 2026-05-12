@@ -5,7 +5,7 @@ use pixors_image::image::BlendMode;
 use crate::action::{Action, PipelineStatus, PreparedAction};
 use crate::document::transform::{Operation, Transform};
 use crate::document::{Document, LayerNode, NodeId};
-use crate::{EditorState, TabId};
+use crate::{EditorState, SessionId};
 
 use super::DocumentMutation;
 
@@ -16,17 +16,17 @@ use super::DocumentMutation;
 macro_rules! impl_document_action {
     ($ty:ty, $tab_field:ident) => {
         impl Action for $ty {
-            fn target_tab(&self) -> Option<TabId> {
+            fn target_tab(&self) -> Option<SessionId> {
                 Some(self.$tab_field)
             }
             fn prepare(&self, _: &mut EditorState) -> Result<PreparedAction, String> {
                 Ok(PreparedAction::StateOnly)
             }
             fn apply(&self, state: &mut EditorState, _: PipelineStatus) {
-                if let Some(tab) = state.tab_mut(self.$tab_field) {
-                    tab.history
-                        .push(std::sync::Arc::new(self.clone()), &mut tab.document);
-                    tab.session.redraw_seq += 1;
+                if let Some(s) = state.session_mut(self.$tab_field) {
+                    s.history
+                        .push(std::sync::Arc::new(self.clone()), &mut s.document);
+                    s.transient.redraw_seq += 1;
                 }
             }
             // Undo for document mutations is driven by UndoAction → History::undo,
@@ -42,7 +42,7 @@ macro_rules! impl_document_action {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerName {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub before: String,
     pub after: String,
@@ -67,7 +67,7 @@ impl_document_action!(SetLayerName, tab);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerVisible {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub before: bool,
     pub after: bool,
@@ -96,7 +96,7 @@ impl_document_action!(SetLayerVisible, tab);
 // SetLayerOpacity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerOpacity {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub before: f32,
     pub after: f32,
@@ -121,7 +121,7 @@ impl_document_action!(SetLayerOpacity, tab);
 // SetLayerBlend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerBlend {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub before: BlendMode,
     pub after: BlendMode,
@@ -146,7 +146,7 @@ impl_document_action!(SetLayerBlend, tab);
 // AddLayer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddLayer {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub at_index: usize,
     pub layer: LayerNode,
 }
@@ -169,7 +169,7 @@ impl_document_action!(AddLayer, tab);
 // RemoveLayer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveLayer {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub index: usize,
     pub layer: LayerNode,
 }
@@ -192,7 +192,7 @@ impl_document_action!(RemoveLayer, tab);
 // SwapLayers
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwapLayers {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub index_a: usize,
     pub index_b: usize,
 }
@@ -212,7 +212,7 @@ impl_document_action!(SwapLayers, tab);
 // AddTransform
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddTransform {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub transform: Transform,
 }
@@ -236,7 +236,7 @@ impl_document_action!(AddTransform, tab);
 // RemoveTransform
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveTransform {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub transform_id: NodeId,
     pub removed: Transform,
@@ -265,7 +265,7 @@ impl_document_action!(RemoveTransform, tab);
 // UpdateTransformOp
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateTransformOp {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub transform_id: NodeId,
     pub before: Operation,
@@ -296,7 +296,7 @@ impl_document_action!(UpdateTransformOp, tab);
 // SetTransformEnabled
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetTransformEnabled {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub transform_id: NodeId,
     pub before: bool,
@@ -331,7 +331,7 @@ impl_document_action!(SetTransformEnabled, tab);
 // ReorderTransform
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReorderTransform {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
     pub from: usize,
     pub to: usize,

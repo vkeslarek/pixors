@@ -10,14 +10,14 @@ use crate::viewport::camera::{Camera, compute_max_mip};
 use crate::viewport::pipeline::ViewportPrimitive;
 use crate::viewport::tile_cache::TileCache;
 use crate::viewport::viewport_state::ViewportState;
+use pixors_document::SessionId;
 use pixors_document::TILE_SIZE;
-use pixors_document::TabId;
 
 pub struct ViewportProgram {
     pub cache: Option<Arc<Mutex<TileCache>>>,
     pub redraw_seq: u64,
-    pub mip_fetch_queue: Arc<Mutex<Vec<(TabId, u32, TileRange)>>>,
-    pub tab_id: Option<TabId>,
+    pub mip_fetch_queue: Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>,
+    pub session_id: Option<SessionId>,
     pub viewport_state: Option<Arc<RwLock<ViewportState>>>,
 }
 
@@ -179,9 +179,9 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         state.current_mip = target_mip;
 
         let mut reqs = Vec::new();
-        if let Some(tab_id) = self.tab_id {
+        if let Some(session_id) = self.session_id {
             reqs.push((
-                tab_id,
+                session_id,
                 state.current_mip,
                 state
                     .camera
@@ -191,7 +191,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             let max_mip = compute_max_mip(state.camera.img_w as u32, state.camera.img_h as u32);
             if state.current_mip < max_mip {
                 reqs.push((
-                    tab_id,
+                    session_id,
                     state.current_mip + 1,
                     state
                         .camera
@@ -200,7 +200,7 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
             }
             if state.current_mip > 0 {
                 reqs.push((
-                    tab_id,
+                    session_id,
                     state.current_mip - 1,
                     state
                         .camera

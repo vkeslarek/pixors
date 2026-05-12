@@ -5,12 +5,12 @@ use iced::{Background, Border, Color, Element, Length};
 use crate::theme::{
     ACCENT, BG_BASE, BORDER_SUBTLE, TABBAR_H, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
-use pixors_document::{EditorState, TabId};
+use pixors_document::{EditorState, SessionId};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
-    Select(TabId),
-    Close(TabId),
+    Select(SessionId),
+    Close(SessionId),
     DragStart(usize),
     DragHover(usize),
     DragDrop,
@@ -23,14 +23,14 @@ pub struct State {
 }
 
 impl State {
-    pub fn update(&mut self, msg: Msg, tab_count: usize) {
+    pub fn update(&mut self, msg: Msg, session_count: usize) {
         match msg {
             Msg::Select(_) | Msg::Close(_) => {}
-            Msg::DragStart(i) if i < tab_count => {
+            Msg::DragStart(i) if i < session_count => {
                 self.drag_from = Some(i);
                 self.drag_over = Some(i);
             }
-            Msg::DragHover(i) if self.drag_from.is_some() && i < tab_count => {
+            Msg::DragHover(i) if self.drag_from.is_some() && i < session_count => {
                 self.drag_over = Some(i);
             }
             Msg::DragDrop => {
@@ -43,7 +43,7 @@ impl State {
 
     pub fn view<'a>(&'a self, editor: &'a EditorState) -> Element<'a, Msg> {
         let active_id = editor.active_id();
-        let tabs = editor.tabs();
+        let tabs = editor.all_sessions();
 
         let mut all: Vec<Element<Msg>> = Vec::new();
         for (i, tab) in tabs.iter().enumerate() {
@@ -90,7 +90,7 @@ fn tab_view<'a>(
     i: usize,
     name: &'a str,
     is_active: bool,
-    id: TabId,
+    id: SessionId,
     drag_from: Option<usize>,
     drag_over: Option<usize>,
 ) -> Element<'a, Msg> {

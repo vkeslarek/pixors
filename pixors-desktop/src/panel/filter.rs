@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, slider, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
-use pixors_document::{NodeId, TabId, Transform};
+use pixors_document::{NodeId, SessionId, Transform};
 
 use crate::effect::Effect;
 
@@ -71,7 +71,7 @@ impl FilterPanelState {
 }
 
 pub struct FilterContext {
-    pub tab_id: TabId,
+    pub session_id: SessionId,
     pub active_layer_id: Option<NodeId>,
     pub transforms: Vec<Transform>,
     pub drag_from: Option<usize>,
@@ -80,14 +80,14 @@ pub struct FilterContext {
 
 impl FilterContext {
     pub fn new(
-        tab_id: TabId,
+        session_id: SessionId,
         active_layer_id: Option<NodeId>,
         transforms: &[Transform],
         drag_from: Option<usize>,
         drag_over: Option<usize>,
     ) -> Self {
         Self {
-            tab_id,
+            session_id,
             active_layer_id,
             transforms: transforms.to_vec(),
             drag_from,
@@ -107,12 +107,12 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
             if let Some(t) = ctx.transforms.iter().find(|t| t.id == transform_id) {
                 vec![
                     Effect::ToggleTransformEnabled {
-                        tab_id: ctx.tab_id,
+                        session_id: ctx.session_id,
                         layer_id,
                         transform_id: t.id,
                         enabled: !t.enabled,
                     },
-                    Effect::QueueDisplayRefresh(ctx.tab_id),
+                    Effect::QueueDisplayRefresh(ctx.session_id),
                 ]
             } else {
                 vec![]
@@ -132,14 +132,14 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
                 vec![
                     Effect::Dispatch(std::sync::Arc::new(
                         pixors_document::mutation::impls::RemoveTransform {
-                            tab: ctx.tab_id,
+                            tab: ctx.session_id,
                             layer: layer_id,
                             transform_id,
                             removed,
                             index: idx,
                         },
                     )),
-                    Effect::QueueDisplayRefresh(ctx.tab_id),
+                    Effect::QueueDisplayRefresh(ctx.session_id),
                 ]
             } else {
                 vec![]
@@ -162,7 +162,7 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
                 return vec![];
             }
             vec![Effect::ReorderTransforms {
-                tab_id: ctx.tab_id,
+                session_id: ctx.session_id,
                 layer_id,
                 from,
                 to,

@@ -27,12 +27,12 @@ impl App {
                 if let (Some(from), Some(to)) = (self.tabs.drag_from, self.tabs.drag_over)
                     && from != to
                 {
-                    self.state.swap_tabs(from, to);
+                    self.state.swap(from, to);
                 }
                 self.tabs.drag_from = None;
                 self.tabs.drag_over = None;
             }
-            _ => self.tabs.update(m, self.state.tabs().len()),
+            _ => self.tabs.update(m, self.state.all_sessions().len()),
         }
     }
 }

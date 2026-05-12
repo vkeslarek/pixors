@@ -1,15 +1,15 @@
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::{EditorState, NodeId, TabId};
+use crate::{EditorState, NodeId, SessionId};
 
 /// Select (activate) a layer in the layers panel. Not undoable.
 #[derive(Debug)]
 pub struct SelectLayer {
-    pub tab: TabId,
+    pub tab: SessionId,
     pub layer: NodeId,
 }
 
 impl Action for SelectLayer {
-    fn target_tab(&self) -> Option<TabId> {
+    fn target_tab(&self) -> Option<SessionId> {
         Some(self.tab)
     }
 
@@ -18,8 +18,8 @@ impl Action for SelectLayer {
     }
 
     fn apply(&self, state: &mut EditorState, _status: PipelineStatus) {
-        if let Some(tab) = state.tab_mut(self.tab) {
-            tab.session.active_node = Some(self.layer);
+        if let Some(tab) = state.session_mut(self.tab) {
+            tab.transient.active_node = Some(self.layer);
         }
     }
 

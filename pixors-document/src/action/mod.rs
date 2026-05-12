@@ -11,7 +11,7 @@ use pixors_engine::runtime::event::PipelineEvent;
 use pixors_engine::runtime::pipeline::{Pipeline, PipelineHandle};
 use tokio::sync::broadcast;
 
-use crate::{EditorState, TabId};
+use crate::{EditorState, SessionId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineMode {
@@ -33,13 +33,13 @@ pub enum PreparedAction {
     Pipeline {
         mode: PipelineMode,
         graph: ExecGraph,
-        routed_tab: Option<TabId>,
+        routed_tab: Option<SessionId>,
     },
 }
 
 #[allow(dead_code)]
 pub trait Action: std::fmt::Debug + Send + Sync + 'static {
-    fn target_tab(&self) -> Option<TabId> {
+    fn target_tab(&self) -> Option<SessionId> {
         None
     }
 
@@ -102,10 +102,10 @@ impl TabDispatcher {
 
 pub struct Dispatcher {
     pub event_tx: broadcast::Sender<PipelineEvent>,
-    pub tabs: HashMap<TabId, TabDispatcher>,
-    active_apply_actions: HashMap<TabId, Arc<dyn Action>>,
-    background_actions: HashMap<TabId, Arc<dyn Action>>,
-    background_tasks: HashMap<TabId, PipelineHandle>,
+    pub tabs: HashMap<SessionId, TabDispatcher>,
+    active_apply_actions: HashMap<SessionId, Arc<dyn Action>>,
+    background_actions: HashMap<SessionId, Arc<dyn Action>>,
+    background_tasks: HashMap<SessionId, PipelineHandle>,
 }
 
 impl Dispatcher {
@@ -119,7 +119,7 @@ impl Dispatcher {
         }
     }
 
-    fn tab_disp(&mut self, id: TabId) -> &mut TabDispatcher {
+    fn tab_disp(&mut self, id: SessionId) -> &mut TabDispatcher {
         self.tabs.entry(id).or_insert_with(TabDispatcher::new)
     }
 
@@ -128,9 +128,9 @@ impl Dispatcher {
         action: Arc<dyn Action>,
         state: &mut EditorState,
     ) -> Result<(), String> {
-        let tab_id = action.target_tab();
+        let session_id = action.target_tab();
 
-        if let Some(tid) = tab_id {
+        if let Some(tid) = session_id {
             let td = self.tab_disp(tid);
             if td.locked {
                 return Err("Pipeline running on tab, please wait".to_string());
@@ -152,10 +152,10 @@ impl Dispatcher {
                 ..
             } => {
                 let is_apply = mode == PipelineMode::Apply;
-                let effective_tab = routed_tab.or(tab_id);
-                let tag = effective_tab.map(|t| t.0).unwrap_or(0);
+                let effective_session = routed_tab.or(session_id);
+                let tag = effective_session.map(|t| t.0).unwrap_or(0);
 
-                if is_apply && let Some(tid) = effective_tab {
+                if is_apply && let Some(tid) = effective_session {
                     self.tab_disp(tid).locked = true;
                     self.active_apply_actions.insert(tid, Arc::clone(&action));
                 }
@@ -186,7 +186,7 @@ impl Dispatcher {
 
                 let handle = pipeline.run(Some(event_tx));
 
-                if !is_apply && let Some(tid) = effective_tab {
+                if !is_apply && let Some(tid) = effective_session {
                     self.background_tasks.insert(tid, handle);
                     self.background_actions.insert(tid, Arc::clone(&action));
                 }
@@ -196,41 +196,46 @@ impl Dispatcher {
         }
     }
 
-    pub fn on_pipeline_done(&mut self, state: &mut EditorState, tab_id: TabId) {
+    pub fn on_pipeline_done(&mut self, state: &mut EditorState, session_id: SessionId) {
         if let Some(action) = self
             .active_apply_actions
-            .remove(&tab_id)
-            .or_else(|| self.background_actions.remove(&tab_id))
+            .remove(&session_id)
+            .or_else(|| self.background_actions.remove(&session_id))
         {
             action.apply(state, PipelineStatus::Done);
         }
-        if let Some(td) = self.tabs.get_mut(&tab_id) {
+        if let Some(td) = self.tabs.get_mut(&session_id) {
             td.locked = false;
         }
     }
 
-    pub fn on_pipeline_error(&mut self, state: &mut EditorState, tab_id: TabId, error: String) {
+    pub fn on_pipeline_error(
+        &mut self,
+        state: &mut EditorState,
+        session_id: SessionId,
+        error: String,
+    ) {
         if let Some(action) = self
             .active_apply_actions
-            .remove(&tab_id)
-            .or_else(|| self.background_actions.remove(&tab_id))
+            .remove(&session_id)
+            .or_else(|| self.background_actions.remove(&session_id))
         {
             action.apply(state, PipelineStatus::Error(error));
         }
-        if let Some(td) = self.tabs.get_mut(&tab_id) {
+        if let Some(td) = self.tabs.get_mut(&session_id) {
             td.locked = false;
         }
     }
 
     #[allow(dead_code)]
-    pub fn cleanup_tab(&mut self, id: TabId) {
+    pub fn cleanup_tab(&mut self, id: SessionId) {
         self.tabs.remove(&id);
         self.background_tasks.remove(&id);
         self.background_actions.remove(&id);
         self.active_apply_actions.remove(&id);
     }
 
-    pub fn cancel_background(&mut self, id: TabId) {
+    pub fn cancel_background(&mut self, id: SessionId) {
         if let Some(handle) = self.background_tasks.remove(&id) {
             handle.cancel();
         }
@@ -243,12 +248,12 @@ impl Dispatcher {
         &mut self,
         graph: ExecGraph,
         mode: PipelineMode,
-        tab_id: Option<TabId>,
+        session_id: Option<SessionId>,
     ) -> Result<(), String> {
         let is_apply = mode == PipelineMode::Apply;
-        let tag = tab_id.map(|t| t.0).unwrap_or(0);
+        let tag = session_id.map(|t| t.0).unwrap_or(0);
 
-        if is_apply && let Some(tid) = tab_id {
+        if is_apply && let Some(tid) = session_id {
             let td = self.tab_disp(tid);
             if td.locked {
                 return Err("Pipeline running on tab, please wait".to_string());
@@ -279,7 +284,7 @@ impl Dispatcher {
 
         let handle = pipeline.run(Some(event_tx));
 
-        if !is_apply && let Some(tid) = tab_id {
+        if !is_apply && let Some(tid) = session_id {
             self.background_tasks.insert(tid, handle);
         }
 
@@ -294,16 +299,16 @@ impl Dispatcher {
     }
 
     pub fn resync_locks(&mut self, state: &mut EditorState) {
-        self.background_tasks.retain(|tab_id, handle| {
+        self.background_tasks.retain(|session_id, handle| {
             let still_running = handle.is_running();
-            if !still_running && let Some(tab) = state.tab_mut(*tab_id) {
-                tab.session.view.loading = false;
-                tab.session.view.progress = 1.0;
+            if !still_running && let Some(tab) = state.session_mut(*session_id) {
+                tab.transient.view.loading = false;
+                tab.transient.view.progress = 1.0;
             }
             still_running
         });
         self.background_actions
-            .retain(|tab_id, _| self.background_tasks.contains_key(tab_id));
+            .retain(|session_id, _| self.background_tasks.contains_key(session_id));
         for tab in &mut self.tabs.values_mut() {
             tab.locked = false;
         }

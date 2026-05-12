@@ -86,7 +86,7 @@ impl App {
     }
 
     pub(crate) fn update_status_from_active_tab(&mut self) {
-        if let Some(tab) = self.state.active_tab() {
+        if let Some(tab) = self.state.active_session() {
             self.status.canvas_w = tab.document.canvas.width;
             self.status.canvas_h = tab.document.canvas.height;
             self.status.layers = tab.document.layers.len();

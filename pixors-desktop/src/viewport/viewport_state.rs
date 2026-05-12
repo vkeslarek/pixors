@@ -2,7 +2,7 @@ use iced::mouse;
 use pixors_ops::source::cache_reader::TileRange;
 
 use crate::viewport::camera::Camera;
-use pixors_document::TabId;
+use pixors_document::SessionId;
 
 pub struct ViewportState {
     pub camera: Camera,
@@ -15,7 +15,7 @@ pub struct ViewportState {
     pub user_interacted: bool,
     pub last_pos: Option<(f32, f32)>,
     pub last_bounds: Option<(f32, f32)>,
-    pub last_reqs: Option<Vec<(TabId, u32, TileRange)>>,
+    pub last_reqs: Option<Vec<(SessionId, u32, TileRange)>>,
     pub ctrl_held: bool,
     pub pan_button: Option<mouse::Button>,
 }

@@ -1,11 +1,11 @@
 use crate::action::{Action, PipelineStatus, PreparedAction};
-use crate::{EditorState, TabId};
+use crate::{EditorState, SessionId};
 
 #[derive(Debug)]
-pub struct CloseTab(pub TabId);
+pub struct CloseTab(pub SessionId);
 
 impl Action for CloseTab {
-    fn target_tab(&self) -> Option<TabId> {
+    fn target_tab(&self) -> Option<SessionId> {
         Some(self.0)
     }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pixors_document::action::PipelineMode;
 use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile};
-use pixors_document::{TILE_SIZE, TabId};
+use pixors_document::{SessionId, TILE_SIZE};
 use pixors_engine::data::tile::TileGridPos;
 use pixors_engine::stage::Stage;
 use pixors_ops::source::cache_reader::TileRange;
@@ -13,8 +13,8 @@ use crate::viewport::tile_cache_sink::{TileCacheSink, register_tile_cache};
 
 impl App {
     /// Create viewport state for a newly opened tab and trigger initial MipFetch.
-    pub(crate) fn init_viewport_for_tab(&mut self, tab_id: TabId) {
-        let Some(tab) = self.state.tab(tab_id) else {
+    pub(crate) fn init_viewport_for_tab(&mut self, session_id: SessionId) {
+        let Some(tab) = self.state.session(session_id) else {
             return;
         };
         let img_w = tab.document.canvas.width;
@@ -27,7 +27,7 @@ impl App {
         {
             let cache = vtab.cache.clone();
             register_tile_cache(
-                tab_id.0,
+                session_id.0,
                 Box::new(
                     move |generation, version, mip, tx, ty, px, py, tw, th, bytes| {
                         if let Ok(mut guard) = cache.lock() {
@@ -54,7 +54,7 @@ impl App {
             );
         }
 
-        self.viewport_tabs.insert(tab_id, vtab);
+        self.viewport_tabs.insert(session_id, vtab);
 
         // Trigger full mip-0 fetch so tiles appear immediately.
         let ntx = img_w.div_ceil(TILE_SIZE);
@@ -65,11 +65,11 @@ impl App {
             ty_start: 0,
             ty_end: nty,
         };
-        self.run_mip_fetch(tab_id, 0, full_range);
+        self.run_mip_fetch(session_id, 0, full_range);
     }
 
-    pub(crate) fn run_mip_fetch(&mut self, tab_id: TabId, mip: u32, range: TileRange) {
-        let Some(tab) = self.state.tab(tab_id) else {
+    pub(crate) fn run_mip_fetch(&mut self, session_id: SessionId, mip: u32, range: TileRange) {
+        let Some(tab) = self.state.session(session_id) else {
             return;
         };
 
@@ -86,7 +86,7 @@ impl App {
             let scale = 1u32 << mip;
             let img_w = cw.div_ceil(scale);
             let img_h = ch.div_ceil(scale);
-            if let Some(cache) = self.viewport_tabs.get(&tab_id).map(|vt| &vt.cache)
+            if let Some(cache) = self.viewport_tabs.get(&session_id).map(|vt| &vt.cache)
                 && let Ok(mut guard) = cache.lock()
             {
                 for ty in range.ty_start..range.ty_end {
@@ -122,7 +122,7 @@ impl App {
         }
 
         let config = CompileConfig {
-            cache_dir: tab.session.cache_dir.clone(),
+            cache_dir: tab.transient.cache_dir.clone(),
             display_format: self.state.display_format,
             display_color_space: self.state.display_color_space,
             working_format: self.state.working_format,
@@ -136,12 +136,12 @@ impl App {
             mip_level: mip,
             up_to: None,
         };
-        let version = tab.session.redraw_seq;
-        let sink = Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0, version)));
+        let version = tab.transient.redraw_seq;
+        let sink = Stage::Consumer(Box::new(TileCacheSink::new(session_id.0, 0, version)));
         let graph = compile(&tab.document, &req, &config, sink);
 
         let _ = self
             .dispatcher
-            .run_graph(graph, PipelineMode::Background, Some(tab_id));
+            .run_graph(graph, PipelineMode::Background, Some(session_id));
     }
 }
