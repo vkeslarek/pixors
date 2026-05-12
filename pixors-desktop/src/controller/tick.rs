@@ -1,4 +1,4 @@
-use crate::util::{lock_or_recover, read_or_recover, write_or_recover};
+use crate::util::{lock_or_recover, write_or_recover};
 use pixors_document::SessionId;
 use pixors_engine::cache::cache_reader::TileRange;
 

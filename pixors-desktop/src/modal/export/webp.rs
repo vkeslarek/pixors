@@ -3,7 +3,6 @@ use iced::{Element, Length};
 
 use super::components::section_label;
 use super::ExportDialog;
-use crate::theme::TEXT_SECONDARY;
 
 pub fn webp_options(dialog: &ExportDialog) -> Element<'static, super::Msg> {
     let lossless_toggle = toggler(dialog.webp.lossless)

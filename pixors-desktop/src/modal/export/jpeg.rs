@@ -3,7 +3,6 @@ use iced::{Element, Length};
 
 use super::components::section_label;
 use super::ExportDialog;
-use crate::theme::TEXT_SECONDARY;
 
 pub fn jpeg_options(dialog: &ExportDialog) -> Element<'static, super::Msg> {
     Column::new()

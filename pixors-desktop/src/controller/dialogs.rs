@@ -62,7 +62,7 @@ impl App {
                                     ),
                                 ))
                             }
-                            pixors_image::codec::EncoderConfig::Jpeg(jpeg_cfg) => {
+                            pixors_image::codec::EncoderConfig::Jpeg(_jpeg_cfg) => {
                                 pixors_engine::stage::Stage::Consumer(Box::new(
                                     pixors_image::sink::jpeg_encoder::JpegEncoderStage::new(
                                         save_path.clone(), &config,

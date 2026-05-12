@@ -1,4 +1,4 @@
-use crate::util::{lock_or_recover, read_or_recover, write_or_recover};
+use crate::util::{read_or_recover, write_or_recover};
 use std::sync::{Arc, Mutex, RwLock};
 
 use iced::keyboard;

@@ -8,7 +8,6 @@ use pixors_engine::stage::Stage;
 
 use crate::app::App;
 use crate::panel::filter as filters_panel;
-use crate::viewport::tile_cache_sink::TileCacheSink;
 
 impl App {
     pub(crate) fn handle_filters_msg(&mut self, m: filters_panel::Msg) {
@@ -280,7 +279,7 @@ impl App {
             return;
         };
         let session_id = tab.id;
-        let generation = tab.transient.redraw_seq.wrapping_add(1);
+        let _generation = tab.transient.redraw_seq.wrapping_add(1);
 
         let (mip, range) = self
             .viewport_tabs

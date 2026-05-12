@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-use pixors_engine::common::pixel::meta::PixelMeta;
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;

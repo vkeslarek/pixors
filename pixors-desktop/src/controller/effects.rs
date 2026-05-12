@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use crate::app::App;
 use crate::effect::Effect;

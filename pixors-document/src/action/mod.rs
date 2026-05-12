@@ -13,19 +13,8 @@ use crate::document::Operation;
 use crate::mutation::Mutation;
 use crate::{EditorState, SessionId};
 
-pub struct TabDispatcher {
-    pub locked: bool,
-}
-
-impl TabDispatcher {
-    fn new() -> Self {
-        Self { locked: false }
-    }
-}
-
 pub struct Dispatcher {
     pub event_tx: broadcast::Sender<PipelineEvent>,
-    pub tabs: HashMap<SessionId, TabDispatcher>,
     background_tasks: HashMap<SessionId, PipelineHandle>,
 }
 
@@ -33,13 +22,8 @@ impl Dispatcher {
     pub fn new(event_tx: broadcast::Sender<PipelineEvent>) -> Self {
         Self {
             event_tx,
-            tabs: HashMap::new(),
             background_tasks: HashMap::new(),
         }
-    }
-
-    fn tab_disp(&mut self, id: SessionId) -> &mut TabDispatcher {
-        self.tabs.entry(id).or_insert_with(TabDispatcher::new)
     }
 
     pub fn run_graph(
@@ -79,25 +63,17 @@ impl Dispatcher {
         Ok(())
     }
 
-    pub fn on_pipeline_done(&mut self, state: &mut EditorState, session_id: SessionId) {
-        if let Some(td) = self.tabs.get_mut(&session_id) {
-            td.locked = false;
-        }
-    }
+    pub fn on_pipeline_done(&mut self, _state: &mut EditorState, _session_id: SessionId) {}
 
     pub fn on_pipeline_error(
         &mut self,
-        state: &mut EditorState,
-        session_id: SessionId,
+        _state: &mut EditorState,
+        _session_id: SessionId,
         _error: String,
     ) {
-        if let Some(td) = self.tabs.get_mut(&session_id) {
-            td.locked = false;
-        }
     }
 
     pub fn cleanup_tab(&mut self, id: SessionId) {
-        self.tabs.remove(&id);
         self.background_tasks.remove(&id);
     }
 
@@ -116,9 +92,6 @@ impl Dispatcher {
             }
             still_running
         });
-        for tab in &mut self.tabs.values_mut() {
-            tab.locked = false;
-        }
     }
 
     pub fn commit(
@@ -127,7 +100,9 @@ impl Dispatcher {
         state: &mut EditorState,
     ) -> Result<(), String> {
         let session_id = mutation.target_session();
-        let session = state.session_mut(session_id).ok_or("session not found")?;
+        let session = state
+            .session_mut(session_id)
+            .ok_or("session not found")?;
 
         if mutation.recordable() {
             session
