@@ -25,7 +25,7 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
     };
     match msg {
         Msg::Close => vec![Effect::TogglePane(crate::app::PaneKind::Layers)],
-        Msg::Select(id) => vec![Effect::Dispatch(std::sync::Arc::new(
+        Msg::Select(id) => vec![Effect::DispatchAction(std::sync::Arc::new(
             pixors_document::action::actions::select_layer::SelectLayer {
                 tab: session_id,
                 layer: id,
@@ -39,7 +39,7 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
                 .map(|l| l.visible)
                 .unwrap_or(true);
             vec![
-                Effect::Dispatch(std::sync::Arc::new(
+                Effect::Commit(std::sync::Arc::new(
                     pixors_document::mutation::impls::SetLayerVisible {
                         tab: session_id,
                         layer: id,
@@ -58,7 +58,7 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
                 .map(|l| l.blend.opacity)
                 .unwrap_or(1.0);
             vec![
-                Effect::Dispatch(std::sync::Arc::new(
+                Effect::Commit(std::sync::Arc::new(
                     pixors_document::mutation::impls::SetLayerOpacity {
                         tab: session_id,
                         layer: id,

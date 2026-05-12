@@ -2,12 +2,12 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::document::Document;
-use crate::mutation::DocumentMutation;
+use crate::mutation::Mutation;
 
 /// Mutation-based undo/redo history.
 #[derive(Default)]
 pub struct History {
-    mutations: Vec<Arc<dyn DocumentMutation>>,
+    mutations: Vec<Arc<dyn Mutation>>,
     cursor: usize,
 }
 
@@ -28,7 +28,7 @@ impl History {
         }
     }
 
-    pub fn push(&mut self, mutation: Arc<dyn DocumentMutation>, doc: &mut Document) {
+    pub fn push(&mut self, mutation: Arc<dyn Mutation>, doc: &mut Document) {
         self.mutations.truncate(self.cursor);
         mutation.apply(doc);
         self.mutations.push(mutation);

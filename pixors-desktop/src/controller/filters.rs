@@ -53,14 +53,15 @@ impl App {
             filters_panel::Msg::CommitBlur(v) => {
                 self.blur_preview_radius = None;
                 let radius = v;
-                let action = self.state.active_session_mut().and_then(|tab| {
+                let mutation = self.state.active_session_mut().and_then(|tab| {
                     let session_id = tab.id;
                     let layer_id = tab.transient.active_node?;
                     let layer = tab.document.layers.iter().find(|l| l.id == layer_id)?;
-                    let a: Arc<dyn pixors_document::action::Action> = if let Some(existing) = layer
-                        .transforms
-                        .iter()
-                        .find(|t| matches!(t.op, pixors_document::Operation::Blur { .. }))
+                    let m: Arc<dyn pixors_document::mutation::Mutation> = if let Some(existing) =
+                        layer
+                            .transforms
+                            .iter()
+                            .find(|t| matches!(t.op, pixors_document::Operation::Blur { .. }))
                     {
                         Arc::new(pixors_document::mutation::impls::UpdateTransformOp {
                             tab: session_id,
@@ -88,12 +89,12 @@ impl App {
                             },
                         })
                     };
-                    Some(a)
+                    Some(m)
                 });
-                if let Some(a) = action {
-                    let session_id = a.target_tab();
-                    let _ = self.dispatcher.dispatch(a, &mut self.state);
-                    if let Some(tid) = session_id {
+                if let Some(m) = mutation {
+                    let session_id = m.target_session();
+                    let _ = self.dispatcher.commit(m, &mut self.state);
+                    if let Some(tid) = Some(session_id) {
                         // Cancel any in-flight preview pipeline and drop overlay tiles —
                         // otherwise stale preview overlay masks subsequent base updates
                         // (e.g. opacity slider) since cache.get() prefers overlay over base.
@@ -201,6 +202,74 @@ impl App {
             &Operation::Blur {
                 radius: radius as f32,
             },
+        );
+
+        let _ = self.dispatcher.run_graph(graph, Some(session_id));
+    }
+
+    pub(crate) fn run_blur_preview_generic(
+        &mut self,
+        session_id: SessionId,
+        op: &Operation,
+        generation: u64,
+        mip: u32,
+        range: TileRange,
+    ) {
+        let (img_w, img_h, cache_dir, active_layer, df, dcs, wf, wcs, disk_caches) = self
+            .state
+            .session(session_id)
+            .and_then(|t| {
+                Some((
+                    t.document.canvas.width,
+                    t.document.canvas.height,
+                    t.transient.cache_dir.clone(),
+                    t.transient.active_node?,
+                    t.display_format,
+                    t.display_color_space,
+                    t.working_format,
+                    t.working_color_space,
+                    t.transient.disk_caches.clone(),
+                ))
+            })
+            .unwrap_or((
+                1,
+                1,
+                PathBuf::new(),
+                NodeId(0),
+                pixors_engine::common::pixel::PixelFormat::Rgba8,
+                pixors_engine::common::color::space::ColorSpace::SRGB,
+                pixors_engine::common::pixel::PixelFormat::RgbaF16,
+                pixors_engine::common::color::space::ColorSpace::ACES_CG,
+                Default::default(),
+            ));
+
+        let config = CompileConfig {
+            disk_caches: disk_caches.clone(),
+            cache_dir,
+            display_format: df,
+            display_color_space: dcs,
+            working_format: wf,
+            working_color_space: wcs,
+            tile_size: TILE_SIZE,
+            img_w,
+            img_h,
+        };
+
+        let req = RenderRequest {
+            viewport: range,
+            mip_level: mip,
+            up_to: None,
+        };
+
+        let graph = compile_preview(
+            &self.state.session(session_id).unwrap().document,
+            &req,
+            &config,
+            Stage::Consumer(Box::new(
+                self.make_tile_cache_sink(session_id, generation, 0),
+            )),
+            active_layer,
+            op,
         );
 
         let _ = self.dispatcher.run_graph(graph, Some(session_id));

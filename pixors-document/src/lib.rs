@@ -14,7 +14,7 @@ pub use document::{
 };
 pub use editor::EditorState;
 pub use history::History;
-pub use mutation::{DocumentMutation, impls};
+pub use mutation::{Mutation, impls};
 pub use session::{Session, Transient, ViewState};
 pub use tab::SessionId;
 

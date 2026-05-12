@@ -11,6 +11,8 @@ use pixors_engine::runtime::event::PipelineEvent;
 use pixors_engine::runtime::pipeline::{Pipeline, PipelineHandle};
 use tokio::sync::broadcast;
 
+use crate::document::Operation;
+use crate::mutation::Mutation;
 use crate::{EditorState, SessionId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,5 +297,30 @@ impl Dispatcher {
         for tab in &mut self.tabs.values_mut() {
             tab.locked = false;
         }
+    }
+
+    /// Commit a mutation: apply to Document, record in history, trigger recompile.
+    pub fn commit(
+        &mut self,
+        mutation: Arc<dyn Mutation>,
+        state: &mut EditorState,
+    ) -> Result<(), String> {
+        let session_id = mutation.target_session();
+        let session = state.session_mut(session_id).ok_or("session not found")?;
+
+        if mutation.recordable() {
+            session
+                .history
+                .push(mutation.clone(), &mut session.document);
+        }
+        session.transient.redraw_seq += 1;
+
+        Ok(())
+    }
+
+    /// Run a live preview for a mutation (slider drag, etc).
+    /// Returns None if the mutation has no preview_op.
+    pub fn preview_op(&self, mutation: &dyn Mutation) -> Option<Operation> {
+        mutation.preview_op()
     }
 }

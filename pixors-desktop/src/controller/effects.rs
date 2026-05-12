@@ -2,12 +2,62 @@ use std::sync::Arc;
 
 use crate::app::App;
 use crate::effect::Effect;
+use pixors_document::TILE_SIZE;
 
 impl App {
     pub(crate) fn execute_effects(&mut self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
-                Effect::Dispatch(action) => {
+                Effect::Commit(mutation) => {
+                    let session_id = mutation.target_session();
+                    let needs_recompile = mutation.needs_recompile();
+                    if let Err(e) = self.dispatcher.commit(mutation, &mut self.state) {
+                        self.push_error(e);
+                    }
+                    if needs_recompile {
+                        self.recomposite_current_view(session_id);
+                    }
+                }
+                Effect::Preview(mutation) => {
+                    let session_id = mutation.target_session();
+                    let Some(op) = self.dispatcher.preview_op(mutation.as_ref()) else {
+                        continue;
+                    };
+                    self.dispatcher.cancel_background(session_id);
+                    if let Some(tab) = self.state.session_mut(session_id) {
+                        tab.transient.redraw_seq = tab.transient.redraw_seq.wrapping_add(1);
+                    }
+                    let generation = self
+                        .state
+                        .session(session_id)
+                        .map(|t| t.transient.redraw_seq)
+                        .unwrap_or(0);
+                    if let Some(cache) = self.viewport_tabs.get(&session_id).map(|vt| &vt.cache)
+                        && let Ok(mut guard) = cache.lock()
+                    {
+                        guard.active_generation = generation;
+                    }
+                    let (mip, range) = self
+                        .viewport_tabs
+                        .get(&session_id)
+                        .and_then(|vt| vt.state.read().ok())
+                        .map(|vs| {
+                            let m = vs.current_mip;
+                            let r = vs.camera.padded_tile_range(m, TILE_SIZE, 3);
+                            (m, r)
+                        })
+                        .unwrap_or((
+                            0,
+                            pixors_engine::cache::cache_reader::TileRange {
+                                tx_start: 0,
+                                tx_end: 0,
+                                ty_start: 0,
+                                ty_end: 0,
+                            },
+                        ));
+                    self.run_blur_preview_generic(session_id, &op, generation, mip, range);
+                }
+                Effect::DispatchAction(action) => {
                     if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {
                         self.push_error(e);
                     }
@@ -33,55 +83,8 @@ impl App {
                         guard.clear_generation(generation);
                     }
                 }
-                Effect::ShowFilterSearch => {
-                    self.show_filter_search = true;
-                }
+                Effect::ShowFilterSearch => self.show_filter_search = true,
                 Effect::TogglePane(kind) => self.toggle_pane(kind),
-                Effect::ToggleTransformEnabled {
-                    session_id,
-                    layer_id,
-                    transform_id,
-                    enabled,
-                } => {
-                    if let Some(tab) = self.state.session(session_id)
-                        && let Some(layer) = tab.document.find_layer(layer_id)
-                        && let Some(t) = layer.transforms.iter().find(|t| t.id == transform_id)
-                    {
-                        let _ = self.dispatcher.dispatch(
-                            Arc::new(pixors_document::mutation::impls::SetTransformEnabled {
-                                tab: session_id,
-                                layer: layer_id,
-                                transform_id: t.id,
-                                before: t.enabled,
-                                after: enabled,
-                            }),
-                            &mut self.state,
-                        );
-                    }
-                }
-                Effect::ReorderTransforms {
-                    session_id,
-                    layer_id,
-                    from,
-                    to,
-                } => {
-                    if let Some(tab) = self.state.session(session_id)
-                        && let Some(_layer) = tab.document.find_layer(layer_id)
-                        && from < _layer.transforms.len()
-                        && to < _layer.transforms.len()
-                    {
-                        let _ = self.dispatcher.dispatch(
-                            Arc::new(pixors_document::mutation::impls::ReorderTransform {
-                                tab: session_id,
-                                layer: layer_id,
-                                from,
-                                to,
-                            }),
-                            &mut self.state,
-                        );
-                        self.recomposite_current_view(session_id);
-                    }
-                }
                 Effect::PushError(msg) => self.push_error(msg),
                 Effect::None => {}
             }

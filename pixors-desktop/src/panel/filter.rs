@@ -106,12 +106,15 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
             };
             if let Some(t) = ctx.transforms.iter().find(|t| t.id == transform_id) {
                 vec![
-                    Effect::ToggleTransformEnabled {
-                        session_id: ctx.session_id,
-                        layer_id,
-                        transform_id: t.id,
-                        enabled: !t.enabled,
-                    },
+                    Effect::Commit(std::sync::Arc::new(
+                        pixors_document::mutation::impls::SetTransformEnabled {
+                            tab: ctx.session_id,
+                            layer: layer_id,
+                            transform_id: t.id,
+                            before: t.enabled,
+                            after: !t.enabled,
+                        },
+                    )),
                     Effect::QueueDisplayRefresh(ctx.session_id),
                 ]
             } else {
@@ -130,7 +133,7 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
                 .map(|(i, t)| (i, t.clone()))
             {
                 vec![
-                    Effect::Dispatch(std::sync::Arc::new(
+                    Effect::Commit(std::sync::Arc::new(
                         pixors_document::mutation::impls::RemoveTransform {
                             tab: ctx.session_id,
                             layer: layer_id,
@@ -161,12 +164,14 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
             if from >= ctx.transforms.len() || to >= ctx.transforms.len() {
                 return vec![];
             }
-            vec![Effect::ReorderTransforms {
-                session_id: ctx.session_id,
-                layer_id,
-                from,
-                to,
-            }]
+            vec![Effect::Commit(std::sync::Arc::new(
+                pixors_document::mutation::impls::ReorderTransform {
+                    tab: ctx.session_id,
+                    layer: layer_id,
+                    from,
+                    to,
+                },
+            ))]
         }
         // State-only messages handled by FilterPanelState::update()
         Msg::ToggleExpand(_) | Msg::DragStart(_) | Msg::DragHover(_) | Msg::NoOp => vec![],

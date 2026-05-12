@@ -101,7 +101,7 @@ impl App {
                         .session_mut(session_id)
                         .map(|t| t.document.alloc_node_id())
                         .unwrap_or(pixors_document::NodeId(0));
-                    let _ = self.dispatcher.dispatch(
+                    let _ = self.dispatcher.commit(
                         Arc::new(pixors_document::mutation::impls::AddTransform {
                             tab: session_id,
                             layer: layer_id,

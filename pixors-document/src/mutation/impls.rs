@@ -2,42 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use pixors_image::image::BlendMode;
 
-use crate::action::{Action, PipelineStatus, PreparedAction};
+use crate::SessionId;
 use crate::document::transform::{Operation, Transform};
 use crate::document::{Document, LayerNode, NodeId};
-use crate::{EditorState, SessionId};
 
-use super::DocumentMutation;
+use super::Mutation;
 
-// ── Dual-trait helper macro ───────────────────────────────────────────
-//
-// Generates `impl Action for T` for a DocumentMutation.
-// Uses: impl_document_action!(T, tab_field);
-macro_rules! impl_document_action {
-    ($ty:ty, $tab_field:ident) => {
-        impl Action for $ty {
-            fn target_tab(&self) -> Option<SessionId> {
-                Some(self.$tab_field)
-            }
-            fn prepare(&self, _: &mut EditorState) -> Result<PreparedAction, String> {
-                Ok(PreparedAction::StateOnly)
-            }
-            fn apply(&self, state: &mut EditorState, _: PipelineStatus) {
-                if let Some(s) = state.session_mut(self.$tab_field) {
-                    s.history
-                        .push(std::sync::Arc::new(self.clone()), &mut s.document);
-                    s.transient.redraw_seq += 1;
-                }
-            }
-            // Undo for document mutations is driven by UndoAction → History::undo,
-            // not by Action::undo. This path should never be called directly.
-            fn undo(&self, _: &mut EditorState) {}
-            fn record_in_history(&self) -> bool {
-                false
-            }
-        }
-    };
-}
 // ── SetLayerName ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +18,13 @@ pub struct SetLayerName {
     pub after: String,
 }
 #[typetag::serde]
-impl DocumentMutation for SetLayerName {
+impl Mutation for SetLayerName {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Rename Layer"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
             l.name = self.after.clone();
@@ -59,11 +35,9 @@ impl DocumentMutation for SetLayerName {
             l.name = self.before.clone();
         }
     }
-    fn label(&self) -> &str {
-        "Rename Layer"
-    }
 }
-impl_document_action!(SetLayerName, tab);
+
+// ── SetLayerVisible ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerVisible {
@@ -73,7 +47,17 @@ pub struct SetLayerVisible {
     pub after: bool,
 }
 #[typetag::serde]
-impl DocumentMutation for SetLayerVisible {
+impl Mutation for SetLayerVisible {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        if self.after {
+            "Show Layer"
+        } else {
+            "Hide Layer"
+        }
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
             l.visible = self.after;
@@ -84,16 +68,13 @@ impl DocumentMutation for SetLayerVisible {
             l.visible = self.before;
         }
     }
-    fn label(&self) -> &str {
-        if self.after {
-            "Show Layer"
-        } else {
-            "Hide Layer"
-        }
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(SetLayerVisible, tab);
-// SetLayerOpacity
+
+// ── SetLayerOpacity ───────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerOpacity {
     pub tab: SessionId,
@@ -102,7 +83,13 @@ pub struct SetLayerOpacity {
     pub after: f32,
 }
 #[typetag::serde]
-impl DocumentMutation for SetLayerOpacity {
+impl Mutation for SetLayerOpacity {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Set Opacity"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
             l.blend.opacity = self.after;
@@ -113,12 +100,13 @@ impl DocumentMutation for SetLayerOpacity {
             l.blend.opacity = self.before;
         }
     }
-    fn label(&self) -> &str {
-        "Set Opacity"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(SetLayerOpacity, tab);
-// SetLayerBlend
+
+// ── SetLayerBlend ─────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetLayerBlend {
     pub tab: SessionId,
@@ -127,7 +115,13 @@ pub struct SetLayerBlend {
     pub after: BlendMode,
 }
 #[typetag::serde]
-impl DocumentMutation for SetLayerBlend {
+impl Mutation for SetLayerBlend {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Set Blend Mode"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
             l.blend.mode = self.after;
@@ -138,12 +132,13 @@ impl DocumentMutation for SetLayerBlend {
             l.blend.mode = self.before;
         }
     }
-    fn label(&self) -> &str {
-        "Set Blend Mode"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(SetLayerBlend, tab);
-// AddLayer
+
+// ── AddLayer ──────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddLayer {
     pub tab: SessionId,
@@ -151,7 +146,13 @@ pub struct AddLayer {
     pub layer: LayerNode,
 }
 #[typetag::serde]
-impl DocumentMutation for AddLayer {
+impl Mutation for AddLayer {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Add Layer"
+    }
     fn apply(&self, doc: &mut Document) {
         let idx = self.at_index.min(doc.layers.len());
         doc.layers.insert(idx, self.layer.clone());
@@ -161,12 +162,13 @@ impl DocumentMutation for AddLayer {
             doc.layers.remove(self.at_index);
         }
     }
-    fn label(&self) -> &str {
-        "Add Layer"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(AddLayer, tab);
-// RemoveLayer
+
+// ── RemoveLayer ───────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveLayer {
     pub tab: SessionId,
@@ -174,7 +176,13 @@ pub struct RemoveLayer {
     pub layer: LayerNode,
 }
 #[typetag::serde]
-impl DocumentMutation for RemoveLayer {
+impl Mutation for RemoveLayer {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Remove Layer"
+    }
     fn apply(&self, doc: &mut Document) {
         if self.index < doc.layers.len() {
             doc.layers.remove(self.index);
@@ -184,12 +192,13 @@ impl DocumentMutation for RemoveLayer {
         let idx = self.index.min(doc.layers.len());
         doc.layers.insert(idx, self.layer.clone());
     }
-    fn label(&self) -> &str {
-        "Remove Layer"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(RemoveLayer, tab);
-// SwapLayers
+
+// ── SwapLayers ────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwapLayers {
     pub tab: SessionId,
@@ -197,19 +206,26 @@ pub struct SwapLayers {
     pub index_b: usize,
 }
 #[typetag::serde]
-impl DocumentMutation for SwapLayers {
+impl Mutation for SwapLayers {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Reorder Layers"
+    }
     fn apply(&self, doc: &mut Document) {
         doc.layers.swap(self.index_a, self.index_b);
     }
     fn undo(&self, doc: &mut Document) {
         doc.layers.swap(self.index_a, self.index_b);
     }
-    fn label(&self) -> &str {
-        "Reorder Layers"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(SwapLayers, tab);
-// AddTransform
+
+// ── AddTransform ──────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddTransform {
     pub tab: SessionId,
@@ -217,7 +233,13 @@ pub struct AddTransform {
     pub transform: Transform,
 }
 #[typetag::serde]
-impl DocumentMutation for AddTransform {
+impl Mutation for AddTransform {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Add Transform"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer) {
             l.transforms.push(self.transform.clone());
@@ -228,12 +250,16 @@ impl DocumentMutation for AddTransform {
             l.transforms.retain(|t| t.id != self.transform.id);
         }
     }
-    fn label(&self) -> &str {
-        "Add Transform"
+    fn preview_op(&self) -> Option<Operation> {
+        Some(self.transform.op.clone())
+    }
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(AddTransform, tab);
-// RemoveTransform
+
+// ── RemoveTransform ───────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveTransform {
     pub tab: SessionId,
@@ -243,7 +269,13 @@ pub struct RemoveTransform {
     pub index: usize,
 }
 #[typetag::serde]
-impl DocumentMutation for RemoveTransform {
+impl Mutation for RemoveTransform {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Remove Transform"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer)
             && let Some(i) = l.transforms.iter().position(|t| t.id == self.transform_id)
@@ -257,12 +289,13 @@ impl DocumentMutation for RemoveTransform {
             l.transforms.insert(idx, self.removed.clone());
         }
     }
-    fn label(&self) -> &str {
-        "Remove Transform"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(RemoveTransform, tab);
-// UpdateTransformOp
+
+// ── UpdateTransformOp ─────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateTransformOp {
     pub tab: SessionId,
@@ -272,7 +305,13 @@ pub struct UpdateTransformOp {
     pub after: Operation,
 }
 #[typetag::serde]
-impl DocumentMutation for UpdateTransformOp {
+impl Mutation for UpdateTransformOp {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Update Transform"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer)
             && let Some(t) = l.transforms.iter_mut().find(|t| t.id == self.transform_id)
@@ -287,13 +326,16 @@ impl DocumentMutation for UpdateTransformOp {
             t.op = self.before.clone();
         }
     }
-    fn label(&self) -> &str {
-        "Update Transform"
+    fn preview_op(&self) -> Option<Operation> {
+        Some(self.after.clone())
+    }
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(UpdateTransformOp, tab);
 
-// SetTransformEnabled
+// ── SetTransformEnabled ───────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetTransformEnabled {
     pub tab: SessionId,
@@ -303,7 +345,17 @@ pub struct SetTransformEnabled {
     pub after: bool,
 }
 #[typetag::serde]
-impl DocumentMutation for SetTransformEnabled {
+impl Mutation for SetTransformEnabled {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        if self.after {
+            "Enable Filter"
+        } else {
+            "Disable Filter"
+        }
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer)
             && let Some(t) = l.transforms.iter_mut().find(|t| t.id == self.transform_id)
@@ -318,17 +370,13 @@ impl DocumentMutation for SetTransformEnabled {
             t.enabled = self.before;
         }
     }
-    fn label(&self) -> &str {
-        if self.after {
-            "Enable Filter"
-        } else {
-            "Disable Filter"
-        }
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(SetTransformEnabled, tab);
 
-// ReorderTransform
+// ── ReorderTransform ──────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReorderTransform {
     pub tab: SessionId,
@@ -337,7 +385,13 @@ pub struct ReorderTransform {
     pub to: usize,
 }
 #[typetag::serde]
-impl DocumentMutation for ReorderTransform {
+impl Mutation for ReorderTransform {
+    fn target_session(&self) -> SessionId {
+        self.tab
+    }
+    fn label(&self) -> &str {
+        "Reorder Filter"
+    }
     fn apply(&self, doc: &mut Document) {
         if let Some(l) = doc.find_layer_mut(self.layer)
             && self.from < l.transforms.len()
@@ -357,8 +411,7 @@ impl DocumentMutation for ReorderTransform {
             l.transforms.insert(self.from, t);
         }
     }
-    fn label(&self) -> &str {
-        "Reorder Filter"
+    fn needs_recompile(&self) -> bool {
+        true
     }
 }
-impl_document_action!(ReorderTransform, tab);
