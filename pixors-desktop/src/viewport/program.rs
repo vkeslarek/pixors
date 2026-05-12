@@ -128,25 +128,6 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
 
         let old_mip = state.current_mip;
 
-        if let Some(ref cache) = self.cache
-            && let Ok(mut guard) = cache.lock()
-            && let Some((img_w, img_h)) = guard.take_new_img()
-        {
-            state.camera.img_w = img_w as f32;
-            state.camera.img_h = img_h as f32;
-            state.camera.fit();
-            state.current_mip = state.camera.visible_mip_level();
-            tracing::info!(
-                "[viewport] new_img: img={}x{} vp={}x{} zoom={:.4} mip={}",
-                img_w,
-                img_h,
-                state.camera.vp_w,
-                state.camera.vp_h,
-                state.camera.zoom,
-                state.current_mip,
-            );
-        }
-
         let bounds_tuple = (bounds.width, bounds.height);
         if state.last_bounds != Some(bounds_tuple) {
             state.camera.resize(bounds_tuple.0, bounds_tuple.1);
