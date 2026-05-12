@@ -7,12 +7,11 @@ impl App {
     pub(crate) fn handle_tab_bar(&mut self, m: tab_bar::Msg) {
         match m {
             tab_bar::Msg::Select(id) => {
-                self.dispatcher.mutate(&mut self.state, |s| s.switch(id));
+                self.state.switch(id);
                 self.update_status_from_active_tab();
             }
             tab_bar::Msg::Close(id) => {
                 self.viewport_tabs.remove(&id);
-                crate::viewport::tile_cache_sink::unregister_tile_cache(id.0);
 
                 if let Err(e) = self.dispatcher.dispatch(
                     Arc::new(pixors_document::action::actions::close_tab::CloseTab(id)),

@@ -247,19 +247,9 @@ impl Dispatcher {
     pub fn run_graph(
         &mut self,
         graph: ExecGraph,
-        mode: PipelineMode,
         session_id: Option<SessionId>,
     ) -> Result<(), String> {
-        let is_apply = mode == PipelineMode::Apply;
         let tag = session_id.map(|t| t.0).unwrap_or(0);
-
-        if is_apply && let Some(tid) = session_id {
-            let td = self.tab_disp(tid);
-            if td.locked {
-                return Err("Pipeline running on tab, please wait".to_string());
-            }
-            td.locked = true;
-        }
 
         let cancelled = Arc::new(AtomicBool::new(false));
         let (event_tx, event_rx) = sync_channel::<PipelineEvent>(64);
@@ -284,18 +274,11 @@ impl Dispatcher {
 
         let handle = pipeline.run(Some(event_tx));
 
-        if !is_apply && let Some(tid) = session_id {
+        if let Some(tid) = session_id {
             self.background_tasks.insert(tid, handle);
         }
 
         Ok(())
-    }
-
-    pub fn mutate<F>(&mut self, state: &mut EditorState, f: F)
-    where
-        F: FnOnce(&mut EditorState),
-    {
-        f(state);
     }
 
     pub fn resync_locks(&mut self, state: &mut EditorState) {

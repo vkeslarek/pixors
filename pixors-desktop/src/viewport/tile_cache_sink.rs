@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
-
-use parking_lot::RwLock;
+use std::fmt;
+use std::sync::Arc;
 
 use pixors_engine::data::buffer::Buffer;
 use pixors_engine::error::Error;
@@ -9,37 +7,7 @@ use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
 pub type CacheCommitFn =
-    Box<dyn Fn(u64, u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
-
-static CACHE_ROUTER: LazyLock<RwLock<Option<HashMap<u64, Arc<CacheCommitFn>>>>> =
-    LazyLock::new(|| RwLock::new(None));
-
-pub fn install_router() {
-    let mut w = CACHE_ROUTER.write();
-    if w.is_none() {
-        *w = Some(HashMap::new());
-    }
-}
-
-pub fn register_tile_cache(key: u64, f: CacheCommitFn) {
-    CACHE_ROUTER
-        .write()
-        .get_or_insert_with(HashMap::new)
-        .insert(key, Arc::new(f));
-}
-
-pub fn unregister_tile_cache(key: u64) {
-    if let Some(ref mut map) = *CACHE_ROUTER.write() {
-        map.remove(&key);
-    }
-}
-
-fn lookup_cb(key: u64) -> Option<Arc<CacheCommitFn>> {
-    CACHE_ROUTER
-        .read()
-        .as_ref()
-        .and_then(|m| m.get(&key).cloned())
-}
+    Arc<dyn Fn(u64, u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
 static VCS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
@@ -49,22 +17,27 @@ static VCS_IN_PORTS: InPortSpecification = InPortSpecification {
     ports: PortGroup::Fixed(VCS_INPUTS),
 };
 
-#[derive(Debug, Clone)]
 pub struct TileCacheSink {
-    pub routing_key: u64,
     pub generation: u64,
-    /// Doc version stamp. Used by the cache to drop stale writes from older
-    /// pipelines after the document mutated (e.g. opacity slider). For overlay
-    /// (generation > 0), version is unused.
     pub version: u64,
+    callback: CacheCommitFn,
+}
+
+impl fmt::Debug for TileCacheSink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TileCacheSink")
+            .field("generation", &self.generation)
+            .field("version", &self.version)
+            .finish()
+    }
 }
 
 impl TileCacheSink {
-    pub fn new(routing_key: u64, generation: u64, version: u64) -> Self {
+    pub fn new(generation: u64, version: u64, callback: CacheCommitFn) -> Self {
         Self {
-            routing_key,
             generation,
             version,
+            callback,
         }
     }
 }
@@ -78,14 +51,12 @@ impl Consumer for TileCacheSink {
     }
 
     fn consume(&mut self, item: Item) -> Result<(), Error> {
-        let cb = lookup_cb(self.routing_key)
-            .ok_or_else(|| Error::internal("tile cache not registered"))?;
         let tile = pixors_engine::stage::ProcessorContext::take_tile(item)?;
         let data = match &tile.data {
             Buffer::Cpu(v) => v.as_slice(),
             Buffer::Gpu(_) => return Err(Error::internal("TileCacheSink requires CPU tiles")),
         };
-        (cb)(
+        (self.callback)(
             self.generation,
             self.version,
             tile.coord.mip_level,

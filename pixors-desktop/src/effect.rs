@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pixors_document::action::PipelineMode;
 use pixors_document::{NodeId, SessionId};
 use pixors_engine::graph::graph::ExecGraph;
 
@@ -11,10 +10,9 @@ use crate::app::PaneKind;
 pub enum Effect {
     /// Dispatch an action through the dispatcher.
     Dispatch(Arc<dyn pixors_document::action::Action>),
-    /// Run a pipeline graph (background or foreground).
+    /// Run a background pipeline graph (viewport, preview, etc.).
     RunGraph {
         graph: ExecGraph,
-        mode: PipelineMode,
         session_id: Option<SessionId>,
     },
     /// Cancel in-flight background pipeline and re-request display tiles.

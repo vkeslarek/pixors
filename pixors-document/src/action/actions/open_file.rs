@@ -1,7 +1,6 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use pixors_engine::cache::cache_writer::CacheWriter;
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::graph::graph::{EdgePorts, ExecGraph};

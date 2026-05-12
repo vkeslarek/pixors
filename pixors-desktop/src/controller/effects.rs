@@ -12,12 +12,8 @@ impl App {
                         self.push_error(e);
                     }
                 }
-                Effect::RunGraph {
-                    graph,
-                    mode,
-                    session_id,
-                } => {
-                    let _ = self.dispatcher.run_graph(graph, mode, session_id);
+                Effect::RunGraph { graph, session_id } => {
+                    let _ = self.dispatcher.run_graph(graph, session_id);
                 }
                 Effect::QueueDisplayRefresh(session_id) => {
                     self.recomposite_current_view(session_id);

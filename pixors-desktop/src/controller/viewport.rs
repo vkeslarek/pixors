@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pixors_document::action::PipelineMode;
 use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile};
 use pixors_document::{SessionId, TILE_SIZE};
 use pixors_engine::cache::cache_reader::TileRange;
@@ -9,10 +8,9 @@ use pixors_engine::stage::Stage;
 
 use crate::app::App;
 use crate::viewport::tile_cache::CachedTile;
-use crate::viewport::tile_cache_sink::{TileCacheSink, register_tile_cache};
+use crate::viewport::tile_cache_sink::TileCacheSink;
 
 impl App {
-    /// Create viewport state for a newly opened tab and trigger initial MipFetch.
     pub(crate) fn init_viewport_for_tab(&mut self, session_id: SessionId) {
         let Some(tab) = self.state.session(session_id) else {
             return;
@@ -23,40 +21,8 @@ impl App {
         let vtab = crate::viewport::tab_state::ViewportTab::new();
         vtab.init_for_image(img_w, img_h);
 
-        // Register sink callback (pipeline → RAM cache).
-        {
-            let cache = vtab.cache.clone();
-            register_tile_cache(
-                session_id.0,
-                Box::new(
-                    move |generation, version, mip, tx, ty, px, py, tw, th, bytes| {
-                        if let Ok(mut guard) = cache.lock() {
-                            guard.insert(
-                                generation,
-                                version,
-                                TileGridPos {
-                                    mip_level: mip,
-                                    tx,
-                                    ty,
-                                },
-                                CachedTile {
-                                    px,
-                                    py,
-                                    width: tw,
-                                    height: th,
-                                    bytes: Arc::new(bytes.to_vec()),
-                                    layer: generation,
-                                },
-                            );
-                        }
-                    },
-                ),
-            );
-        }
-
         self.viewport_tabs.insert(session_id, vtab);
 
-        // Trigger full mip-0 fetch so tiles appear immediately.
         let ntx = img_w.div_ceil(TILE_SIZE);
         let nty = img_h.div_ceil(TILE_SIZE);
         let full_range = TileRange {
@@ -66,6 +32,46 @@ impl App {
             ty_end: nty,
         };
         self.run_mip_fetch(session_id, 0, full_range);
+    }
+
+    pub(crate) fn make_tile_cache_sink(
+        &self,
+        session_id: SessionId,
+        generation: u64,
+        version: u64,
+    ) -> TileCacheSink {
+        let cache = self
+            .viewport_tabs
+            .get(&session_id)
+            .map(|vt| vt.cache.clone())
+            .expect("viewport tab not found");
+        TileCacheSink::new(
+            generation,
+            version,
+            Arc::new(
+                move |generation, version, mip, tx, ty, px, py, tw, th, bytes| {
+                    if let Ok(mut guard) = cache.lock() {
+                        guard.insert(
+                            generation,
+                            version,
+                            TileGridPos {
+                                mip_level: mip,
+                                tx,
+                                ty,
+                            },
+                            CachedTile {
+                                px,
+                                py,
+                                width: tw,
+                                height: th,
+                                bytes: Arc::new(bytes.to_vec()),
+                                layer: generation,
+                            },
+                        );
+                    }
+                },
+            ),
+        )
     }
 
     pub(crate) fn run_mip_fetch(&mut self, session_id: SessionId, mip: u32, range: TileRange) {
@@ -81,7 +87,6 @@ impl App {
             .collect();
         if visible.is_empty() {
             let version = tab.transient.redraw_seq;
-            // Write transparent tiles so the viewport clears instead of showing stale data.
             let cw = tab.document.canvas.width;
             let ch = tab.document.canvas.height;
             let scale = 1u32 << mip;
@@ -139,11 +144,9 @@ impl App {
             up_to: None,
         };
         let version = tab.transient.redraw_seq;
-        let sink = Stage::Consumer(Box::new(TileCacheSink::new(session_id.0, 0, version)));
+        let sink = Stage::Consumer(Box::new(self.make_tile_cache_sink(session_id, 0, version)));
         let graph = compile(&tab.document, &req, &config, sink);
 
-        let _ = self
-            .dispatcher
-            .run_graph(graph, PipelineMode::Background, Some(session_id));
+        let _ = self.dispatcher.run_graph(graph, Some(session_id));
     }
 }

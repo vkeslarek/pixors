@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use pixors_document::action::PipelineMode;
 use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile_preview};
 use pixors_document::{NodeId, Operation, SessionId, TILE_SIZE};
 use pixors_engine::cache::cache_reader::TileRange;
@@ -195,16 +194,16 @@ impl App {
             &self.state.session(session_id).unwrap().document,
             &req,
             &config,
-            Stage::Consumer(Box::new(TileCacheSink::new(session_id.0, generation, 0))),
+            Stage::Consumer(Box::new(
+                self.make_tile_cache_sink(session_id, generation, 0),
+            )),
             active_layer,
             &Operation::Blur {
                 radius: radius as f32,
             },
         );
 
-        let _ = self
-            .dispatcher
-            .run_graph(graph, PipelineMode::Background, Some(session_id));
+        let _ = self.dispatcher.run_graph(graph, Some(session_id));
     }
 
     fn dispatch_blur_cancel(&mut self) {
