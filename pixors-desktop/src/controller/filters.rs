@@ -77,6 +77,15 @@ impl App {
                     let tab_id = a.target_tab();
                     let _ = self.dispatcher.dispatch(a, &mut self.state);
                     if let Some(tid) = tab_id {
+                        // Cancel any in-flight preview pipeline and drop overlay tiles —
+                        // otherwise stale preview overlay masks subsequent base updates
+                        // (e.g. opacity slider) since cache.get() prefers overlay over base.
+                        self.dispatcher.cancel_background(tid);
+                        if let Some(cache) = self.viewport_tabs.get(&tid).map(|vt| &vt.cache)
+                            && let Ok(mut guard) = cache.lock()
+                        {
+                            guard.clear_generation(u64::MAX);
+                        }
                         self.recomposite_current_view(tid);
                     }
                 }

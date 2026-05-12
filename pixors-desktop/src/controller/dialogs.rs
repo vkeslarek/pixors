@@ -70,6 +70,63 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_ui_showcase(&mut self, m: crate::modal::ui_showcase::Msg) {
+        match m {
+            crate::modal::ui_showcase::Msg::Close => self.show_ui_showcase = false,
+            other => self.ui_showcase.update(other),
+        }
+    }
+
+    pub(crate) fn handle_filter_search(&mut self, m: crate::modal::filter_search::Msg) {
+        match m {
+            crate::modal::filter_search::Msg::Close => self.show_filter_search = false,
+            crate::modal::filter_search::Msg::Apply(idx) => {
+                let op = self
+                    .filter_search
+                    .items
+                    .get(idx)
+                    .map(|item| item.op.clone())
+                    .unwrap_or(pixors_document::Operation::Blur { radius: 5.0 });
+                self.filter_search
+                    .update(crate::modal::filter_search::Msg::Apply(idx));
+                self.show_filter_search = false;
+
+                if let (Some(tab), Some(layer_id)) = (
+                    self.state.active_tab(),
+                    self.state.active_tab().and_then(|t| t.session.active_node),
+                ) {
+                    let tab_id = tab.id;
+                    let new_id = self
+                        .state
+                        .tab_mut(tab_id)
+                        .map(|t| t.document.alloc_node_id())
+                        .unwrap_or(pixors_document::NodeId(0));
+                    let _ = self.dispatcher.dispatch(
+                        Arc::new(pixors_document::mutation::impls::AddTransform {
+                            tab: tab_id,
+                            layer: layer_id,
+                            transform: pixors_document::Transform {
+                                id: new_id,
+                                op,
+                                input: pixors_document::InputScope::Layer,
+                                output: pixors_document::OutputMode::Replace {
+                                    blend: pixors_document::BlendSpec {
+                                        mode: pixors_image::image::BlendMode::Normal,
+                                        opacity: 1.0,
+                                    },
+                                },
+                                enabled: true,
+                            },
+                        }),
+                        &mut self.state,
+                    );
+                    self.recomposite_current_view(tab_id);
+                }
+            }
+            other => self.filter_search.update(other),
+        }
+    }
+
     pub(crate) fn open_file_dialog(&mut self) {
         let path = rfd::FileDialog::new()
             .add_filter("Images", &["png", "tiff", "tif"])
