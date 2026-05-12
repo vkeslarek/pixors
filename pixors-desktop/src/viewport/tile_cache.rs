@@ -40,9 +40,19 @@ impl TileCache {
         }))
     }
 
-    pub fn insert(&mut self, generation: u64, key: TileGridPos, tile: CachedTile) {
+    pub fn insert(&mut self, generation: u64, version: u64, key: TileGridPos, tile: CachedTile) {
         if generation == 0 {
+            // Base writes carry a doc-version stamp. Reject tiles from older
+            // pipelines so a stale recomposite (e.g. behind an opacity drag)
+            // can't overwrite tiles produced by the current document state.
+            if let Some(existing) = self.base.get(&key)
+                && existing.layer > version
+            {
+                return;
+            }
             let is_new = !self.base.contains_key(&key);
+            let mut tile = tile;
+            tile.layer = version;
             self.base.insert(key, tile);
             self.pending.insert(key);
             if is_new {

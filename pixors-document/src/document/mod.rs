@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod cache;
 pub mod canvas;
 pub mod develop;
 pub mod layer;

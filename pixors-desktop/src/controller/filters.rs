@@ -163,7 +163,7 @@ impl App {
             &self.state.tab(tab_id).unwrap().document,
             &req,
             &config,
-            Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, generation))),
+            Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, generation, 0))),
             active_layer,
             &Operation::Blur {
                 radius: radius as f32,

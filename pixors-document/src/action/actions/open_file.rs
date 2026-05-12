@@ -58,8 +58,10 @@ impl Action for OpenFile {
             tracing::info!("[pixors] exif: {:20} = {}", meta.label(), meta.value_str());
         }
 
-        let cache_dir = self.path.with_extension("pixors_cache");
         let tab_id = state.alloc_tab_id();
+        let cache_dir = std::env::temp_dir()
+            .join("pixors")
+            .join(format!("tab_{:016x}", tab_id.0));
 
         // Build document first so we have real NodeIds for cache paths.
         let mut document = Document::new(CanvasInfo {

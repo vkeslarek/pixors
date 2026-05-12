@@ -132,9 +132,7 @@ impl<'a> CompileCtx<'a> {
     }
 
     fn layer_cache_dir(&self, layer_id: NodeId) -> PathBuf {
-        self.config
-            .cache_dir
-            .join(format!("layer_{:016x}", layer_id.0))
+        crate::document::cache::layer_cache_dir(&self.config.cache_dir, layer_id)
     }
 }
 

@@ -49,12 +49,10 @@ impl App {
 
                         let action = Arc::new(pixors_document::action::actions::export::Export {
                             tab: tab_id,
-                            source_path: path.clone(),
                             save_path: save_path.clone(),
                             config: config.clone(),
                             dpi: None,
                             icc_profile: None,
-                            image_height: tab.document.canvas.height,
                         });
 
                         if let Err(e) = self.dispatcher.dispatch(action, &mut self.state) {

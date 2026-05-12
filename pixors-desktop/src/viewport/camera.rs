@@ -76,12 +76,12 @@ impl Camera {
     }
 
     pub fn floor_mip(&self) -> u32 {
-        const MAX_TEX_DIM: u32 = 8192;
+        let max_tex_dim = pixors_engine::gpu::context::max_texture_dim();
         let max_img_dim = self.img_w.max(self.img_h) as u32;
-        if max_img_dim <= MAX_TEX_DIM {
+        if max_img_dim <= max_tex_dim {
             0
         } else {
-            ((max_img_dim as f64 / MAX_TEX_DIM as f64).log2().ceil() as u32)
+            ((max_img_dim as f64 / max_tex_dim as f64).log2().ceil() as u32)
                 .min(compute_max_mip(max_img_dim, max_img_dim))
         }
     }

@@ -31,6 +31,12 @@ pub fn gpu_available() -> bool {
     try_init().is_some()
 }
 
+pub fn max_texture_dim() -> u32 {
+    try_init()
+        .and_then(|ctx| Some(ctx.device().limits().max_texture_dimension_2d))
+        .unwrap_or(8192)
+}
+
 fn init_inner() -> Option<Arc<GpuContext>> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,

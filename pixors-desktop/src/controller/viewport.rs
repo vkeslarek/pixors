@@ -28,26 +28,29 @@ impl App {
             let cache = vtab.cache.clone();
             register_tile_cache(
                 tab_id.0,
-                Box::new(move |generation, mip, tx, ty, px, py, tw, th, bytes| {
-                    if let Ok(mut guard) = cache.lock() {
-                        guard.insert(
-                            generation,
-                            TileGridPos {
-                                mip_level: mip,
-                                tx,
-                                ty,
-                            },
-                            CachedTile {
-                                px,
-                                py,
-                                width: tw,
-                                height: th,
-                                bytes: Arc::new(bytes.to_vec()),
-                                layer: generation,
-                            },
-                        );
-                    }
-                }),
+                Box::new(
+                    move |generation, version, mip, tx, ty, px, py, tw, th, bytes| {
+                        if let Ok(mut guard) = cache.lock() {
+                            guard.insert(
+                                generation,
+                                version,
+                                TileGridPos {
+                                    mip_level: mip,
+                                    tx,
+                                    ty,
+                                },
+                                CachedTile {
+                                    px,
+                                    py,
+                                    width: tw,
+                                    height: th,
+                                    bytes: Arc::new(bytes.to_vec()),
+                                    layer: generation,
+                                },
+                            );
+                        }
+                    },
+                ),
             );
         }
 
@@ -97,6 +100,7 @@ impl App {
                         let th = (img_h - py).min(TILE_SIZE);
                         guard.insert(
                             0,
+                            u64::MAX,
                             TileGridPos {
                                 mip_level: mip,
                                 tx,
@@ -132,7 +136,8 @@ impl App {
             mip_level: mip,
             up_to: None,
         };
-        let sink = Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0)));
+        let version = tab.session.redraw_seq;
+        let sink = Stage::Consumer(Box::new(TileCacheSink::new(tab_id.0, 0, version)));
         let graph = compile(&tab.document, &req, &config, sink);
 
         let _ = self

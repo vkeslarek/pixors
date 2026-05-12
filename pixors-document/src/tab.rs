@@ -27,9 +27,7 @@ pub struct TabView {
 impl Tab {
     /// Path where tiles for a specific layer are stored on disk.
     pub fn layer_cache_dir(&self, node_id: crate::document::NodeId) -> std::path::PathBuf {
-        self.session
-            .cache_dir
-            .join(format!("layer_{:016x}", node_id.0))
+        crate::document::cache::layer_cache_dir(&self.session.cache_dir, node_id)
     }
 
     pub fn desc_width(&self) -> u32 {

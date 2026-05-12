@@ -8,7 +8,8 @@ use pixors_engine::error::Error;
 use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
-pub type CacheCommitFn = Box<dyn Fn(u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+pub type CacheCommitFn =
+    Box<dyn Fn(u64, u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
 static CACHE_ROUTER: LazyLock<RwLock<Option<HashMap<u64, Arc<CacheCommitFn>>>>> =
     LazyLock::new(|| RwLock::new(None));
@@ -52,13 +53,18 @@ static VCS_IN_PORTS: InPortSpecification = InPortSpecification {
 pub struct TileCacheSink {
     pub routing_key: u64,
     pub generation: u64,
+    /// Doc version stamp. Used by the cache to drop stale writes from older
+    /// pipelines after the document mutated (e.g. opacity slider). For overlay
+    /// (generation > 0), version is unused.
+    pub version: u64,
 }
 
 impl TileCacheSink {
-    pub fn new(routing_key: u64, generation: u64) -> Self {
+    pub fn new(routing_key: u64, generation: u64, version: u64) -> Self {
         Self {
             routing_key,
             generation,
+            version,
         }
     }
 }
@@ -81,6 +87,7 @@ impl Consumer for TileCacheSink {
         };
         (cb)(
             self.generation,
+            self.version,
             tile.coord.mip_level,
             tile.coord.tx,
             tile.coord.ty,
