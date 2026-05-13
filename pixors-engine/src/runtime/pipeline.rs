@@ -144,6 +144,16 @@ pub struct PipelineHandle {
     handles: Vec<JoinHandle<Result<(), Error>>>,
 }
 
+impl Drop for PipelineHandle {
+    fn drop(&mut self) {
+        self.cancel();
+        let handles = std::mem::take(&mut self.handles);
+        for h in handles {
+            let _ = h.join();
+        }
+    }
+}
+
 impl PipelineHandle {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
@@ -151,9 +161,10 @@ impl PipelineHandle {
     pub fn is_running(&self) -> bool {
         self.handles.iter().any(|h| !h.is_finished())
     }
-    pub fn join(self) -> Result<(), Error> {
+    pub fn join(mut self) -> Result<(), Error> {
         let mut first_err: Option<Error> = None;
-        for (i, h) in self.handles.into_iter().enumerate() {
+        let handles = std::mem::take(&mut self.handles);
+        for (i, h) in handles.into_iter().enumerate() {
             match h.join() {
                 Ok(Ok(())) => tracing::debug!("[pixors] pipeline: thread {i} joined OK"),
                 Ok(Err(e)) => {

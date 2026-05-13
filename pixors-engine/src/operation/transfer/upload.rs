@@ -67,13 +67,6 @@ impl Processor for Upload {
                     })?;
                     let scheduler = gpu.scheduler();
 
-                    tracing::debug!(
-                        "[upload] Neighborhood Cpu→Gpu: {} tiles, center=({},{})",
-                        tiles.len(),
-                        nbhd.center.px,
-                        nbhd.center.py,
-                    );
-
                     let mut total_bytes = 0u64;
                     for tile in &tiles {
                         total_bytes += match &tile.data {
@@ -137,11 +130,6 @@ impl Processor for Upload {
                         nbhd.image_width,
                         nbhd.image_height,
                         nbhd.tile_size,
-                    );
-                    tracing::debug!(
-                        "[upload] consolidated {} bytes, {} tile_infos",
-                        total_bytes,
-                        gpu_nbhd.data.tile_infos().len(),
                     );
                     ctx.emit.emit(Item::Neighborhood(gpu_nbhd));
                     Ok(())

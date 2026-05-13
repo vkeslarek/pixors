@@ -57,6 +57,7 @@ impl Dispatcher {
         let handle = pipeline.run(Some(event_tx));
 
         if let Some(tid) = session_id {
+            self.cancel_background(tid);
             self.background_tasks.insert(tid, handle);
         }
 
@@ -74,7 +75,9 @@ impl Dispatcher {
     }
 
     pub fn cleanup_tab(&mut self, id: SessionId) {
-        self.background_tasks.remove(&id);
+        if let Some(handle) = self.background_tasks.remove(&id) {
+            handle.cancel();
+        }
     }
 
     pub fn cancel_background(&mut self, id: SessionId) {
@@ -94,25 +97,47 @@ impl Dispatcher {
         });
     }
 
+    pub fn preview(
+        &mut self,
+        mutation: Arc<dyn Mutation>,
+        state: &mut EditorState,
+    ) -> Result<SessionId, String> {
+        let session_id = mutation.target_session();
+        let session = state
+            .session_mut(session_id)
+            .ok_or("session not found")?;
+        mutation.apply(&mut session.document);
+        session.transient.redraw_seq += 1;
+        Ok(session_id)
+    }
+
     pub fn commit(
         &mut self,
         mutation: Arc<dyn Mutation>,
         state: &mut EditorState,
-    ) -> Result<(), String> {
+    ) -> Result<SessionId, String> {
         let session_id = mutation.target_session();
-        let session = state.session_mut(session_id).ok_or("session not found")?;
-
+        let session = state
+            .session_mut(session_id)
+            .ok_or("session not found")?;
         if mutation.recordable() {
             session
                 .history
                 .push(mutation.clone(), &mut session.document);
         }
         session.transient.redraw_seq += 1;
-
-        Ok(())
+        Ok(session_id)
     }
 
     pub fn preview_op(&self, mutation: &dyn Mutation) -> Option<Operation> {
         mutation.preview_op()
+    }
+}
+
+impl Drop for Dispatcher {
+    fn drop(&mut self) {
+        for (_, handle) in self.background_tasks.drain() {
+            handle.cancel();
+        }
     }
 }

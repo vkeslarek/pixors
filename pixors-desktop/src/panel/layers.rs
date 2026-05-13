@@ -11,7 +11,8 @@ pub enum Msg {
     Close,
     Select(NodeId),
     ToggleVisibility(NodeId),
-    SetOpacity(NodeId, f32),
+    SetOpacityPreview(NodeId, f32),
+    SetOpacityCommit(NodeId),
     DragStart(usize),
     DragHover(usize),
     DragDrop,
@@ -21,6 +22,7 @@ pub enum Msg {
 pub struct LayersPanelState {
     pub drag_from: Option<usize>,
     pub drag_over: Option<usize>,
+    pub pending_opacity: Option<(NodeId, f32)>,
 }
 
 impl LayersPanelState {
@@ -38,6 +40,9 @@ impl LayersPanelState {
             Msg::DragDrop => {
                 self.drag_from = None;
                 self.drag_over = None;
+            }
+            Msg::SetOpacityPreview(id, opacity) => {
+                self.pending_opacity = Some((*id, *opacity));
             }
             _ => {}
         }
@@ -83,7 +88,8 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
                 Effect::QueueDisplayRefresh(session_id),
             ]
         }
-        Msg::SetOpacity(id, opacity) => {
+        Msg::SetOpacityPreview(_, _) => vec![],
+        Msg::SetOpacityCommit(id) => {
             let before = ctx
                 .layers
                 .iter()
@@ -96,7 +102,7 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
                         tab: session_id,
                         layer: id,
                         before,
-                        after: opacity,
+                        after: before, // will be filled by controller from pending_opacity
                     },
                 )),
                 Effect::QueueDisplayRefresh(session_id),
@@ -149,7 +155,7 @@ pub fn view_slice<'a>(
             let is_hover_target =
                 state.drag_over == Some(idx) && state.drag_from.is_some_and(|from| from != idx);
 
-            let row_el = layer_row(l, idx, is_active);
+            let row_el = layer_row(l, idx, is_active, state);
             let wrapper = container(row_el).style(move |_| {
                 if is_hover_target {
                     container::Style {
@@ -180,7 +186,7 @@ pub fn view_slice<'a>(
     }
 }
 
-fn layer_row<'a>(layer: &'a LayerNode, index: usize, is_active: bool) -> Element<'a, Msg> {
+fn layer_row<'a>(layer: &'a LayerNode, index: usize, is_active: bool, state: &'a LayersPanelState) -> Element<'a, Msg> {
     let color = match &layer.source {
         pixors_document::PixelSource::PrimaryAsset { .. } => Color::from_rgb(0.3, 0.5, 0.8),
         pixors_document::PixelSource::SolidColor { .. } => Color::from_rgba(0.6, 0.6, 0.2, 1.0),
@@ -223,13 +229,19 @@ fn layer_row<'a>(layer: &'a LayerNode, index: usize, is_active: bool) -> Element
         .size(12)
         .on_press(Msg::ToggleVisibility(layer.id));
 
-    let opacity_slider = slider(0.0..=1.0, layer.blend.opacity, |v| {
-        Msg::SetOpacity(layer.id, v)
+    let current_opacity = state
+        .pending_opacity
+        .and_then(|(pid, o)| if pid == layer.id { Some(o) } else { None })
+        .unwrap_or(layer.blend.opacity);
+
+    let opacity_slider = slider(0.0..=1.0, current_opacity, |v| {
+        Msg::SetOpacityPreview(layer.id, v)
     })
     .width(60)
-    .step(0.01);
+    .step(0.01)
+    .on_release(Msg::SetOpacityCommit(layer.id));
 
-    let opacity_label = text(format!("{}%", (layer.blend.opacity * 100.0) as u32))
+    let opacity_label = text(format!("{}%", (current_opacity * 100.0) as u32))
         .size(9)
         .color(TEXT_MUTED);
 

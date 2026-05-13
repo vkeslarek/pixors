@@ -32,9 +32,6 @@ impl BufferPool {
 
         if let Some(buf) = queue.pop() {
             let id = next_buf_id();
-            tracing::info!(
-                "[buf] #{id} acquire RECYCLED class={class_size} req={size} usage={usage:?}",
-            );
             return GpuBuffer {
                 id,
                 allocated_size: class_size,
@@ -51,9 +48,7 @@ impl BufferPool {
             size: class_size,
             usage,
             mapped_at_creation: false,
-        });
-
-        tracing::info!("[buf] #{id} acquire NEW class={class_size} req={size} usage={usage:?}",);
+        }        );
 
         GpuBuffer {
             id,

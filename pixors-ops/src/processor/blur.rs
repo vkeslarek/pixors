@@ -79,11 +79,6 @@ fn gpu_blur_process(
     let bpp = fmt.bytes_per_pixel();
     let scheduler = gpu_ctx.scheduler();
 
-    tracing::debug!(
-        "[blur gpu] r={r} center=({cx},{cy}) {cw}×{ch} fmt={fmt:?} bpp={bpp} data={}",
-        if nbhd.data.is_gpu() { "gpu" } else { "cpu" }
-    );
-
     // r=0 passthrough: extract center tile via GPU copy, no CPU round-trip.
     if r == 0 {
         let maybe_center = match &nbhd.data {
@@ -148,11 +143,6 @@ fn gpu_blur_process(
             padded
         }
     };
-
-    tracing::debug!(
-        "[blur gpu] src buffer: {} bytes, pad={pad_w}×{pad_h}",
-        src_gbuf_arc.requested_size,
-    );
 
     let out_size = cw as u64 * ch as u64 * bpp as u64;
     let kernel = pixors_shader::kernel::blur::BlurParamsKernel::new(

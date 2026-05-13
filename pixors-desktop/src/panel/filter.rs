@@ -182,11 +182,10 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
 
 pub fn view<'a>(
     transforms: &'a [Transform],
-    blur_preview_radius: Option<f32>,
     state: &'a FilterPanelState,
 ) -> Element<'a, Msg> {
     let toolbar = build_toolbar();
-    let filter_rows = build_filter_rows(transforms, blur_preview_radius, state);
+    let filter_rows = build_filter_rows(transforms, state);
     let content = column![toolbar, filter_rows].spacing(0);
 
     let footer = build_footer(transforms);
@@ -253,7 +252,6 @@ fn build_toolbar<'a>() -> Element<'a, Msg> {
 
 fn build_filter_rows<'a>(
     transforms: &'a [Transform],
-    blur_preview_radius: Option<f32>,
     state: &'a FilterPanelState,
 ) -> Element<'a, Msg> {
     let mut elements = Vec::new();
@@ -266,11 +264,11 @@ fn build_filter_rows<'a>(
         let is_expanded = state.expanded.contains(&i);
 
         let el = if !t.enabled {
-            build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Disabled)
+            build_filter_row(i, &num, t, RowStyle::Disabled)
         } else if is_expanded {
-            build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Expanded)
+            build_filter_row(i, &num, t, RowStyle::Expanded)
         } else {
-            build_filter_row(i, &num, t, blur_preview_radius, RowStyle::Collapsed)
+            build_filter_row(i, &num, t, RowStyle::Collapsed)
         };
 
         let wrapper = container(el).style(move |_| {
@@ -302,22 +300,6 @@ fn build_filter_rows<'a>(
         .into()
 }
 
-fn transform_color(t: &Transform) -> Color {
-    use pixors_document::Operation;
-    match &t.op {
-        Operation::Blur { .. } => Color::from_rgb(0.5, 0.4, 0.7),
-        Operation::Exposure { .. } => Color::from_rgb(0.8, 0.7, 0.3),
-    }
-}
-
-fn transform_subtitle(t: &Transform) -> String {
-    use pixors_document::Operation;
-    match &t.op {
-        Operation::Blur { radius } => format!("radius {:.0}px", radius),
-        Operation::Exposure { stops } => format!("{:+.1} stops", stops),
-    }
-}
-
 enum RowStyle {
     Collapsed,
     Expanded,
@@ -328,10 +310,10 @@ fn build_filter_row<'a>(
     idx: usize,
     num: &str,
     t: &'a Transform,
-    blur_preview_radius: Option<f32>,
     style: RowStyle,
 ) -> Element<'a, Msg> {
-    let base_color = transform_color(t);
+    let (cr, cg, cb) = t.op.color();
+    let base_color = Color::from_rgb(cr, cg, cb);
     let (color, icon_border, title_color, subtitle_color, num_color, eye_icon) = match &style {
         RowStyle::Disabled => (
             Color::from_rgba(
@@ -364,7 +346,7 @@ fn build_filter_row<'a>(
         ),
     };
 
-    let subtitle = transform_subtitle(t);
+    let subtitle = t.op.subtitle();
     let title = t.op.label().to_string();
     let title_font = if matches!(style, RowStyle::Expanded) {
         iced::Font {
@@ -464,7 +446,7 @@ fn build_filter_row<'a>(
         .padding([6, 8]);
 
     if matches!(style, RowStyle::Expanded) {
-        let controls = build_filter_controls(t, blur_preview_radius);
+        let controls = build_filter_controls(t);
         container(column![header, controls])
             .width(Length::Fill)
             .style(|_| container::Style {
@@ -487,7 +469,6 @@ fn build_filter_row<'a>(
 
 fn build_filter_controls<'a>(
     t: &'a Transform,
-    blur_preview_radius: Option<f32>,
 ) -> Element<'a, Msg> {
     use pixors_document::Operation;
 
@@ -500,7 +481,7 @@ fn build_filter_controls<'a>(
 
     match &t.op {
         Operation::Blur { radius } => {
-            let r = blur_preview_radius.unwrap_or(*radius);
+            let r = *radius;
             controls.push(
                 column![
                     text(format!("Radius: {:.1} px", r))

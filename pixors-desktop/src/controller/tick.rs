@@ -48,7 +48,7 @@ impl App {
             {
                 continue;
             }
-            self.run_mip_fetch(session_id, mip, range);
+            self.run_render(session_id, mip, range);
         }
     }
 }

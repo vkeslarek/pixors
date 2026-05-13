@@ -128,7 +128,7 @@ fn pane_content<'a>(
                         .map(|l| l.transforms.as_slice())
                 })
                 .unwrap_or(&[]);
-            crate::panel::filter::view(transforms, app.blur_preview_radius, &app.filter_panel)
+            crate::panel::filter::view(transforms, &app.filter_panel)
                 .map(Msg::FiltersPanel)
         }
     };

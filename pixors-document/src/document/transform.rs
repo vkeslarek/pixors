@@ -77,6 +77,20 @@ impl Operation {
         }
     }
 
+    pub fn subtitle(&self) -> String {
+        match self {
+            Operation::Blur { radius } => format!("radius {:.0}px", radius),
+            Operation::Exposure { stops } => format!("{:+.1} stops", stops),
+        }
+    }
+
+    pub fn color(&self) -> (f32, f32, f32) {
+        match self {
+            Operation::Blur { .. } => (0.5, 0.4, 0.7),
+            Operation::Exposure { .. } => (0.8, 0.7, 0.3),
+        }
+    }
+
     /// Stable hash of the operation's parameters, used as part of a render cache key.
     pub fn params_hash(&self) -> u64 {
         let mut h = std::collections::hash_map::DefaultHasher::new();

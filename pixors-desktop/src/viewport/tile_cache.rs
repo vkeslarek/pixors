@@ -53,25 +53,10 @@ impl TileCache {
             {
                 return;
             }
-            let is_new = !self.base.contains_key(&key);
             let mut tile = tile;
             tile.layer = version;
             self.base.insert(key, tile);
             self.pending.insert(key);
-            if is_new {
-                let mip_count = self
-                    .base
-                    .keys()
-                    .filter(|k| k.mip_level == key.mip_level)
-                    .count();
-                tracing::debug!(
-                    "[tile_cache] insert gen=0 mip={} tx={} ty={} → {} total at this mip",
-                    key.mip_level,
-                    key.tx,
-                    key.ty,
-                    mip_count,
-                );
-            }
         } else {
             // Overlay writes: only accept the current generation. Reject stale
             // tiles from cancelled preview pipelines.

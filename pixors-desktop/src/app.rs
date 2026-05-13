@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::OnceLock;
 
 use iced::keyboard::{self};
@@ -66,9 +67,8 @@ pub struct App {
     pub filter_panel: crate::panel::filter::FilterPanelState,
     pub layers_panel: crate::panel::layers::LayersPanelState,
     pub viewport_tabs: HashMap<SessionId, crate::viewport::tab_state::ViewportTab>,
-    /// Live blur radius during slider drag — overrides the document value so the
-    /// slider thumb tracks the drag. Cleared on CommitBlur / CancelPreview.
-    pub blur_preview_radius: Option<f32>,
+    /// Pending preview mutation, undone before commit or cancelled on escape.
+    pub pending_preview: Option<Arc<dyn pixors_document::mutation::Mutation>>,
     pub pending_ingest: Option<pixors_document::Session>,
     pub sidebar_width: f32,
 }
@@ -111,7 +111,7 @@ impl Default for App {
             filter_panel: crate::panel::filter::FilterPanelState::default(),
             layers_panel: crate::panel::layers::LayersPanelState::default(),
             viewport_tabs: HashMap::new(),
-            blur_preview_radius: None,
+            pending_preview: None,
             pending_ingest: None,
             sidebar_width: crate::theme::SIDEBAR_W,
         };

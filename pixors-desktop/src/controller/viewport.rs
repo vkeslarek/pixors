@@ -11,71 +11,48 @@ use crate::viewport::tile_cache::CachedTile;
 use crate::viewport::tile_cache_sink::TileCacheSink;
 
 impl App {
-    pub(crate) fn init_viewport_for_tab(&mut self, session_id: SessionId) {
-        let Some(tab) = self.state.session(session_id) else {
-            return;
-        };
-        let img_w = tab.document.canvas.width;
-        let img_h = tab.document.canvas.height;
-
-        let vtab = crate::viewport::tab_state::ViewportTab::new();
-        vtab.init_for_image(img_w, img_h);
-
-        self.viewport_tabs.insert(session_id, vtab);
-
-        let ntx = img_w.div_ceil(TILE_SIZE);
-        let nty = img_h.div_ceil(TILE_SIZE);
-        let full_range = TileRange {
-            tx_start: 0,
-            tx_end: ntx,
-            ty_start: 0,
-            ty_end: nty,
-        };
-        self.run_mip_fetch(session_id, 0, full_range);
+    fn compile_config(&self, session_id: SessionId) -> Option<CompileConfig> {
+        let tab = self.state.session(session_id)?;
+        Some(CompileConfig {
+            disk_caches: tab.transient.disk_caches.clone(),
+            cache_dir: tab.transient.cache_dir.clone(),
+            display_format: tab.display_format,
+            display_color_space: tab.display_color_space,
+            working_format: tab.working_format,
+            working_color_space: tab.working_color_space,
+            tile_size: TILE_SIZE,
+            img_w: tab.document.canvas.width,
+            img_h: tab.document.canvas.height,
+        })
     }
 
-    pub(crate) fn make_tile_cache_sink(
-        &self,
-        session_id: SessionId,
-        generation: u64,
-        version: u64,
-    ) -> TileCacheSink {
-        let cache = self
-            .viewport_tabs
+    pub(crate) fn viewport_mip_range(&self, session_id: SessionId, pad: u32) -> (u32, TileRange) {
+        self.viewport_tabs
             .get(&session_id)
-            .map(|vt| vt.cache.clone())
-            .expect("viewport tab not found");
-        TileCacheSink::new(
-            generation,
-            version,
-            Arc::new(
-                move |generation, version, mip, tx, ty, px, py, tw, th, bpp, bytes| {
-                    if let Ok(mut guard) = cache.lock() {
-                        guard.insert(
-                            generation,
-                            version,
-                            TileGridPos {
-                                mip_level: mip,
-                                tx,
-                                ty,
-                            },
-                            CachedTile {
-                                px,
-                                py,
-                                width: tw,
-                                height: th,
-                                bpp,
-                                bytes: Arc::new(bytes.to_vec()),
-                                layer: generation,
-                            },
-                        );
-                    }
+            .and_then(|vt| vt.state.read().ok())
+            .map(|vs| {
+                let m = vs.current_mip;
+                let r = vs.camera.padded_tile_range(m, TILE_SIZE, pad);
+                (m, r)
+            })
+            .unwrap_or((
+                0,
+                TileRange {
+                    tx_start: 0,
+                    tx_end: 0,
+                    ty_start: 0,
+                    ty_end: 0,
                 },
-            ),
-        )
+            ))
     }
 
-    pub(crate) fn run_mip_fetch(&mut self, session_id: SessionId, mip: u32, range: TileRange) {
+    pub(crate) fn run_render(
+        &mut self,
+        session_id: SessionId,
+        mip: u32,
+        range: TileRange,
+    ) {
+        self.dispatcher.cancel_background(session_id);
         let Some(tab) = self.state.session(session_id) else {
             return;
         };
@@ -129,17 +106,7 @@ impl App {
             return;
         }
 
-        let config = CompileConfig {
-            disk_caches: tab.transient.disk_caches.clone(),
-            cache_dir: tab.transient.cache_dir.clone(),
-            display_format: tab.display_format,
-            display_color_space: tab.display_color_space,
-            working_format: tab.working_format,
-            working_color_space: tab.working_color_space,
-            tile_size: TILE_SIZE,
-            img_w: tab.document.canvas.width,
-            img_h: tab.document.canvas.height,
-        };
+        let config = self.compile_config(session_id).unwrap();
         let req = RenderRequest {
             viewport: range,
             mip_level: mip,
@@ -150,5 +117,69 @@ impl App {
         let graph = compile(&tab.document, &req, &config, sink);
 
         let _ = self.dispatcher.run_graph(graph, Some(session_id));
+    }
+
+    pub(crate) fn init_viewport_for_tab(&mut self, session_id: SessionId) {
+        let Some(tab) = self.state.session(session_id) else {
+            return;
+        };
+        let img_w = tab.document.canvas.width;
+        let img_h = tab.document.canvas.height;
+
+        let vtab = crate::viewport::tab_state::ViewportTab::new();
+        vtab.init_for_image(img_w, img_h);
+
+        self.viewport_tabs.insert(session_id, vtab);
+
+        let ntx = img_w.div_ceil(TILE_SIZE);
+        let nty = img_h.div_ceil(TILE_SIZE);
+        let full_range = TileRange {
+            tx_start: 0,
+            tx_end: ntx,
+            ty_start: 0,
+            ty_end: nty,
+        };
+        self.run_render(session_id, 0, full_range);
+    }
+
+    pub(crate) fn make_tile_cache_sink(
+        &self,
+        session_id: SessionId,
+        generation: u64,
+        version: u64,
+    ) -> TileCacheSink {
+        let cache = self
+            .viewport_tabs
+            .get(&session_id)
+            .map(|vt| vt.cache.clone())
+            .expect("viewport tab not found");
+        TileCacheSink::new(
+            generation,
+            version,
+            Arc::new(
+                move |generation, version, mip, tx, ty, px, py, tw, th, bpp, bytes| {
+                    if let Ok(mut guard) = cache.lock() {
+                        guard.insert(
+                            generation,
+                            version,
+                            TileGridPos {
+                                mip_level: mip,
+                                tx,
+                                ty,
+                            },
+                            CachedTile {
+                                px,
+                                py,
+                                width: tw,
+                                height: th,
+                                bpp,
+                                bytes: Arc::new(bytes.to_vec()),
+                                layer: generation,
+                            },
+                        );
+                    }
+                },
+            ),
+        )
     }
 }

@@ -1,11 +1,78 @@
-use pixors_document::{SessionId, TILE_SIZE};
-use pixors_engine::cache::cache_reader::TileRange;
+use std::sync::Arc;
+
+use pixors_document::SessionId;
 
 use crate::app::App;
 use crate::panel::layers as layers_panel;
 
 impl App {
     pub(crate) fn handle_layers_msg(&mut self, m: layers_panel::Msg) {
+        match &m {
+            layers_panel::Msg::SetOpacityPreview(id, opacity) => {
+                self.layers_panel.update(&m);
+                let Some(session_id) = self.state.active_session().map(|t| t.id) else {
+                    return;
+                };
+                let before = self
+                    .state
+                    .active_session()
+                    .and_then(|t| t.document.find_layer(*id).map(|l| l.blend.opacity))
+                    .unwrap_or(1.0);
+
+                let mutation: Arc<dyn pixors_document::mutation::Mutation> = Arc::new(
+                    pixors_document::mutation::impls::SetLayerOpacity {
+                        tab: session_id,
+                        layer: *id,
+                        before,
+                        after: *opacity,
+                    },
+                );
+
+                if let Some(ref prev) = self.pending_preview {
+                    prev.undo(&mut self.state.session_mut(session_id).unwrap().document);
+                }
+                mutation.apply(&mut self.state.session_mut(session_id).unwrap().document);
+                self.pending_preview = Some(mutation.clone());
+                let _ = self.dispatcher.preview(mutation, &mut self.state);
+
+                let (mip, range) = self.viewport_mip_range(session_id, 3);
+                self.run_render(session_id, mip, range);
+            }
+            layers_panel::Msg::SetOpacityCommit(id) => {
+                self.layers_panel.update(&m);
+                let session_id = self.state.active_session().map(|t| t.id);
+                let before = self
+                    .state
+                    .active_session()
+                    .and_then(|t| t.document.find_layer(*id).map(|l| l.blend.opacity))
+                    .unwrap_or(1.0);
+                let after = self
+                    .layers_panel
+                    .pending_opacity
+                    .and_then(|(pid, o)| if pid == *id { Some(o) } else { None })
+                    .unwrap_or(before);
+                self.layers_panel.pending_opacity = None;
+                if let Some(session_id) = session_id {
+                    if let Some(ref prev) = self.pending_preview {
+                        prev.undo(&mut self.state.session_mut(session_id).unwrap().document);
+                        self.pending_preview = None;
+                    }
+                    let mutation: Arc<dyn pixors_document::mutation::Mutation> = Arc::new(
+                        pixors_document::mutation::impls::SetLayerOpacity {
+                            tab: session_id,
+                            layer: *id,
+                            before,
+                            after,
+                        },
+                    );
+                    let _ = self.dispatcher.commit(mutation, &mut self.state);
+                    let (mip, range) = self.viewport_mip_range(session_id, 1);
+                    self.run_render(session_id, mip, range);
+                }
+            }
+            _ => {}
+        }
+
         let drag_from = self.layers_panel.drag_from;
         let drag_over = self.layers_panel.drag_over;
         self.layers_panel.update(&m);
@@ -25,24 +92,7 @@ impl App {
     }
 
     pub(crate) fn recomposite_current_view(&mut self, session_id: SessionId) {
-        let (mip, range) = self
-            .viewport_tabs
-            .get(&session_id)
-            .and_then(|vt| vt.state.read().ok())
-            .map(|vs| {
-                let m = vs.current_mip;
-                let r = vs.camera.padded_tile_range(m, TILE_SIZE, 3);
-                (m, r)
-            })
-            .unwrap_or((
-                0,
-                TileRange {
-                    tx_start: 0,
-                    tx_end: 0,
-                    ty_start: 0,
-                    ty_end: 0,
-                },
-            ));
-        self.run_mip_fetch(session_id, mip, range);
+        let (mip, range) = self.viewport_mip_range(session_id, 3);
+        self.run_render(session_id, mip, range);
     }
 }

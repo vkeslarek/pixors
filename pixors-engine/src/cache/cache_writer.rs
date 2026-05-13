@@ -62,8 +62,6 @@ impl Consumer for CacheWriter {
         self.cache
             .write_tile(mip, tx, ty, data)
             .map_err(|e| Error::internal(format!("CacheWriter: {e}")))?;
-
-        tracing::debug!("[pixors] cache_writer: wrote mip={mip} tile=({tx},{ty}) {w}×{h}",);
         Ok(())
     }
 }

@@ -162,11 +162,6 @@ impl<Msg> shader::Program<Msg> for ViewportProgram {
         {
             let base_mip = state.camera.floor_mip();
             if target_mip > base_mip && !guard.has_mip(target_mip) && guard.has_mip(base_mip) {
-                tracing::info!(
-                    "[viewport] mip fallback: target={} base={} (target not in cache, falling back)",
-                    target_mip,
-                    base_mip,
-                );
                 target_mip = base_mip;
             }
         }

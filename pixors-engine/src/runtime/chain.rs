@@ -258,17 +258,9 @@ impl Runner for ChainRunner {
                     tracing::debug!("[pixors] {name}: cancelled after {item_count} items");
                     return Ok(());
                 }
-                let t_recv = std::time::Instant::now();
                 match recv.recv_timeout(Duration::from_millis(100)) {
                     Ok(Some(routed)) => {
-                        let elapsed = t_recv.elapsed();
-                        if elapsed.as_millis() > 50 {
-                            tracing::debug!(
-                                "[pixors] contention: pipeline thread blocked {:?} waiting for input on port {}",
-                                elapsed,
-                                routed.port
-                            );
-                        }
+
                         Self::run_item_streaming(
                             &self.cancelled,
                             tag,
@@ -338,16 +330,7 @@ fn send_to_all(
                     payload: routed_item.payload.clone(),
                 };
                 if let Err(std::sync::mpsc::TrySendError::Full(item)) = tx.try_send(Some(routed)) {
-                    let t = std::time::Instant::now();
-                    tracing::debug!(
-                        "[pixors] contention: pipeline thread blocking on send to port {}",
-                        to_port
-                    );
                     let _ = tx.send(item);
-                    tracing::debug!(
-                        "[pixors] contention: pipeline thread unblocked after {:?}",
-                        t.elapsed()
-                    );
                 }
             }
         }

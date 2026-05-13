@@ -15,8 +15,7 @@ use pixors_ops::processor::color::ColorConvert;
 use pixors_ops::processor::compose::Compose;
 
 use crate::document::transform::{InputScope, Operation, OutputMode, Transform};
-use crate::document::{BlendSpec, Document, LayerNode, NodeId};
-use pixors_image::image::BlendMode;
+use crate::document::{Document, LayerNode, NodeId};
 
 // ── Public surface ───────────────────────────────────────────────────────────
 
@@ -68,48 +67,7 @@ pub fn compile(
     ctx.finish()
 }
 
-/// Like [`compile`] but inserts a temporary `preview_op` transform on
-/// `preview_layer_id` before compilation. The document is not mutated —
-/// layers are cloned. Used for live filter previews (blur slider etc.).
-pub fn compile_preview(
-    doc: &Document,
-    req: &RenderRequest,
-    config: &CompileConfig,
-    sink: Stage,
-    preview_layer_id: NodeId,
-    preview_op: &Operation,
-) -> ExecGraph {
-    let mut ctx = CompileCtx::new(doc, req, config);
-    let mut layers = doc.layers.clone();
-    if let Some(layer) = layers.iter_mut().find(|l| l.id == preview_layer_id) {
-        layer.transforms.push(Transform {
-            id: NodeId(0),
-            op: preview_op.clone(),
-            input: InputScope::Layer,
-            output: OutputMode::Replace {
-                blend: BlendSpec {
-                    mode: BlendMode::Normal,
-                    opacity: 1.0,
-                },
-            },
-            enabled: true,
-        });
-    }
-    let color_out = compile_layer_stack(&layers, &mut ctx);
-    let sink_id = ctx.graph.add_stage(sink);
-    ctx.graph.add_edge(
-        color_out,
-        sink_id,
-        EdgePorts {
-            from_port: 0,
-            to_port: 0,
-        },
-    );
-    ctx.finish()
-}
-
 /// Compile a full-document export graph at mip=0.
-/// The caller provides the encoding sink (PNG, TIFF, etc.).
 pub fn compile_export(doc: &Document, config: &CompileConfig, sink: Stage) -> ExecGraph {
     let ntx = config.img_w.div_ceil(config.tile_size);
     let nty = config.img_h.div_ceil(config.tile_size);
