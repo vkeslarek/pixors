@@ -73,8 +73,9 @@ impl App {
             Msg::ClosePane(pane) => {
                 let _ = self.panes.close(pane);
             }
-            Msg::SidebarResized(w) => {
-                self.sidebar_width = w.clamp(150.0, 600.0);
+            Msg::SidebarResized(delta) => {
+                // Dragging handle right → delta > 0 → sidebar shrinks
+                self.sidebar_width = (self.sidebar_width - delta).clamp(150.0, 600.0);
             }
         }
     }

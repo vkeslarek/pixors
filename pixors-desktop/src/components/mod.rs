@@ -7,6 +7,7 @@ pub mod icon_button;
 pub mod input;
 pub mod pill;
 pub mod progress_bar;
+pub mod resize_handle;
 pub mod slider;
 pub mod switch;
 pub mod tooltip;
