@@ -76,14 +76,15 @@ impl Processor for Download {
                     let tiles_x = nbhd.image_width.div_ceil(mip_step) as i32;
                     let tiles_y = nbhd.image_height.div_ceil(mip_step) as i32;
 
-                    let mut tiles = Vec::new();
-                    for info in &tile_infos {
-                        let bytes = scheduler.read_from_buffer(
-                            consolidated.buffer(),
-                            info.data_offset,
-                            info.tile_size_bytes,
-                        );
+                    let regions: Vec<_> = tile_infos
+                        .iter()
+                        .map(|info| (info.data_offset, info.tile_size_bytes))
+                        .collect();
+                    let batch_bytes =
+                        scheduler.read_batch_from_buffer(consolidated.buffer(), &regions);
 
+                    let mut tiles = Vec::new();
+                    for (info, bytes) in tile_infos.iter().zip(batch_bytes.into_iter()) {
                         let logical_tx = info.px / nbhd.tile_size as i32;
                         let logical_ty = info.py / nbhd.tile_size as i32;
                         let gx = logical_tx.clamp(0, tiles_x - 1).max(0) as u32;

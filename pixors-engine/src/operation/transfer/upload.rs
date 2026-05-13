@@ -4,7 +4,6 @@ use crate::data::buffer::Buffer;
 use crate::data::neighborhood::{Neighborhood, NeighborhoodData, TileGpuInfo};
 use crate::data::tile::Tile;
 use crate::error::Error;
-use crate::gpu::pool::GpuBuffer;
 use crate::graph::item::Item;
 use crate::stage::{
     DataKind, InOutPortSpecification, PortDeclaration, PortGroup, Processor, ProcessorContext,
@@ -75,42 +74,52 @@ impl Processor for Upload {
                         nbhd.center.py,
                     );
 
-                    let mut gpu_tiles: Vec<(Arc<GpuBuffer>, &Tile)> = Vec::new();
                     let mut total_bytes = 0u64;
                     for tile in &tiles {
-                        let data = match &tile.data {
-                            Buffer::Cpu(v) => v.as_slice(),
-                            Buffer::Gpu(g) => {
-                                gpu_tiles.push((g.clone(), tile));
-                                total_bytes += g.requested_size;
-                                continue;
-                            }
+                        total_bytes += match &tile.data {
+                            Buffer::Cpu(v) => v.len() as u64,
+                            Buffer::Gpu(g) => g.requested_size,
                         };
-                        let gbuf = scheduler.upload_bytes(data);
-                        total_bytes += gbuf.requested_size;
-                        gpu_tiles.push((Arc::new(gbuf), tile));
                     }
 
                     let consolidated = Arc::new(scheduler.allocate_buffer(total_bytes));
                     let mut tile_infos = Vec::new();
                     let mut offset = 0u64;
-                    for (gbuf, tile) in &gpu_tiles {
-                        scheduler.copy_slice(
-                            gbuf.buffer(),
-                            0,
-                            consolidated.buffer(),
-                            offset,
-                            gbuf.requested_size,
-                        );
+                    for tile in &tiles {
+                        let size_bytes = match &tile.data {
+                            Buffer::Cpu(v) => {
+                                let data = v.as_slice();
+                                let len = data.len() as u64;
+                                let aligned_len = (len + 3) & !3;
+                                if aligned_len as usize == data.len() {
+                                    gpu.queue().write_buffer(consolidated.buffer(), offset, data);
+                                } else {
+                                    let mut padded = data.to_vec();
+                                    padded.resize(aligned_len as usize, 0);
+                                    gpu.queue().write_buffer(consolidated.buffer(), offset, &padded);
+                                }
+                                len
+                            }
+                            Buffer::Gpu(g) => {
+                                scheduler.copy_slice(
+                                    g.buffer(),
+                                    0,
+                                    consolidated.buffer(),
+                                    offset,
+                                    g.requested_size,
+                                );
+                                g.requested_size
+                            }
+                        };
                         tile_infos.push(TileGpuInfo {
                             px: tile.coord.px as i32,
                             py: tile.coord.py as i32,
                             width: tile.coord.width,
                             height: tile.coord.height,
                             data_offset: offset,
-                            tile_size_bytes: gbuf.requested_size,
+                            tile_size_bytes: size_bytes,
                         });
-                        offset += gbuf.requested_size;
+                        offset += size_bytes;
                     }
 
                     let gpu_nbhd = Neighborhood::new_gpu(

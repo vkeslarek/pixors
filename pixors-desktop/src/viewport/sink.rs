@@ -51,6 +51,10 @@ impl Processor for ViewportSink {
         let _sw = debug_stopwatch!("viewport_sink");
         let tile = ProcessorContext::take_tile(item)?;
 
+        let gpu_ctx = pixors_engine::gpu::context::try_init()
+            .ok_or_else(|| Error::internal("GPU unavailable for viewport"))?;
+        gpu_ctx.scheduler().flush_dispatches();
+
         let target = TARGET
             .get()
             .ok_or_else(|| Error::internal("viewport not installed"))?;
@@ -68,17 +72,41 @@ impl Processor for ViewportSink {
             return Ok(());
         }
 
-        let padded = ((tw * 4).div_ceil(256)) * 256;
-        let ctx = pixors_engine::gpu::context::try_init()
-            .ok_or_else(|| Error::internal("GPU unavailable"))?;
-        let mut enc = ctx
+        let bpp = tile.meta.format.bytes_per_pixel() as u32;
+        let row_bytes = tw * bpp;
+        let padded = row_bytes.div_ceil(256) * 256;
+        let mut enc = gpu_ctx
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("vpsink_copy"),
             });
+        // Source GPU buffer is tightly packed (stride = row_bytes). wgpu requires
+        // bytes_per_row to be a multiple of 256 when copying height > 1. When the
+        // tight stride is not aligned, pad rows into a staging buffer first.
+        let staging_owned = if row_bytes == padded {
+            None
+        } else {
+            let staging = gpu_ctx
+                .scheduler()
+                .allocate_buffer(padded as u64 * th as u64);
+            for row in 0..th {
+                enc.copy_buffer_to_buffer(
+                    buf,
+                    (row * row_bytes) as u64,
+                    staging.buffer(),
+                    (row * padded) as u64,
+                    row_bytes as u64,
+                );
+            }
+            Some(staging)
+        };
+        let src_for_copy: &wgpu::Buffer = match &staging_owned {
+            Some(s) => s.buffer(),
+            None => buf,
+        };
         enc.copy_buffer_to_texture(
             wgpu::ImageCopyBuffer {
-                buffer: buf,
+                buffer: src_for_copy,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(padded),

@@ -49,7 +49,7 @@ impl App {
             generation,
             version,
             Arc::new(
-                move |generation, version, mip, tx, ty, px, py, tw, th, bytes| {
+                move |generation, version, mip, tx, ty, px, py, tw, th, bpp, bytes| {
                     if let Ok(mut guard) = cache.lock() {
                         guard.insert(
                             generation,
@@ -64,6 +64,7 @@ impl App {
                                 py,
                                 width: tw,
                                 height: th,
+                                bpp,
                                 bytes: Arc::new(bytes.to_vec()),
                                 layer: generation,
                             },
@@ -117,6 +118,7 @@ impl App {
                                 py,
                                 width: tw,
                                 height: th,
+                                bpp: 4,
                                 bytes: Arc::new(vec![0u8; (tw * th * 4) as usize]),
                                 layer: 0,
                             },

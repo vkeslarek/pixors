@@ -7,7 +7,7 @@ use pixors_engine::graph::item::Item;
 use pixors_engine::stage::{Consumer, DataKind, InPortSpecification, PortDeclaration, PortGroup};
 
 pub type CacheCommitFn =
-    Arc<dyn Fn(u64, u64, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
+    Arc<dyn Fn(u64, u64, u32, u32, u32, u32, u32, u32, u32, u32, &[u8]) + Send + Sync>;
 
 static VCS_INPUTS: &[PortDeclaration] = &[PortDeclaration {
     name: "tile",
@@ -66,6 +66,7 @@ impl Consumer for TileCacheSink {
             tile.coord.py,
             tile.coord.width,
             tile.coord.height,
+            tile.meta.format.bytes_per_pixel() as u32,
             data,
         );
         Ok(())

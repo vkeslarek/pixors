@@ -94,6 +94,7 @@ impl ChainRunner {
                         port,
                         payload: item,
                     }],
+                    gpu,
                 ),
             }
             return Ok(());
@@ -318,9 +319,16 @@ impl Runner for ChainRunner {
     }
 }
 
-fn send_to_all(outputs: &[(ItemSender, u16, u16)], items: Vec<RoutedItem>) {
+fn send_to_all(
+    outputs: &[(ItemSender, u16, u16)],
+    items: Vec<RoutedItem>,
+    gpu: &Option<Arc<GpuContext>>,
+) {
     if outputs.is_empty() || items.is_empty() {
         return;
+    }
+    if let Some(gpu_ctx) = gpu {
+        gpu_ctx.scheduler().flush_dispatches();
     }
     for routed_item in items {
         for (tx, from_port, to_port) in outputs.iter() {

@@ -149,13 +149,18 @@ impl Scheduler {
         slot.reset_count();
     }
 
-    /// Flush all slots — called by download stages before reading GPU buffers.
-    /// Polls until all submitted work is complete before recycling pending
-    /// pool buffers, preventing use-after-free on the GPU side.
-    pub fn flush(&self) {
+    /// Flush all pending dispatches (submit to GPU queue) without waiting
+    /// or recycling. Use before directly accessing GPU buffers that were
+    /// written by batched dispatches (e.g. ViewportSink copy-to-texture).
+    pub fn flush_dispatches(&self) {
         for idx in 0..self.slots.len() {
             self.flush_slot(idx);
         }
+    }
+
+    /// Flush all slots, wait for GPU completion, and recycle pending buffers.
+    pub fn flush(&self) {
+        self.flush_dispatches();
         self.device.poll(wgpu::Maintain::Wait);
         self.pool.recycle_pending();
     }
@@ -310,24 +315,22 @@ impl Scheduler {
         tracing::info!(
             "[buf] read_from_buffer offset={offset} size={size} aligned={size_aligned}",
         );
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("read-staging"),
-            size: size_aligned,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        self.pool.recycle_pending();
+        let staging = self.pool.acquire(
+            size_aligned,
+            wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        );
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("read_from_buffer"),
             });
-        enc.copy_buffer_to_buffer(src, offset, &staging, 0, size_aligned);
+        enc.copy_buffer_to_buffer(src, offset, staging.buffer(), 0, size_aligned);
         self.queue.submit(std::iter::once(enc.finish()));
-        self.device.poll(wgpu::Maintain::Wait);
-        self.pool.recycle_pending();
 
         let (tx, rx) = std::sync::mpsc::channel();
         staging
+            .buffer()
             .slice(..)
             .map_async(wgpu::MapMode::Read, move |res| {
                 let _ = tx.send(res);
@@ -338,12 +341,70 @@ impl Scheduler {
             .expect("GPU buffer map failed");
 
         let mut bytes = {
-            let view = staging.slice(..).get_mapped_range();
+            let view = staging.buffer().slice(..).get_mapped_range();
             view.to_vec()
         };
         bytes.truncate(size as usize);
-        staging.unmap();
+        staging.buffer().unmap();
         bytes
+    }
+
+    /// Read multiple slices of bytes from a GPU buffer concurrently in batch.
+    pub fn read_batch_from_buffer(
+        &self,
+        src: &wgpu::Buffer,
+        regions: &[(u64, u64)],
+    ) -> Vec<Vec<u8>> {
+        if regions.is_empty() {
+            return Vec::new();
+        }
+        self.pool.recycle_pending();
+        let mut stagings = Vec::with_capacity(regions.len());
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("read_batch"),
+            });
+        for &(offset, size) in regions {
+            let size_aligned = (size + 3) & !3;
+            let staging = self.pool.acquire(
+                size_aligned,
+                wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            );
+            enc.copy_buffer_to_buffer(src, offset, staging.buffer(), 0, size_aligned);
+            stagings.push((staging, size));
+        }
+        self.queue.submit(std::iter::once(enc.finish()));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let num_regions = stagings.len();
+        for (staging, _) in &stagings {
+            let tx = tx.clone();
+            staging
+                .buffer()
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |res| {
+                    let _ = tx.send(res);
+                });
+        }
+        self.device.poll(wgpu::Maintain::Wait);
+        for _ in 0..num_regions {
+            rx.recv()
+                .expect("GPU buffer map channel closed unexpectedly")
+                .expect("GPU buffer map failed");
+        }
+
+        let mut results = Vec::with_capacity(num_regions);
+        for (staging, size) in stagings {
+            let mut bytes = {
+                let view = staging.buffer().slice(..).get_mapped_range();
+                view.to_vec()
+            };
+            bytes.truncate(size as usize);
+            staging.buffer().unmap();
+            results.push(bytes);
+        }
+        results
     }
 
     // ── Public pipeline accessors ─────────────────────────────────────────

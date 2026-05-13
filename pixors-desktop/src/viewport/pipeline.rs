@@ -301,6 +301,7 @@ impl shader::Primitive for ViewportPrimitive {
                     tile.py,
                     tile.width,
                     tile.height,
+                    tile.bpp,
                     &tile.bytes,
                 );
             }

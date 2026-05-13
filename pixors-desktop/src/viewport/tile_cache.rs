@@ -9,6 +9,7 @@ pub struct CachedTile {
     pub py: u32,
     pub width: u32,
     pub height: u32,
+    pub bpp: u32,
     pub bytes: Arc<Vec<u8>>,
     pub layer: u64,
 }

@@ -11,7 +11,7 @@ pub fn webp_options(dialog: &ExportDialog) -> Element<'static, super::Msg> {
 
     let quality_slider = if !dialog.webp.lossless {
         Some(
-            slider(0.0..=100.0, dialog.webp.quality, |v| super::Msg::WebPQuality(v))
+            slider(0.0..=100.0, dialog.webp.quality, super::Msg::WebPQuality)
                 .width(Length::Fill)
                 .step(1.0),
         )

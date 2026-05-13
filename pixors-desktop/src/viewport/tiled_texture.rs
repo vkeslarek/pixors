@@ -81,6 +81,7 @@ impl TiledTexture {
         py: u32,
         tile_w: u32,
         tile_h: u32,
+        bpp: u32,
         bytes: &[u8],
     ) {
         queue.write_texture(
@@ -93,7 +94,7 @@ impl TiledTexture {
             bytes,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(tile_w * 4),
+                bytes_per_row: Some(tile_w * bpp),
                 rows_per_image: Some(tile_h),
             },
             wgpu::Extent3d {
