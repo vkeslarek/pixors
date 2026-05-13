@@ -246,7 +246,8 @@ fn gpu_compose(
     if acc.requested_size != expected {
         tracing::error!(
             "[compose] GPU output size mismatch: requested_size={} expected={expected} (w={w} h={h} bpp={})",
-            acc.requested_size, fmt.bytes_per_pixel(),
+            acc.requested_size,
+            fmt.bytes_per_pixel(),
         );
     }
 
@@ -319,7 +320,8 @@ fn cpu_compose(
     if out.len() != w * h * bpp {
         tracing::error!(
             "[compose] CPU output size mismatch: out.len={} expected={} (w={w} h={h} bpp={bpp})",
-            out.len(), w * h * bpp,
+            out.len(),
+            w * h * bpp,
         );
     }
 

@@ -44,6 +44,7 @@ pub enum Msg {
     ExportDialog(crate::modal::export::Msg),
     UiShowcase(crate::modal::ui_showcase::Msg),
     FilterSearch(crate::modal::filter_search::Msg),
+    SidebarResized(f32),
 }
 
 pub struct App {
@@ -63,11 +64,13 @@ pub struct App {
     pub show_filter_search: bool,
     pub filter_search: crate::modal::filter_search::FilterSearch,
     pub filter_panel: crate::panel::filter::FilterPanelState,
+    pub layers_panel: crate::panel::layers::LayersPanelState,
     pub viewport_tabs: HashMap<SessionId, crate::viewport::tab_state::ViewportTab>,
     /// Live blur radius during slider drag — overrides the document value so the
     /// slider thumb tracks the drag. Cleared on CommitBlur / CancelPreview.
     pub blur_preview_radius: Option<f32>,
     pub pending_ingest: Option<pixors_document::Session>,
+    pub sidebar_width: f32,
 }
 
 static PIPELINE_BROADCAST: OnceLock<broadcast::Sender<PipelineEvent>> = OnceLock::new();
@@ -106,9 +109,11 @@ impl Default for App {
             show_filter_search: false,
             filter_search: crate::modal::filter_search::FilterSearch::default(),
             filter_panel: crate::panel::filter::FilterPanelState::default(),
+            layers_panel: crate::panel::layers::LayersPanelState::default(),
             viewport_tabs: HashMap::new(),
             blur_preview_radius: None,
             pending_ingest: None,
+            sidebar_width: crate::theme::SIDEBAR_W,
         };
         app.update_status_from_active_tab();
         app

@@ -73,7 +73,10 @@ pub struct WebPExportConfig {
 
 impl Default for WebPExportConfig {
     fn default() -> Self {
-        Self { lossless: false, quality: 85.0 }
+        Self {
+            lossless: false,
+            quality: 85.0,
+        }
     }
 }
 

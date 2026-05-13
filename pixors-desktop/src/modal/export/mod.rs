@@ -73,7 +73,7 @@ pub enum Msg {
     TiffEmbedExif(bool),
     // JPEG
     JpegQuality(u8),
-    // WebP  
+    // WebP
     WebPLossless(bool),
     WebPQuality(f32),
     // Actions

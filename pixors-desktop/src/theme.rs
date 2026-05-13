@@ -14,6 +14,7 @@ pub const TEXT_SECONDARY: Color = Color::from_rgb(0.545, 0.545, 0.596);
 pub const TEXT_MUTED: Color = Color::from_rgb(0.333, 0.333, 0.373);
 
 pub const ACCENT: Color = Color::from_rgb(0.388, 0.533, 0.949);
+pub const ACCENT_HOVER: Color = Color::from_rgb(0.488, 0.633, 1.0);
 pub const ACCENT_DIM: Color = Color::from_rgba(0.388, 0.533, 0.949, 0.15);
 pub const ACCENT_GLOW: Color = Color::from_rgba(0.388, 0.533, 0.949, 0.35);
 

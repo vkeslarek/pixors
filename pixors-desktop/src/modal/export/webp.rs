@@ -1,31 +1,27 @@
-use iced::widget::{Column, slider, toggler};
-use iced::{Element, Length};
+use iced::Element;
+use iced::widget::Column;
 
-use super::components::section_label;
 use super::ExportDialog;
+use super::components::{labeled_checkbox, labeled_slider, section_label};
 
 pub fn webp_options(dialog: &ExportDialog) -> Element<'static, super::Msg> {
-    let lossless_toggle = toggler(dialog.webp.lossless)
-        .label("Lossless")
-        .on_toggle(super::Msg::WebPLossless);
-
-    let quality_slider = if !dialog.webp.lossless {
-        Some(
-            slider(0.0..=100.0, dialog.webp.quality, super::Msg::WebPQuality)
-                .width(Length::Fill)
-                .step(1.0),
-        )
-    } else {
-        None
-    };
-
     let mut col = Column::new()
         .spacing(12)
-        .push(section_label("WEBP"))
-        .push(lossless_toggle);
+        .push(section_label("COMPRESSION"))
+        .push(labeled_checkbox(
+            "Lossless",
+            dialog.webp.lossless,
+            super::Msg::WebPLossless,
+        ));
 
-    if let Some(sl) = quality_slider {
-        col = col.push(section_label("QUALITY")).push(sl);
+    if !dialog.webp.lossless {
+        col = col.push(labeled_slider(
+            "Quality",
+            5.0..=100.0,
+            5.0,
+            dialog.webp.quality,
+            super::Msg::WebPQuality,
+        ));
     }
 
     col.into()

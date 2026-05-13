@@ -34,6 +34,8 @@ pub const INFO: &str = "\u{e0f9}";
 #[allow(dead_code)]
 pub const CHEVRON_DOWN: &str = "\u{e06d}";
 #[allow(dead_code)]
+pub const CHEVRON_UP: &str = "\u{e073}";
+#[allow(dead_code)]
 pub const CIRCLE_SLASH: &str = "\u{e079}";
 #[allow(dead_code)]
 pub const UNDO: &str = "\u{e4b6}";

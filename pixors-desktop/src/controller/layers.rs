@@ -6,6 +6,9 @@ use crate::panel::layers as layers_panel;
 
 impl App {
     pub(crate) fn handle_layers_msg(&mut self, m: layers_panel::Msg) {
+        let drag_from = self.layers_panel.drag_from;
+        let drag_over = self.layers_panel.drag_over;
+        self.layers_panel.update(&m);
         let layers = self
             .state
             .active_session()
@@ -14,6 +17,8 @@ impl App {
         let ctx = layers_panel::LayersContext {
             active_tab_id: self.state.active_session().map(|t| t.id),
             layers,
+            drag_from,
+            drag_over,
         };
         let effects = layers_panel::update(m, ctx);
         self.execute_effects(effects);

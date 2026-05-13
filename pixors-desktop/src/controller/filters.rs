@@ -11,6 +11,8 @@ use crate::panel::filter as filters_panel;
 
 impl App {
     pub(crate) fn handle_filters_msg(&mut self, m: filters_panel::Msg) {
+        let drag_from = self.filter_panel.drag_from;
+        let drag_over = self.filter_panel.drag_over;
         self.filter_panel.update(&m);
 
         match m {
@@ -127,8 +129,8 @@ impl App {
                     session_id,
                     active_layer_id,
                     transforms,
-                    self.filter_panel.drag_from,
-                    self.filter_panel.drag_over,
+                    drag_from,
+                    drag_over,
                 );
                 let effects = filters_panel::update(other, ctx);
                 self.execute_effects(effects);

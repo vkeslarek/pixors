@@ -1,4 +1,4 @@
-use crate::theme::{BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
+use crate::theme::{BG_ELEVATED, BG_SURFACE, BORDER_SUBTLE, TEXT_PRIMARY};
 use iced::widget::{column, container, text};
 use iced::{Background, Border, Element, Length, Padding};
 
@@ -28,13 +28,19 @@ impl<'a, Message: 'a> From<Card<'a, Message>> for Element<'a, Message> {
         if let Some(title_str) = c.title {
             col = col.push(
                 container(text(title_str).size(14).color(TEXT_PRIMARY))
-                    .padding(Padding::from([12, 16]))
+                    .padding(Padding::from([10, 16]))
                     .width(Length::Fill)
                     .style(|_| container::Style {
+                        background: Some(Background::Color(BG_ELEVATED)),
                         border: Border {
                             color: BORDER_SUBTLE,
                             width: 1.0,
-                            radius: Default::default(),
+                            radius: iced::border::Radius {
+                                top_left: 8.0,
+                                top_right: 8.0,
+                                bottom_right: 0.0,
+                                bottom_left: 0.0,
+                            },
                         },
                         ..Default::default()
                     }),

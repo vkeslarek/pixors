@@ -36,6 +36,7 @@ pub fn png_options(dialog: &ExportDialog) -> Element<'_, Msg> {
         compression_col = compression_col.push(labeled_slider(
             "Level",
             1.0..=9.0,
+            1.0,
             level_val,
             Msg::PngDeflateLevel,
         ));

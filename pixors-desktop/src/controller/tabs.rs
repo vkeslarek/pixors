@@ -1,4 +1,3 @@
-
 use crate::app::App;
 use crate::page::editor::tab_bar;
 

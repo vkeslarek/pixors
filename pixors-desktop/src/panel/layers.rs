@@ -12,11 +12,43 @@ pub enum Msg {
     Select(NodeId),
     ToggleVisibility(NodeId),
     SetOpacity(NodeId, f32),
+    DragStart(usize),
+    DragHover(usize),
+    DragDrop,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LayersPanelState {
+    pub drag_from: Option<usize>,
+    pub drag_over: Option<usize>,
+}
+
+impl LayersPanelState {
+    pub fn update(&mut self, msg: &Msg) {
+        match msg {
+            Msg::DragStart(idx) => {
+                self.drag_from = Some(*idx);
+                self.drag_over = Some(*idx);
+            }
+            Msg::DragHover(idx) => {
+                if self.drag_from.is_some() {
+                    self.drag_over = Some(*idx);
+                }
+            }
+            Msg::DragDrop => {
+                self.drag_from = None;
+                self.drag_over = None;
+            }
+            _ => {}
+        }
+    }
 }
 
 pub struct LayersContext<'a> {
     pub active_tab_id: Option<SessionId>,
     pub layers: &'a [LayerNode],
+    pub drag_from: Option<usize>,
+    pub drag_over: Option<usize>,
 }
 
 pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
@@ -70,10 +102,39 @@ pub fn update(msg: Msg, ctx: LayersContext<'_>) -> Vec<Effect> {
                 Effect::QueueDisplayRefresh(session_id),
             ]
         }
+        Msg::DragDrop => {
+            let Some(from) = ctx.drag_from else {
+                return vec![];
+            };
+            let Some(to) = ctx.drag_over else {
+                return vec![];
+            };
+            if from == to {
+                return vec![];
+            }
+            if from >= ctx.layers.len() || to >= ctx.layers.len() {
+                return vec![];
+            }
+            vec![
+                Effect::Commit(std::sync::Arc::new(
+                    pixors_document::mutation::impls::SwapLayers {
+                        tab: session_id,
+                        index_a: from,
+                        index_b: to,
+                    },
+                )),
+                Effect::QueueDisplayRefresh(session_id),
+            ]
+        }
+        Msg::DragStart(_) | Msg::DragHover(_) => vec![],
     }
 }
 
-pub fn view_slice<'a>(layers: &'a [LayerNode], active_id: Option<NodeId>) -> Element<'a, Msg> {
+pub fn view_slice<'a>(
+    layers: &'a [LayerNode],
+    active_id: Option<NodeId>,
+    state: &'a LayersPanelState,
+) -> Element<'a, Msg> {
     if layers.is_empty() {
         container(text("No layers yet.").size(12).color(TEXT_MUTED))
             .padding(16)
@@ -81,24 +142,60 @@ pub fn view_slice<'a>(layers: &'a [LayerNode], active_id: Option<NodeId>) -> Ele
             .center_x(Length::Fill)
             .into()
     } else {
-        column(
-            layers
-                .iter()
-                .map(|l| layer_row(l, active_id == Some(l.id)))
-                .collect::<Vec<_>>(),
-        )
-        .spacing(2)
-        .padding([4, 8])
-        .width(Length::Fill)
-        .into()
+        let mut elements = Vec::new();
+        for (idx, l) in layers.iter().enumerate() {
+            let is_active = active_id == Some(l.id);
+            let is_dragged = state.drag_from == Some(idx);
+            let is_hover_target =
+                state.drag_over == Some(idx) && state.drag_from.is_some_and(|from| from != idx);
+
+            let row_el = layer_row(l, idx, is_active);
+            let wrapper = container(row_el).style(move |_| {
+                if is_hover_target {
+                    container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            ACCENT.r, ACCENT.g, ACCENT.b, 0.30,
+                        ))),
+                        ..Default::default()
+                    }
+                } else if is_dragged {
+                    container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            ACCENT.r, ACCENT.g, ACCENT.b, 0.10,
+                        ))),
+                        ..Default::default()
+                    }
+                } else {
+                    container::Style::default()
+                }
+            });
+
+            let area = mouse_area(wrapper).on_enter(Msg::DragHover(idx));
+            elements.push(area.into());
+        }
+
+        mouse_area(column(elements).spacing(2).padding([4, 8]))
+            .on_release(Msg::DragDrop)
+            .into()
     }
 }
 
-fn layer_row<'a>(layer: &'a LayerNode, is_active: bool) -> Element<'a, Msg> {
+fn layer_row<'a>(layer: &'a LayerNode, index: usize, is_active: bool) -> Element<'a, Msg> {
     let color = match &layer.source {
         pixors_document::PixelSource::PrimaryAsset { .. } => Color::from_rgb(0.3, 0.5, 0.8),
         pixors_document::PixelSource::SolidColor { .. } => Color::from_rgba(0.6, 0.6, 0.2, 1.0),
     };
+
+    let grip = mouse_area(
+        container(
+            text(crate::icons::GRIP_VERTICAL)
+                .font(crate::icons::LUCIDE)
+                .size(12)
+                .color(TEXT_MUTED),
+        )
+        .padding([4, 4]),
+    )
+    .on_press(Msg::DragStart(index));
 
     let thumb = container(text(""))
         .width(28)
@@ -136,15 +233,18 @@ fn layer_row<'a>(layer: &'a LayerNode, is_active: bool) -> Element<'a, Msg> {
         .size(9)
         .color(TEXT_MUTED);
 
+    let name_label =
+        container(text(layer.name.as_str()).size(11).color(TEXT_SECONDARY)).width(Length::Fill);
+
     let row_content = row![
+        grip,
         thumb,
-        text(layer.name.as_str()).size(11).color(TEXT_SECONDARY),
-        iced::widget::Space::new().width(Length::Fill),
+        name_label,
         opacity_label,
         opacity_slider,
         visibility_btn,
     ]
-    .spacing(6)
+    .spacing(4)
     .align_y(Alignment::Center);
 
     let layer_id = layer.id;

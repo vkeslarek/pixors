@@ -92,11 +92,16 @@ impl Processor for Upload {
                                 let len = data.len() as u64;
                                 let aligned_len = (len + 3) & !3;
                                 if aligned_len as usize == data.len() {
-                                    gpu.queue().write_buffer(consolidated.buffer(), offset, data);
+                                    gpu.queue()
+                                        .write_buffer(consolidated.buffer(), offset, data);
                                 } else {
                                     let mut padded = data.to_vec();
                                     padded.resize(aligned_len as usize, 0);
-                                    gpu.queue().write_buffer(consolidated.buffer(), offset, &padded);
+                                    gpu.queue().write_buffer(
+                                        consolidated.buffer(),
+                                        offset,
+                                        &padded,
+                                    );
                                 }
                                 len
                             }

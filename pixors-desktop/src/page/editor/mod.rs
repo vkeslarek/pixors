@@ -86,12 +86,53 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
         })
         .on_resize(Msg::PaneResized)
         .on_drag(Msg::PaneDragged)
-        .width(crate::theme::SIDEBAR_W)
+        .width(app.sidebar_width)
         .into();
 
-    row![app.tools.view().map(Msg::Toolbar), canvas, grid,]
-        .height(Length::Fill)
-        .into()
+    let widen_btn = iced::widget::button(text("<").size(10).color(TEXT_MUTED).center())
+        .padding(2)
+        .width(14)
+        .height(24)
+        .style(|_, _| iced::widget::button::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
+            border: iced::Border::default().rounded(2),
+            ..Default::default()
+        })
+        .on_press(Msg::SidebarResized(app.sidebar_width + 40.0));
+
+    let shrink_btn = iced::widget::button(text(">").size(10).color(TEXT_MUTED).center())
+        .padding(2)
+        .width(14)
+        .height(24)
+        .style(|_, _| iced::widget::button::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
+            border: iced::Border::default().rounded(2),
+            ..Default::default()
+        })
+        .on_press(Msg::SidebarResized(app.sidebar_width - 40.0));
+
+    let resizer_bar = container(column![
+        iced::widget::Space::new().height(Length::Fill),
+        widen_btn,
+        iced::widget::Space::new().height(4),
+        shrink_btn,
+        iced::widget::Space::new().height(Length::Fill),
+    ])
+    .width(Length::Shrink)
+    .padding([0, 2])
+    .style(|_| container::Style {
+        background: Some(Background::Color(crate::theme::BG_BASE)),
+        ..Default::default()
+    });
+
+    row![
+        app.tools.view().map(Msg::Toolbar),
+        canvas,
+        resizer_bar,
+        grid,
+    ]
+    .height(Length::Fill)
+    .into()
 }
 
 fn pane_content<'a>(
@@ -112,7 +153,8 @@ fn pane_content<'a>(
                 .state
                 .active_session()
                 .and_then(|t| t.transient.active_node);
-            crate::panel::layers::view_slice(layers, active_id).map(Msg::LayersPanel)
+            crate::panel::layers::view_slice(layers, active_id, &app.layers_panel)
+                .map(Msg::LayersPanel)
         }
         PaneKind::Filters => {
             let transforms = app

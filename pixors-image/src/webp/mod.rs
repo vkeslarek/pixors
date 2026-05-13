@@ -22,15 +22,29 @@ impl ImageDecoder for WebPDecoder {
     fn decode(&self, path: &Path) -> Result<ImageDescriptor, Error> {
         let data = std::fs::read(path).map_err(Error::Io)?;
         let decoder = WebpDecoder::new(&data);
-        let img = decoder.decode().ok_or_else(|| Error::internal("WebP decode failed"))?;
+        let img = decoder
+            .decode()
+            .ok_or_else(|| Error::internal("WebP decode failed"))?;
         let w = img.width();
         let h = img.height();
         let has_alpha = img.is_alpha();
-        let fmt = if has_alpha { PixelFormat::Rgba8 } else { PixelFormat::Rgb8 };
-        let ap = if has_alpha { AlphaPolicy::Straight } else { AlphaPolicy::OpaqueDrop };
+        let fmt = if has_alpha {
+            PixelFormat::Rgba8
+        } else {
+            PixelFormat::Rgb8
+        };
+        let ap = if has_alpha {
+            AlphaPolicy::Straight
+        } else {
+            AlphaPolicy::OpaqueDrop
+        };
 
         let pages = vec![PageInfo {
-            name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("webp").to_string(),
+            name: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("webp")
+                .to_string(),
             color_space: ColorSpace::SRGB,
             alpha_policy: ap,
             offset: PixelOffset { x: 0, y: 0 },
@@ -58,17 +72,31 @@ impl ImageDecoder for WebPDecoder {
     fn open_stream(&self, path: &Path, _page: usize) -> Result<Box<dyn PageStream>, Error> {
         let data = std::fs::read(path).map_err(Error::Io)?;
         let decoder = WebpDecoder::new(&data);
-        let img = decoder.decode().ok_or_else(|| Error::internal("WebP decode failed"))?;
+        let img = decoder
+            .decode()
+            .ok_or_else(|| Error::internal("WebP decode failed"))?;
         let w = img.width();
         let h = img.height();
         let has_alpha = img.is_alpha();
-        let fmt = if has_alpha { PixelFormat::Rgba8 } else { PixelFormat::Rgb8 };
-        let ap = if has_alpha { AlphaPolicy::Straight } else { AlphaPolicy::OpaqueDrop };
+        let fmt = if has_alpha {
+            PixelFormat::Rgba8
+        } else {
+            PixelFormat::Rgb8
+        };
+        let ap = if has_alpha {
+            AlphaPolicy::Straight
+        } else {
+            AlphaPolicy::OpaqueDrop
+        };
         let bpp = if has_alpha { 4 } else { 3 };
         let pixels: Vec<u8> = img.to_vec();
 
         let page_info = PageInfo {
-            name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("webp").to_string(),
+            name: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("webp")
+                .to_string(),
             color_space: ColorSpace::SRGB,
             alpha_policy: ap,
             offset: PixelOffset { x: 0, y: 0 },
@@ -80,7 +108,15 @@ impl ImageDecoder for WebPDecoder {
             dispose: DisposeOp::None,
         };
 
-        Ok(Box::new(WebPPageStream { pixels, page_info, pixel_format: fmt, bpp, width: w, height: h, row: 0 }))
+        Ok(Box::new(WebPPageStream {
+            pixels,
+            page_info,
+            pixel_format: fmt,
+            bpp,
+            width: w,
+            height: h,
+            row: 0,
+        }))
     }
 }
 
@@ -95,7 +131,9 @@ struct WebPPageStream {
 }
 
 impl PageStream for WebPPageStream {
-    fn page_info(&self) -> &PageInfo { &self.page_info }
+    fn page_info(&self) -> &PageInfo {
+        &self.page_info
+    }
 
     fn drain(&mut self, max_items: usize) -> Result<Vec<pixors_engine::graph::item::Item>, Error> {
         use pixors_engine::common::pixel::meta::PixelMeta;
@@ -103,16 +141,26 @@ impl PageStream for WebPPageStream {
         use pixors_engine::data::scanline::ScanLine;
         use pixors_engine::graph::item::Item;
 
-        let meta = PixelMeta::new(self.pixel_format, self.page_info.color_space, self.page_info.alpha_policy);
+        let meta = PixelMeta::new(
+            self.pixel_format,
+            self.page_info.color_space,
+            self.page_info.alpha_policy,
+        );
         let mut items = Vec::new();
         let count = max_items.min((self.height - self.row) as usize);
         for _ in 0..count {
             let row_bytes = self.width as usize * self.bpp;
             let start = self.row as usize * row_bytes;
             let end = start + row_bytes;
-            if end > self.pixels.len() { break; }
+            if end > self.pixels.len() {
+                break;
+            }
             items.push(Item::ScanLine(ScanLine::new(
-                0, self.row, self.width, meta, Buffer::cpu(self.pixels[start..end].to_vec()),
+                0,
+                self.row,
+                self.width,
+                meta,
+                Buffer::cpu(self.pixels[start..end].to_vec()),
             )));
             self.row += 1;
         }

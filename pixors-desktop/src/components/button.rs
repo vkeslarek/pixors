@@ -1,6 +1,6 @@
 use crate::theme::{
-    ACCENT, ACCENT_GLOW, BG_BASE, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE, DANGER,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    ACCENT, ACCENT_HOVER, BG_BASE, BG_ELEVATED, BG_HOVER, BG_SURFACE, BORDER, BORDER_SUBTLE,
+    DANGER, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use iced::widget::{button as iced_button, text};
 use iced::{Background, Border, Color, Element, Length, Padding, alignment::Horizontal};
@@ -85,7 +85,7 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
             let (bg, text_color, border_color) = match variant {
                 ButtonVariant::Primary => match state {
                     iced::widget::button::Status::Hovered => {
-                        (Some(ACCENT_GLOW), TEXT_PRIMARY, ACCENT)
+                        (Some(ACCENT_HOVER), TEXT_PRIMARY, ACCENT_HOVER)
                     }
                     iced::widget::button::Status::Disabled => {
                         (Some(BG_ELEVATED), TEXT_MUTED, BORDER_SUBTLE)
@@ -127,7 +127,7 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
                 border: Border {
                     color: border_color,
                     width: 1.0,
-                    radius: 4.0.into(),
+                    radius: 6.0.into(),
                 },
                 ..Default::default()
             }

@@ -67,15 +67,24 @@ impl Consumer for PngEncoderV2 {
             },
             Buffer::Gpu(_) => return Err(Error::internal("PngEncoderV2 requires CPU tiles")),
         };
-        if self.meta.is_none() { self.meta = Some(tile.meta); }
+        if self.meta.is_none() {
+            self.meta = Some(tile.meta);
+        }
         self.image_width = self.image_width.max(tile.coord.px + tile.coord.width);
         self.image_height = self.image_height.max(tile.coord.py + tile.coord.height);
-        let expected = tile.coord.width as usize * tile.coord.height as usize * tile.meta.format.bytes_per_pixel();
+        let expected = tile.coord.width as usize
+            * tile.coord.height as usize
+            * tile.meta.format.bytes_per_pixel();
         let data_len = data.len();
         if data_len != expected {
             tracing::warn!(
                 "[encoder] PNG tile size mismatch at ({},{}): data.len={} expected={expected} ({}x{} bpp={})",
-                tile.coord.px, tile.coord.py, data_len, tile.coord.width, tile.coord.height, tile.meta.format.bytes_per_pixel(),
+                tile.coord.px,
+                tile.coord.py,
+                data_len,
+                tile.coord.width,
+                tile.coord.height,
+                tile.meta.format.bytes_per_pixel(),
             );
         }
         self.tiles.insert(

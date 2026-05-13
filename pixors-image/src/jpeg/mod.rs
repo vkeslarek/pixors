@@ -3,8 +3,8 @@ use std::path::Path;
 use pixors_engine::common::color::space::ColorSpace;
 use pixors_engine::common::pixel::{AlphaPolicy, PixelFormat};
 use pixors_engine::error::Error;
-use zune_jpeg::zune_core::colorspace::ColorSpace as ZuneColorSpace;
 use zune_jpeg::JpegDecoder as ZuneDecoder;
+use zune_jpeg::zune_core::colorspace::ColorSpace as ZuneColorSpace;
 
 use crate::codec::{ImageDecoder, PageStream};
 use crate::image::*;
@@ -23,8 +23,12 @@ impl ImageDecoder for JpegDecoder {
     fn decode(&self, path: &Path) -> Result<ImageDescriptor, Error> {
         let data = std::fs::read(path).map_err(Error::Io)?;
         let mut decoder = ZuneDecoder::new(&data);
-        decoder.decode_headers().map_err(|e| Error::internal(e.to_string()))?;
-        let info = decoder.info().ok_or_else(|| Error::internal("no JPEG info"))?;
+        decoder
+            .decode_headers()
+            .map_err(|e| Error::internal(e.to_string()))?;
+        let info = decoder
+            .info()
+            .ok_or_else(|| Error::internal("no JPEG info"))?;
 
         let (fmt, color_space) = match decoder.get_input_colorspace() {
             Some(ZuneColorSpace::Luma) => (PixelFormat::Gray8, ColorSpace::SRGB),
@@ -33,7 +37,11 @@ impl ImageDecoder for JpegDecoder {
         };
 
         let pages = vec![PageInfo {
-            name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("jpeg").to_string(),
+            name: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("jpeg")
+                .to_string(),
             color_space,
             alpha_policy: AlphaPolicy::OpaqueDrop,
             offset: PixelOffset { x: 0, y: 0 },
@@ -61,8 +69,12 @@ impl ImageDecoder for JpegDecoder {
     fn open_stream(&self, path: &Path, _page: usize) -> Result<Box<dyn PageStream>, Error> {
         let data = std::fs::read(path).map_err(Error::Io)?;
         let mut decoder = ZuneDecoder::new(&data);
-        decoder.decode_headers().map_err(|e| Error::internal(e.to_string()))?;
-        let info = decoder.info().ok_or_else(|| Error::internal("no JPEG info"))?;
+        decoder
+            .decode_headers()
+            .map_err(|e| Error::internal(e.to_string()))?;
+        let info = decoder
+            .info()
+            .ok_or_else(|| Error::internal("no JPEG info"))?;
 
         let bpp = match decoder.get_input_colorspace() {
             Some(ZuneColorSpace::Luma) => 1,
@@ -77,10 +89,16 @@ impl ImageDecoder for JpegDecoder {
 
         let w = info.width as u32;
         let h = info.height as u32;
-        let pixels = decoder.decode().map_err(|e| Error::internal(e.to_string()))?;
+        let pixels = decoder
+            .decode()
+            .map_err(|e| Error::internal(e.to_string()))?;
 
         let page_info = PageInfo {
-            name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("jpeg").to_string(),
+            name: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("jpeg")
+                .to_string(),
             color_space: cs,
             alpha_policy: AlphaPolicy::OpaqueDrop,
             offset: PixelOffset { x: 0, y: 0 },
@@ -93,7 +111,13 @@ impl ImageDecoder for JpegDecoder {
         };
 
         Ok(Box::new(JpegPageStream {
-            pixels, page_info, pixel_format: fmt, bpp, width: w, height: h, row: 0,
+            pixels,
+            page_info,
+            pixel_format: fmt,
+            bpp,
+            width: w,
+            height: h,
+            row: 0,
         }))
     }
 }
@@ -109,7 +133,9 @@ struct JpegPageStream {
 }
 
 impl PageStream for JpegPageStream {
-    fn page_info(&self) -> &PageInfo { &self.page_info }
+    fn page_info(&self) -> &PageInfo {
+        &self.page_info
+    }
 
     fn drain(&mut self, max_items: usize) -> Result<Vec<pixors_engine::graph::item::Item>, Error> {
         use pixors_engine::common::pixel::meta::PixelMeta;
@@ -118,7 +144,9 @@ impl PageStream for JpegPageStream {
         use pixors_engine::graph::item::Item;
 
         let meta = PixelMeta::new(
-            self.pixel_format, self.page_info.color_space, self.page_info.alpha_policy,
+            self.pixel_format,
+            self.page_info.color_space,
+            self.page_info.alpha_policy,
         );
         let mut items = Vec::new();
         let count = max_items.min((self.height - self.row) as usize);
@@ -127,9 +155,15 @@ impl PageStream for JpegPageStream {
             let row_bytes = self.width as usize * self.bpp;
             let start = self.row as usize * row_bytes;
             let end = start + row_bytes;
-            if end > self.pixels.len() { break; }
-            items.push(Item::ScanLine(ScanLine::new(0, 
-                self.row, self.width, meta, Buffer::cpu(self.pixels[start..end].to_vec()),
+            if end > self.pixels.len() {
+                break;
+            }
+            items.push(Item::ScanLine(ScanLine::new(
+                0,
+                self.row,
+                self.width,
+                meta,
+                Buffer::cpu(self.pixels[start..end].to_vec()),
             )));
             self.row += 1;
         }

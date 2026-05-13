@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_BUF_ID: AtomicU64 = AtomicU64::new(1);
 
-fn next_buf_id() -> u64 { NEXT_BUF_ID.fetch_add(1, Ordering::Relaxed) }
+fn next_buf_id() -> u64 {
+    NEXT_BUF_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 pub struct BufferPool {
     device: Arc<wgpu::Device>,
@@ -51,9 +53,7 @@ impl BufferPool {
             mapped_at_creation: false,
         });
 
-        tracing::info!(
-            "[buf] #{id} acquire NEW class={class_size} req={size} usage={usage:?}",
-        );
+        tracing::info!("[buf] #{id} acquire NEW class={class_size} req={size} usage={usage:?}",);
 
         GpuBuffer {
             id,

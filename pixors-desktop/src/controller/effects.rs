@@ -1,4 +1,3 @@
-
 use crate::app::App;
 use crate::effect::Effect;
 use pixors_document::TILE_SIZE;

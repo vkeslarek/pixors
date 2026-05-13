@@ -19,20 +19,43 @@ pub fn format_toggle(current: &ExportFormat) -> Element<'_, Msg> {
         };
 
         let radius = if is_left {
-            iced::border::Radius { top_left: 6.0, top_right: 0.0, bottom_right: 0.0, bottom_left: 6.0 }
+            iced::border::Radius {
+                top_left: 6.0,
+                top_right: 0.0,
+                bottom_right: 0.0,
+                bottom_left: 6.0,
+            }
         } else if is_right {
-            iced::border::Radius { top_left: 0.0, top_right: 6.0, bottom_right: 6.0, bottom_left: 0.0 }
+            iced::border::Radius {
+                top_left: 0.0,
+                top_right: 6.0,
+                bottom_right: 6.0,
+                bottom_left: 0.0,
+            }
         } else {
-            iced::border::Radius { top_left: 0.0, top_right: 0.0, bottom_right: 0.0, bottom_left: 0.0 }
+            iced::border::Radius {
+                top_left: 0.0,
+                top_right: 0.0,
+                bottom_right: 0.0,
+                bottom_left: 0.0,
+            }
         };
 
         button(text(label).size(13).color(fg))
             .padding([6, 18])
             .style(move |_, status| {
-                let actual_bg = if !selected && matches!(status, button::Status::Hovered) { BG_HOVER } else { bg };
+                let actual_bg = if !selected && matches!(status, button::Status::Hovered) {
+                    BG_HOVER
+                } else {
+                    bg
+                };
                 button::Style {
                     background: Some(Background::Color(actual_bg)),
-                    border: Border { color: border_col, width: 1.0, radius },
+                    border: Border {
+                        color: border_col,
+                        width: 1.0,
+                        radius,
+                    },
                     text_color: fg,
                     ..Default::default()
                 }
@@ -149,12 +172,17 @@ pub fn labeled_checkbox<M: Clone + 'static>(
 pub fn labeled_slider<'a>(
     label: &'static str,
     range: std::ops::RangeInclusive<f32>,
+    step: f32,
     value: f32,
     msg: impl Fn(f32) -> Msg + 'a,
 ) -> Element<'a, Msg> {
-    row![crate::components::slider(label, value, range, msg).value_format(|v| format!("{:.0}", v))]
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        crate::components::slider(label, value, range, msg)
+            .step(step)
+            .value_format(|v| format!("{:.0}", v))
+    ]
+    .align_y(Alignment::Center)
+    .into()
 }
 
 pub fn labeled_text_input<'a>(

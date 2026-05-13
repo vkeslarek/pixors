@@ -100,9 +100,7 @@ impl Dispatcher {
         state: &mut EditorState,
     ) -> Result<(), String> {
         let session_id = mutation.target_session();
-        let session = state
-            .session_mut(session_id)
-            .ok_or("session not found")?;
+        let session = state.session_mut(session_id).ok_or("session not found")?;
 
         if mutation.recordable() {
             session
