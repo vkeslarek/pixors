@@ -48,7 +48,7 @@ impl BufferPool {
             size: class_size,
             usage,
             mapped_at_creation: false,
-        }        );
+        });
 
         GpuBuffer {
             id,

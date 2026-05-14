@@ -2,6 +2,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use std::env;
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use std::process::Command;
 use syn::{
@@ -230,6 +231,23 @@ fn compile_slang(
     let wrap_path = out.join(format!("{wrapper_name}.slang"));
     let spv_path = PathBuf::from(target_dir).join(format!("{wrapper_name}.spv"));
 
+    let hash = {
+        let mut h = DefaultHasher::new();
+        wrapper_content.hash(&mut h);
+        h.finish()
+    };
+    let hash_file = PathBuf::from(target_dir).join(format!("{wrapper_name}.spv.hash"));
+    let hash_str = format!("{hash:x}");
+
+    if spv_path.exists()
+        && hash_file.exists()
+        && fs::read_to_string(&hash_file)
+            .map(|s| s == hash_str)
+            .unwrap_or(false)
+    {
+        return;
+    }
+
     fs::write(&wrap_path, wrapper_content).unwrap();
 
     let mut cmd = Command::new(slangc);
@@ -252,7 +270,9 @@ fn compile_slang(
         .status();
 
     match status {
-        Ok(s) if s.success() => {}
+        Ok(s) if s.success() => {
+            fs::write(&hash_file, hash_str).unwrap();
+        }
         Ok(s) => panic!("slangc failed for {wrapper_name}: exit {s}"),
         Err(e) => panic!("slangc error for {wrapper_name}: {e}"),
     }

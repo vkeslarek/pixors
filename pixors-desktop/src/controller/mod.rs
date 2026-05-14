@@ -45,7 +45,7 @@ impl App {
             Msg::KeyPressed(event) => self.handle_keyboard(event),
             Msg::OpenFile => self.open_file_dialog(),
             Msg::Tick => self.handle_tick(),
-            Msg::Frames => {}
+            Msg::Frames => self.frame = self.frame.wrapping_add(1),
             Msg::PipelineEvent(e) => self.handle_pipeline_event(e),
             Msg::PipelineLagged(skipped) => {
                 tracing::warn!(

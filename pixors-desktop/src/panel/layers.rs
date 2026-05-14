@@ -186,7 +186,12 @@ pub fn view_slice<'a>(
     }
 }
 
-fn layer_row<'a>(layer: &'a LayerNode, index: usize, is_active: bool, state: &'a LayersPanelState) -> Element<'a, Msg> {
+fn layer_row<'a>(
+    layer: &'a LayerNode,
+    index: usize,
+    is_active: bool,
+    state: &'a LayersPanelState,
+) -> Element<'a, Msg> {
     let color = match &layer.source {
         pixors_document::PixelSource::PrimaryAsset { .. } => Color::from_rgb(0.3, 0.5, 0.8),
         pixors_document::PixelSource::SolidColor { .. } => Color::from_rgba(0.6, 0.6, 0.2, 1.0),

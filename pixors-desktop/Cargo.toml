@@ -8,7 +8,7 @@ pixors-engine = { path = "../pixors-engine" }
 pixors-image = { path = "../pixors-image" }
 pixors-ops = { path = "../pixors-ops" }
 pixors-document = { path = "../pixors-document" }
-iced = { version = "0.14", features = ["advanced", "tokio"] }
+iced = { version = "0.14", features = ["advanced", "tokio", "canvas"] }
 tokio = { version = "1", features = ["sync", "rt"] }
 iced_aw = { version = "0.13", default-features = false, features = ["menu"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }

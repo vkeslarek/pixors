@@ -260,7 +260,6 @@ impl Runner for ChainRunner {
                 }
                 match recv.recv_timeout(Duration::from_millis(100)) {
                     Ok(Some(routed)) => {
-
                         Self::run_item_streaming(
                             &self.cancelled,
                             tag,

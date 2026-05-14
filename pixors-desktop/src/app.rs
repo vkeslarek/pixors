@@ -69,7 +69,8 @@ pub struct App {
     pub viewport_tabs: HashMap<SessionId, crate::viewport::tab_state::ViewportTab>,
     /// Pending preview mutation, undone before commit or cancelled on escape.
     pub pending_preview: Option<Arc<dyn pixors_document::mutation::Mutation>>,
-    pub pending_ingest: Option<pixors_document::Session>,
+    pub pending_ingest: Option<SessionId>,
+    pub frame: u64,
     pub sidebar_width: f32,
 }
 
@@ -112,6 +113,7 @@ impl Default for App {
             layers_panel: crate::panel::layers::LayersPanelState::default(),
             viewport_tabs: HashMap::new(),
             pending_preview: None,
+            frame: 0,
             pending_ingest: None,
             sidebar_width: crate::theme::SIDEBAR_W,
         };

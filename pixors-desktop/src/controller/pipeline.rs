@@ -19,22 +19,25 @@ impl App {
             }
             PipelineEvent::Done { tag } => {
                 let session_id = SessionId(tag);
-                // Push pending ingest session if this was an OpenFile pipeline
-                if let Some(session) = self.pending_ingest.take()
-                    && session.id == session_id
-                {
-                    self.state.push(session);
-                }
+                self.pending_ingest = None;
                 self.dispatcher
                     .on_pipeline_done(&mut self.state, session_id);
-                if let Some(tab) = self.state.session_mut(session_id) {
-                    tab.transient.view.loading = false;
-                    tab.transient.view.progress = 1.0;
-                }
-                if self.state.session(session_id).is_some()
-                    && !self.viewport_tabs.contains_key(&session_id)
-                {
+
+                // If the viewport tab doesn't exist yet, this is the ingest pipeline finishing.
+                // Start the render pipeline and keep loading=true so the spinner continues to
+                // drive redraws until tiles drain from TileCache into the GPU atlas.
+                let is_ingest_done = self.state.session(session_id).is_some()
+                    && !self.viewport_tabs.contains_key(&session_id);
+
+                if is_ingest_done {
                     self.init_viewport_for_tab(session_id);
+                    // loading stays true; tick clears it when has_pending() is false.
+                    if let Some(tab) = self.state.session_mut(session_id) {
+                        tab.transient.view.progress = 1.0;
+                    }
+                } else if let Some(tab) = self.state.session_mut(session_id) {
+                    tab.transient.view.progress = 1.0;
+                    tab.transient.view.loading = false;
                 }
             }
             PipelineEvent::Error { tag, message } => {
@@ -48,8 +51,12 @@ impl App {
             }
             PipelineEvent::Cancelled { tag } => {
                 let session_id = SessionId(tag);
-                if let Some(tab) = self.state.session_mut(session_id) {
-                    tab.transient.view.loading = false;
+                // A new pipeline (e.g. export) may have already started and re-set loading=true.
+                // Only clear if nothing else is running.
+                if !self.dispatcher.is_background_running(session_id) {
+                    if let Some(tab) = self.state.session_mut(session_id) {
+                        tab.transient.view.loading = false;
+                    }
                 }
             }
         }

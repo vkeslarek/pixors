@@ -18,6 +18,7 @@ pub fn view<'a, Msg: 'a>(
     active_cache: Option<Arc<Mutex<TileCache>>>,
     redraw_seq: u64,
     mip_fetch_queue: Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>,
+    prefetch_queue: Option<Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>>,
     session_id: Option<SessionId>,
     viewport_state: Option<Arc<RwLock<ViewportState>>>,
 ) -> Element<'a, Msg> {
@@ -25,6 +26,7 @@ pub fn view<'a, Msg: 'a>(
         cache: active_cache,
         redraw_seq,
         mip_fetch_queue,
+        prefetch_queue,
         session_id,
         viewport_state,
     };

@@ -39,15 +39,15 @@ impl App {
                     });
 
                 let mutation: Arc<dyn pixors_document::mutation::Mutation> = match existing {
-                    Some((transform_id, before)) => Arc::new(
-                        pixors_document::mutation::impls::UpdateTransformOp {
+                    Some((transform_id, before)) => {
+                        Arc::new(pixors_document::mutation::impls::UpdateTransformOp {
                             tab: session_id,
                             layer: layer_id,
                             transform_id,
                             before: pixors_document::Operation::Blur { radius: before },
                             after: pixors_document::Operation::Blur { radius: v },
-                        },
-                    ),
+                        })
+                    }
                     None => {
                         let new_id = tab.document.alloc_node_id();
                         Arc::new(pixors_document::mutation::impls::AddTransform {
@@ -113,15 +113,15 @@ impl App {
                     });
 
                 let mutation: Arc<dyn pixors_document::mutation::Mutation> = match existing {
-                    Some((transform_id, before)) => Arc::new(
-                        pixors_document::mutation::impls::UpdateTransformOp {
+                    Some((transform_id, before)) => {
+                        Arc::new(pixors_document::mutation::impls::UpdateTransformOp {
                             tab: session_id,
                             layer: layer_id,
                             transform_id,
                             before: pixors_document::Operation::Blur { radius: before },
                             after: pixors_document::Operation::Blur { radius: v },
-                        },
-                    ),
+                        })
+                    }
                     None => {
                         let new_id = tab.document.alloc_node_id();
                         Arc::new(pixors_document::mutation::impls::AddTransform {
@@ -143,7 +143,10 @@ impl App {
                     }
                 };
                 let _ = self.dispatcher.commit(mutation, &mut self.state);
-
+                if let Some(tab) = self.state.session_mut(session_id) {
+                    tab.transient.view.loading = true;
+                    tab.transient.view.progress = 0.0;
+                }
                 let (mip, range) = self.viewport_mip_range(session_id, 1);
                 self.run_render(session_id, mip, range);
             }

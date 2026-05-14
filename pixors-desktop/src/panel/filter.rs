@@ -180,10 +180,7 @@ pub fn update(msg: Msg, ctx: FilterContext) -> Vec<Effect> {
     }
 }
 
-pub fn view<'a>(
-    transforms: &'a [Transform],
-    state: &'a FilterPanelState,
-) -> Element<'a, Msg> {
+pub fn view<'a>(transforms: &'a [Transform], state: &'a FilterPanelState) -> Element<'a, Msg> {
     let toolbar = build_toolbar();
     let filter_rows = build_filter_rows(transforms, state);
     let content = column![toolbar, filter_rows].spacing(0);
@@ -467,9 +464,7 @@ fn build_filter_row<'a>(
     }
 }
 
-fn build_filter_controls<'a>(
-    t: &'a Transform,
-) -> Element<'a, Msg> {
+fn build_filter_controls<'a>(t: &'a Transform) -> Element<'a, Msg> {
     use pixors_document::Operation;
 
     let _opacity = match &t.output {

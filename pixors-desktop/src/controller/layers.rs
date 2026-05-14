@@ -19,14 +19,13 @@ impl App {
                     .and_then(|t| t.document.find_layer(*id).map(|l| l.blend.opacity))
                     .unwrap_or(1.0);
 
-                let mutation: Arc<dyn pixors_document::mutation::Mutation> = Arc::new(
-                    pixors_document::mutation::impls::SetLayerOpacity {
+                let mutation: Arc<dyn pixors_document::mutation::Mutation> =
+                    Arc::new(pixors_document::mutation::impls::SetLayerOpacity {
                         tab: session_id,
                         layer: *id,
                         before,
                         after: *opacity,
-                    },
-                );
+                    });
 
                 if let Some(ref prev) = self.pending_preview {
                     prev.undo(&mut self.state.session_mut(session_id).unwrap().document);
@@ -57,15 +56,18 @@ impl App {
                         prev.undo(&mut self.state.session_mut(session_id).unwrap().document);
                         self.pending_preview = None;
                     }
-                    let mutation: Arc<dyn pixors_document::mutation::Mutation> = Arc::new(
-                        pixors_document::mutation::impls::SetLayerOpacity {
+                    let mutation: Arc<dyn pixors_document::mutation::Mutation> =
+                        Arc::new(pixors_document::mutation::impls::SetLayerOpacity {
                             tab: session_id,
                             layer: *id,
                             before,
                             after,
-                        },
-                    );
+                        });
                     let _ = self.dispatcher.commit(mutation, &mut self.state);
+                    if let Some(tab) = self.state.session_mut(session_id) {
+                        tab.transient.view.loading = true;
+                        tab.transient.view.progress = 0.0;
+                    }
                     let (mip, range) = self.viewport_mip_range(session_id, 1);
                     self.run_render(session_id, mip, range);
                 }

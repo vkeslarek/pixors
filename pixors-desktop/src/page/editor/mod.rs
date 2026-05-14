@@ -6,6 +6,7 @@ use iced::widget::{column, container, pane_grid, row, stack, text};
 use iced::{Alignment, Background, Color, Element, Length};
 
 use crate::app::{App, Msg, PaneKind};
+use crate::components::spinner;
 use crate::theme::{BG_SURFACE, TEXT_MUTED};
 
 pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
@@ -24,6 +25,9 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
         .and_then(|id| app.viewport_tabs.get(&id))
         .map(|vt| vt.mip_queue.clone())
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
+    let prefetch_queue = session_id
+        .and_then(|id| app.viewport_tabs.get(&id))
+        .map(|vt| vt.prefetch_queue.clone());
     let loading = active.map(|t| t.transient.view.loading).unwrap_or(false);
     let progress = active.map(|t| t.transient.view.progress).unwrap_or(0.0);
 
@@ -35,24 +39,34 @@ pub fn view<'a>(app: &'a App) -> Element<'a, Msg> {
             active_cache,
             redraw_seq,
             mip_fetch_queue,
+            prefetch_queue,
             Some(session_id),
             viewport_state,
         );
 
         if loading {
             let pct = (progress.clamp(0.0, 1.0) * 100.0) as u8;
+            let spinner_el: Element<_> = spinner(app.frame).size(32.0).stroke_width(2.5).into();
             let overlay = container(
-                container(text(format!("Loading… {pct}%")))
-                    .padding([2, 8])
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
-                        ..Default::default()
-                    }),
+                container(
+                    column![
+                        spinner_el,
+                        text("Processing").size(13).color(Color::WHITE),
+                        text(format!("{pct}%")).size(11).color(Color::WHITE),
+                    ]
+                    .spacing(10)
+                    .align_x(Alignment::Center),
+                )
+                .padding(32),
             )
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)
-            .align_y(Alignment::Center);
+            .align_y(Alignment::Center)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.75))),
+                ..Default::default()
+            });
             stack![viewport, overlay].into()
         } else {
             viewport
@@ -128,8 +142,7 @@ fn pane_content<'a>(
                         .map(|l| l.transforms.as_slice())
                 })
                 .unwrap_or(&[]);
-            crate::panel::filter::view(transforms, &app.filter_panel)
-                .map(Msg::FiltersPanel)
+            crate::panel::filter::view(transforms, &app.filter_panel).map(Msg::FiltersPanel)
         }
     };
     let label = match kind {

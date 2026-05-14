@@ -181,7 +181,8 @@ impl App {
             match pixors_document::ingest::prepare_ingest(&path, &mut self.state) {
                 Ok(result) => {
                     let session_id = result.session_id;
-                    self.pending_ingest = Some(result.session);
+                    self.state.push(result.session);
+                    self.pending_ingest = Some(session_id);
                     let _ = self.dispatcher.run_graph(result.graph, Some(session_id));
                     self.update_status_from_active_tab();
                 }

@@ -9,6 +9,7 @@ pub mod pill;
 pub mod progress_bar;
 pub mod resize_handle;
 pub mod slider;
+pub mod spinner;
 pub mod switch;
 pub mod tooltip;
 
@@ -22,5 +23,6 @@ pub use input::custom_input as input;
 pub use pill::{Pill, pill};
 pub use progress_bar::{ProgressBar, progress_bar};
 pub use slider::slider;
+pub use spinner::{Spinner, spinner};
 pub use switch::switch;
 pub use tooltip::tooltip;

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pixors_document::render::compiler::{CompileConfig, RenderRequest, compile};
 use pixors_document::{SessionId, TILE_SIZE};
@@ -31,7 +32,17 @@ impl App {
             .get(&session_id)
             .and_then(|vt| vt.state.read().ok())
             .map(|vs| {
-                let m = vs.current_mip;
+                // Use the ideal mip from camera geometry, not current_mip which the
+                // display path may degrade to a lower mip while tiles are still loading.
+                // Guard: if the viewport hasn't been sized yet (vp_w/h == 1.0),
+                // visible_mip_level() returns 0 and current_mip is equally wrong — fall
+                // back to current_mip which is at least consistent with whatever was last
+                // computed in draw().
+                let m = if vs.camera.vp_w > 1.0 && vs.camera.vp_h > 1.0 {
+                    vs.camera.visible_mip_level()
+                } else {
+                    vs.current_mip
+                };
                 let r = vs.camera.padded_tile_range(m, TILE_SIZE, pad);
                 (m, r)
             })
@@ -46,12 +57,7 @@ impl App {
             ))
     }
 
-    pub(crate) fn run_render(
-        &mut self,
-        session_id: SessionId,
-        mip: u32,
-        range: TileRange,
-    ) {
+    pub(crate) fn run_render(&mut self, session_id: SessionId, mip: u32, range: TileRange) {
         self.dispatcher.cancel_background(session_id);
         let Some(tab) = self.state.session(session_id) else {
             return;
@@ -117,6 +123,47 @@ impl App {
         let graph = compile(&tab.document, &req, &config, sink);
 
         let _ = self.dispatcher.run_graph(graph, Some(session_id));
+    }
+
+    /// Warm the DiskCache LRU for the predicted region without touching the visible pipeline.
+    /// Spawns a background thread that calls `DiskCache::read_tile` for each tile in `range`;
+    /// the side-effect populates the LRU so subsequent visible renders get cache hits.
+    pub(crate) fn run_prefetch(&mut self, session_id: SessionId, mip: u32, range: TileRange) {
+        let Some(tab) = self.state.session(session_id) else {
+            return;
+        };
+        let Some(vtab) = self.viewport_tabs.get_mut(&session_id) else {
+            return;
+        };
+
+        // Cancel the previous prefetch thread for this session.
+        vtab.prefetch_cancel.store(true, Ordering::Release);
+        let cancel = Arc::new(AtomicBool::new(false));
+        vtab.prefetch_cancel = cancel.clone();
+
+        let caches: Vec<_> = tab
+            .document
+            .visible_layers()
+            .into_iter()
+            .filter_map(|l| tab.transient.disk_caches.get(&l.id).cloned())
+            .collect();
+
+        if caches.is_empty() {
+            return;
+        }
+
+        std::thread::spawn(move || {
+            for ty in range.ty_start..range.ty_end {
+                for tx in range.tx_start..range.tx_end {
+                    if cancel.load(Ordering::Acquire) {
+                        return;
+                    }
+                    for cache in &caches {
+                        let _ = cache.read_tile(mip, tx, ty);
+                    }
+                }
+            }
+        });
     }
 
     pub(crate) fn init_viewport_for_tab(&mut self, session_id: SessionId) {

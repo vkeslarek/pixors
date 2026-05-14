@@ -60,6 +60,11 @@ impl Camera {
         self.pan_y = -(self.vp_h / self.zoom - self.img_h) / 2.0;
     }
 
+    pub fn min_zoom(&self) -> f32 {
+        let fit = (self.vp_w / self.img_w).min(self.vp_h / self.img_h);
+        (fit * 0.2).max(1.0 / 512.0)
+    }
+
     pub fn pan(&mut self, dx: f32, dy: f32) {
         self.pan_x -= dx / self.zoom;
         self.pan_y -= dy / self.zoom;
@@ -122,6 +127,24 @@ impl Camera {
             ty_start,
             ty_end,
         }
+    }
+
+    /// Like `padded_tile_range` but shifts the viewport by `vel_img * lookahead_s`
+    /// (image-space pixels) before computing the range. Useful for prefetch prediction.
+    pub fn predicted_tile_range(
+        &self,
+        mip: u32,
+        tile_size: u32,
+        pad: u32,
+        vel_img: (f32, f32),
+        lookahead_s: f32,
+    ) -> TileRange {
+        let shifted = Camera {
+            pan_x: self.pan_x - vel_img.0 * lookahead_s,
+            pan_y: self.pan_y - vel_img.1 * lookahead_s,
+            ..*self
+        };
+        shifted.padded_tile_range(mip, tile_size, pad)
     }
 
     pub fn to_uniform(&self, mip_level: u32) -> CameraUniform {

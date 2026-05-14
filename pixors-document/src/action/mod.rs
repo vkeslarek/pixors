@@ -86,6 +86,12 @@ impl Dispatcher {
         }
     }
 
+    pub fn is_background_running(&self, id: SessionId) -> bool {
+        self.background_tasks
+            .get(&id)
+            .is_some_and(|h| h.is_running())
+    }
+
     pub fn resync_locks(&mut self, state: &mut EditorState) {
         self.background_tasks.retain(|session_id, handle| {
             let still_running = handle.is_running();
@@ -103,9 +109,7 @@ impl Dispatcher {
         state: &mut EditorState,
     ) -> Result<SessionId, String> {
         let session_id = mutation.target_session();
-        let session = state
-            .session_mut(session_id)
-            .ok_or("session not found")?;
+        let session = state.session_mut(session_id).ok_or("session not found")?;
         mutation.apply(&mut session.document);
         session.transient.redraw_seq += 1;
         Ok(session_id)
@@ -117,9 +121,7 @@ impl Dispatcher {
         state: &mut EditorState,
     ) -> Result<SessionId, String> {
         let session_id = mutation.target_session();
-        let session = state
-            .session_mut(session_id)
-            .ok_or("session not found")?;
+        let session = state.session_mut(session_id).ok_or("session not found")?;
         if mutation.recordable() {
             session
                 .history

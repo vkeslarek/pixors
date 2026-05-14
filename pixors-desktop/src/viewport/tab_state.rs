@@ -1,4 +1,5 @@
 use crate::util::{lock_or_recover, write_or_recover};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
 use pixors_document::SessionId;
@@ -11,6 +12,9 @@ pub struct ViewportTab {
     pub cache: Arc<Mutex<TileCache>>,
     pub state: Arc<RwLock<ViewportState>>,
     pub mip_queue: Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>,
+    pub prefetch_queue: Arc<Mutex<Vec<(SessionId, u32, TileRange)>>>,
+    /// Set to true to cancel the running prefetch thread for this tab.
+    pub prefetch_cancel: Arc<AtomicBool>,
 }
 
 impl ViewportTab {
@@ -19,6 +23,8 @@ impl ViewportTab {
             cache: TileCache::new(),
             state: Arc::new(RwLock::new(ViewportState::default())),
             mip_queue: Arc::new(Mutex::new(Vec::new())),
+            prefetch_queue: Arc::new(Mutex::new(Vec::new())),
+            prefetch_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
