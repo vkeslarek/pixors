@@ -39,36 +39,43 @@ Phase 10 delivered:
 
 ---
 
-## Phase 11 — Format support + Blend modes + Library workspace v1
+## Phase 11 — Format support + Blend modes + Library workspace v1 + Smart Render Cache
 
-**Goal:** support every common image format, deliver blend modes for the compositor,
-and deliver the Library workspace. Multi-layer TIFF files land in this phase — they
-are immediately usable only if blend modes are also present, so the two ship together.
+**Goal:** support every common still-image format, complete the separable blend-mode
+set on both CPU and GPU compositors, ship a v1 Library workspace, and add a
+disk-backed render cache that makes repeated applies, undo/redo, and Export fast.
 
-- Decode JPEG (moved from Phase 10 if not shipped there), WEBP, AVIF, EXR — each
-  enters the existing tile pipeline as a new `ImageDecoder` impl; the rest of the
-  pipeline is unchanged.
-- EXR decode: f16/f32 enters the pipeline naturally; no special casing needed.
-- Multi-layer TIFF: expose each TIFF page as a separate `Layer` in the tab, each
-  with its own cache subdirectory (layout already defined in Phase 10).
-- **Blend modes** — Normal (already ships in Phase 10), plus:
-  Multiply, Screen, Overlay, Soft Light, Hard Light, Color Dodge, Color Burn,
-  Difference, Exclusion. Luminosity, Color, Hue, Saturation deferred (need Lab
-  conversion in the compositor — revisit when Darkroom color science lands).
-  Implemented in `Compose` CPU path first; GPU path is a follow-up optimization.
-  Unblocks: layer groups, clipping masks, layer effects (all currently backlog).
-- Thumbnail extraction and disk cache (generated from MIP-N during decode,
-  reused in Library grid).
-- Library workspace v1:
-  - File browser grid with thumbnails
-  - Open file into Layer Editor
-  - Rating and flag (pick / reject) — stored in sidecar or embedded XMP
-  - Basic EXIF / IPTC read for metadata display
-- EXIF/IPTC write and smart collections deferred to a later Library pass.
+See [PHASE_11.md](PHASE_11.md) for the full implementation plan.
+
+- **Smart Render Cache** (prerequisite for everything else): per-session disk
+  cache keyed by `(source fingerprint, transform-prefix params)` with a dual-pool
+  layout — small slot count of mip-0 caches (large f16 entries) and a larger slot
+  count of mip-N caches (small previews). Refactors `render/compiler.rs` into a
+  `Compile` trait implemented by `LayerNode`, `Transform`, `Operation` (and future
+  effects). RAM LRU auto-evicts on read, not only on write.
+- **Undo/redo wired up** (`History` exists; controller/UI bindings ship here).
+  Cache hits make every recent undo instant; deep undo past the slot cap
+  recomputes.
+- **JPEG hardening, WEBP (animated frames as pages), AVIF, EXR, multi-page TIFF**
+  via a new `DecoderRegistry`. Each enters the existing tile pipeline as a new
+  `ImageDecoder` impl.
+- **Blend modes** — Normal (already ships in Phase 10), plus Multiply, Screen,
+  Overlay, Soft Light, Hard Light, Color Dodge, Color Burn, Difference, Exclusion.
+  CPU + GPU paths together. The blend-mode dropdown lives in the layers panel
+  header (above the layer list). Luminosity / Color / Hue / Saturation deferred
+  (need Lab compositor — revisit with Darkroom).
+- **Thumbnails**: long-lived per-file PNG thumb cache at
+  `~/.cache/pixors/thumbs/`, EXIF-embedded thumbnail short-circuit when present,
+  plus 48×48 per-layer thumbnails inside the layers panel rows.
+- **Library workspace v1**: file browser grid, open into Layer Editor, rating /
+  pick / reject via Lightroom-compatible XMP sidecar, basic EXIF/IPTC summary
+  panel. Detailed UI spec lives in a separate doc.
+- EXIF/IPTC write into the file itself, smart collections, persistent-across-sessions
+  cache, and GPU-resident cache are deferred (Phase 12 / Phase 14).
 
 ---
 
-## Phase 12 — RAW v1 (Canon CR3 + baseline algorithms)
+## Phase 12 — RAW v1 (Canon CR3 + baseline algorithms) + GPU-resident cache
 
 **Goal:** RAW decode working end-to-end on Canon CR3. Algorithms first, camera
 model breadth later. CR3 chosen because Canon hardware is available for testing.
@@ -80,6 +87,17 @@ model breadth later. CR3 chosen because Canon hardware is available for testing.
 - Base tone curve from camera profile
 - CR3 decode plugged into the existing `TileSource` interface — the rest of the
   pipeline is unchanged
+
+**Plus** (carried over from Phase 11 deferred):
+
+- **GPU-resident render cache** — extend the Phase 11 Smart Render Cache so hot
+  tiles can stay on the GPU between dispatches, skipping the Download/Upload
+  round-trip when both producer and consumer of a cache hit are GPU-assigned.
+  Requires a per-tile lifetime/ref-count layer on `Arc<GpuBuffer>` so eviction
+  cannot race with in-flight dispatches.
+- **Cache stats panel** — surface hits, misses, RAM use, disk use per pool
+  (Mip0 / MipN / GPU). Drives both user trust ("is my undo really cached?") and
+  the perf-tuning loop we'll need while landing RAW.
 
 ---
 
@@ -108,6 +126,17 @@ at each MIP level. Recompute only when a parameter changes.
   (global), HSL per hue range (8 ranges), Vibrance, Color Grading
   (lift / gamma / gain wheels)
 - Export from Darkroom routes to the Phase 10 export modal
+- **Histogram panel** — real-time luminance and per-channel histogram computed
+  from the current viewport MIP level via a new `viewport_histogram` engine
+  command reading the display tile cache. Lives in the Darkroom side panel and
+  drives the white/black-point pickers on Levels and Curves.
+- **Persistent render cache across sessions** — extend the Phase 11 Smart Render
+  Cache so cached tiles survive app restarts. Keyed by `(source fingerprint,
+  transform-prefix params)` exactly as in-session, plus an additional age/size
+  policy at the file-system level (`~/.cache/pixors/render/`). Darkroom is the
+  natural home: non-destructive op stacks are stable across sessions, so the
+  hit rate is high; the Library workspace also gets quick re-opens of recent
+  edits for free.
 
 **Architecture note:** all ops are non-destructive — a sequence of parameters is
 cheap to store; the tile cache is the performance layer, not the source of truth.
@@ -167,25 +196,17 @@ preceding phases are stable.
 
 ---
 
-### Undo / redo
+### Per-stage cooperative cancellation
 
-Tile-level history: store pre-op tile snapshots in a slab allocator with a
-configurable memory cap. When cap is hit, flush oldest entries to a temporary
-directory. Re-apply from the snapshot rather than re-running the op chain.
-Non-destructive ops in Darkroom make this simpler — history is just the parameter
-sequence, no tile snapshots needed for that workspace.
+Pipeline-level cancel already exists: `Pipeline::compile` carries an
+`Arc<AtomicBool>`, `PipelineHandle::cancel` flips it, and `PipelineHandle::Drop`
+joins all chain threads. What is *not* there: each `Producer`/`Processor` checking
+the flag mid-work. A long-running blur or color convert keeps running until it
+returns from its current call into the runtime. Adding a `ctx.cancelled()` check
+inside hot loops would make tab-close and job-cancel feel instant on large images.
 
-**Depends on:** Phase 10 operations, architecture decision in Phase 14.
-
----
-
-### Cancellation tokens
-
-Pipes do not currently listen to cancellation signals. If `close_image` fires
-mid-load, threads run until `StreamDone`. A `CancellationToken` checked at the
-top of each pipe loop would make tab close and job cancel instant.
-
-**Depends on:** Dispatcher/pipeline system (Phase 9, complete). Revisit after job architecture is stable.
+**Depends on:** Dispatcher/pipeline system (Phase 9, complete). Low risk; do
+when an op visibly blocks tab close on a real image.
 
 ---
 
@@ -202,10 +223,12 @@ new level — cancel-on-zoom works but is flickery.
 
 ### Unified display + storage MIP pipeline
 
-Two separate MIP pyramids exist: display (sRGB u8, RAM, via `MipPipe`) and storage
-(ACEScg f16, disk, via `generate_from_mip0`). They serve different purposes and
-do not currently interact — this is intentional. If duplication becomes a problem,
-revisit as an optimization, not a correctness fix.
+Two separate MIP pyramids exist: the display tile cache (sRGB u8, RAM, written
+by `TileCacheSink` in `pixors-desktop`) and the storage tile cache (ACEScg f16,
+disk, written by `CacheWriter` via the `MipDownsample` stage in
+`pixors-ops`). They serve different purposes and do not currently interact —
+intentional. If duplication becomes a problem, revisit as an optimization, not
+a correctness fix.
 
 ---
 
@@ -294,24 +317,16 @@ Editor.
 
 ---
 
-### Histogram panel
-
-Real-time luminance and per-channel histogram computed from the current viewport
-MIP level. Needs a `viewport_histogram` engine command that reads from the Viewport
-RAM cache and returns 256-bucket per-channel data.
-
-**Depends on:** Phase 10 composite display. Deferred until core image processing
-is stable — no point displaying accurate histograms before ops are complete.
-
----
-
 ### Properties panel
 
 Pixel dimensions and offset for the active layer, with editable fields that
-dispatch `Layer.SetOffset` and eventually `Layer.Resize`. The data already exists
-in `ImageLoaded` and `LayerEvent::Changed` — this panel just needs wiring.
+dispatch new `SetLayerOffset` / `ResizeLayer` mutations (analogous to the
+existing `SetLayerOpacity` / `SetLayerBlend` in `pixors-document::mutation::impls`).
+The data already exists on `LayerNode` and `CanvasInfo` — this panel just needs
+the mutations + a small UI surface.
 
-**Depends on:** Phase 10 layer wiring. Low effort, deferred alongside Histogram.
+**Depends on:** Phase 10 layer wiring (complete). Low effort, deferred alongside
+Histogram.
 
 ---
 
@@ -386,11 +401,11 @@ Useful for annotation without adding a vector engine.
 
 ### MCP tool surface
 
-Grows alongside the product. Every `EngineCommand` exposed over WebSocket is
-automatically reachable from MCP clients via `pixors-server`. Near-term priorities
-once Phase 10 ships: `query_pixels` (return a region as base64 PNG or raw f16),
-`apply_operation`, `export`. The MCP server crate lives outside this repository.
-See `docs/MCP_INTEGRATION.md`.
+Grows alongside the product. Since the Phase 9 split, `pixors-document` is
+already headless and reachable from `pixors-mcp` without a window. Near-term
+priorities: `query_pixels` (return a region as base64 PNG or raw f16),
+`apply_mutation`, `export`. The MCP server crate lives in `pixors-mcp/`. See
+`docs/MCP_INTEGRATION.md`.
 
 ---
 
@@ -399,3 +414,17 @@ See `docs/MCP_INTEGRATION.md`.
 GH Actions already packages the binary per platform. Code-signing (notarization
 on macOS, Authenticode on Windows) and store distribution (Mac App Store, Flatpak)
 are future concerns — not blocking any feature work.
+
+---
+
+## Not on the roadmap
+
+These are explicitly **not** planned, recorded here so they don't keep coming
+back as ad-hoc requests:
+
+- **Animated image authoring or playback** — animated WEBP / APNG / GIF are
+  decoded as a stack of layers (Phase 11) and that's the entire affordance.
+  There is no timeline UI, no frame-stepping, no animation export, and no
+  intent to add one. Pixors is a still-image editor; animation is a different
+  product.
+- **Video** — same reasoning. Out of scope at the product level.
