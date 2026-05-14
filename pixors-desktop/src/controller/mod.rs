@@ -1,4 +1,5 @@
 use iced::widget::pane_grid;
+use iced::Task;
 
 use crate::app::{App, Msg, PaneKind};
 
@@ -40,10 +41,16 @@ impl App {
         }
     }
 
-    pub fn update(&mut self, msg: Msg) {
+    pub fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
-            Msg::KeyPressed(event) => self.handle_keyboard(event),
-            Msg::OpenFile => self.open_file_dialog(),
+            Msg::KeyPressed(event) => return self.handle_keyboard(event),
+            Msg::OpenFile => return self.open_file_dialog(),
+            Msg::FileOpened(path) => {
+                if let Some(path) = path {
+                    self.handle_file_opened(path);
+                }
+            }
+            Msg::ExportPathSelected(path) => self.handle_export_path_selected(path),
             Msg::Tick => self.handle_tick(),
             Msg::Frames => self.frame = self.frame.wrapping_add(1),
             Msg::PipelineEvent(e) => self.handle_pipeline_event(e),
@@ -53,10 +60,10 @@ impl App {
                 );
                 self.dispatcher.resync_locks(&mut self.state);
             }
-            Msg::ExportDialog(m) => self.handle_export_dialog(m),
+            Msg::ExportDialog(m) => return self.handle_export_dialog(m),
             Msg::UiShowcase(m) => self.handle_ui_showcase(m),
             Msg::FilterSearch(m) => self.handle_filter_search(m),
-            Msg::MenuBar(m) => self.handle_menu_msg(m),
+            Msg::MenuBar(m) => return self.handle_menu_msg(m),
             Msg::WorkspaceBar(m) => self.workspace.update(m),
             Msg::Toolbar(m) => {
                 self.tools.update(m);
@@ -74,10 +81,10 @@ impl App {
                 let _ = self.panes.close(pane);
             }
             Msg::SidebarResized(delta) => {
-                // Dragging handle right → delta > 0 → sidebar shrinks
                 self.sidebar_width = (self.sidebar_width - delta).clamp(150.0, 600.0);
             }
         }
+        Task::none()
     }
 
     pub(crate) fn push_error(&mut self, msg: String) {

@@ -38,6 +38,8 @@ pub enum Msg {
     ClosePane(pane_grid::Pane),
     KeyPressed(keyboard::Event),
     OpenFile,
+    FileOpened(Option<std::path::PathBuf>),
+    ExportPathSelected(Option<std::path::PathBuf>),
     Tick,
     Frames,
     PipelineEvent(PipelineEvent),
@@ -70,6 +72,8 @@ pub struct App {
     /// Pending preview mutation, undone before commit or cancelled on escape.
     pub pending_preview: Option<Arc<dyn pixors_document::mutation::Mutation>>,
     pub pending_ingest: Option<SessionId>,
+    /// Config held while the async export save-file dialog is open.
+    pub pending_export: Option<(pixors_image::codec::EncoderConfig, String)>,
     pub frame: u64,
     pub sidebar_width: f32,
 }
@@ -115,6 +119,7 @@ impl Default for App {
             pending_preview: None,
             frame: 0,
             pending_ingest: None,
+            pending_export: None,
             sidebar_width: crate::theme::SIDEBAR_W,
         };
         app.update_status_from_active_tab();

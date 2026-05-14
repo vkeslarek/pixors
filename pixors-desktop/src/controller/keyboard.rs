@@ -1,14 +1,15 @@
 use iced::keyboard::{self, Key};
+use iced::Task;
 
-use crate::app::App;
+use crate::app::{App, Msg};
 use crate::page::editor::toolbar::Tool;
 
 impl App {
-    pub(crate) fn handle_keyboard(&mut self, event: keyboard::Event) {
+    pub(crate) fn handle_keyboard(&mut self, event: keyboard::Event) -> Task<Msg> {
         if let keyboard::Event::KeyPressed { key, modifiers, .. } = event {
             if modifiers.contains(keyboard::Modifiers::CTRL) {
                 match key.as_ref() {
-                    Key::Character("o") => self.open_file_dialog(),
+                    Key::Character("o") => return self.open_file_dialog(),
                     Key::Character("e") if self.active_file_path().is_some() => {
                         self.show_export_dialog = true;
                     }
@@ -35,5 +36,6 @@ impl App {
             }
             self.status.active_tool = self.tools.active_tool;
         }
+        Task::none()
     }
 }
