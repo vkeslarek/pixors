@@ -22,11 +22,20 @@ Phase 9 delivered the core engine architecture:
 
 ---
 
-## In progress — Phase 10
+## ✓ Complete — Phase 10
 
 **Goal:** First complete editing loop — open → layer controls → per-layer filters → composite display → export.
 
-See `docs/PHASE_10.md` for the full refined spec.
+Phase 10 delivered:
+- Layer panel with visibility toggle, opacity slider (live preview on drag, commit on release), drag-to-reorder
+- Filter panel with add/remove transforms, blur slider preview (live `mutation.apply(doc)` + `compile()` + `run_render()` pipeline), per-filter expand/collapse
+- Preview = apply + compile + run — zero intermediate overlay cache. `pending_preview` mutation undone before commit
+- `Operation::label()`, `subtitle()`, `color()` methods on Operation enum, filter panel uses them instead of hardcoded match arms
+- Single `run_render(session_id, mip, range)` entry point, `compile_config()` helper dedup, unified `viewport_mip_range()`
+- `PipelineHandle::Drop` + `Dispatcher::Drop` cancel+join threads (no zombie threads on shutdown)
+- Loading overlay with animated canvas spinner, percentage, dark backdrop — session pushed immediately (no gap between dialog and feedback)
+- SPV shader hash caching — incremental builds skip `slangc` (10s → 1.3s)
+- Buffer pool debug logs removed (17 log lines), `blur_preview_radius` removed from `App`, `opacity_overrides` and `compile_preview` deleted
 
 ---
 
